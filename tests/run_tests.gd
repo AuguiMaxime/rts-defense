@@ -8,6 +8,10 @@ var _failures := 0
 func _init() -> void:
 	_test_map_01()
 	_test_grid_rules()
+	_test_harvest()
+	_test_build_speed()
+	_test_anti_block()
+	_test_worker_training()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -39,3 +43,72 @@ func _test_grid_rules() -> void:
 	_check(not grid.is_walkable(Vector2i(1, 1)), "base bloquante")
 	_check(grid.is_walkable(Vector2i(0, 2)), "point d'apparition praticable")
 	_check(not grid.is_walkable(Vector2i(-1, 0)), "hors map bloquant")
+
+
+const TEST_MAP := """
+S....#....
+.....#....
+..........
+.....#.BBB
+.....#.BBB
+.M...#.BBB
+"""
+
+
+func _run(world: GameWorld, seconds: float, step := 0.05) -> void:
+	var t := 0.0
+	while t < seconds:
+		world.tick(step)
+		t += step
+
+
+func _test_harvest() -> void:
+	print("Récolte")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	var start := world.metal
+	world.command_harvest([world.workers[0]], Vector2i(1, 5))
+	_check(world.workers[0].state == Worker.State.MOVING, "l'ouvrier part vers le gisement")
+	_run(world, 30.0)
+	_check(world.metal >= start + Balance.CARRY_CAPACITY * 2, "au moins 2 voyages en 30 s (+%d métal)" % (world.metal - start))
+	_check(world.workers[0].job == Worker.Job.HARVEST, "l'ouvrier continue de récolter en boucle")
+
+
+func _time_to_build(n_workers: int) -> float:
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.metal = 1000
+	var site := world.place_tower(Vector2i(6, 1))
+	world.command_build(world.workers.slice(0, n_workers), site)
+	var t := 0.0
+	while not site.built and t < 60.0:
+		world.tick(0.05)
+		t += 0.05
+	return t
+
+
+func _test_build_speed() -> void:
+	print("Construction")
+	var t1 := _time_to_build(1)
+	var t2 := _time_to_build(2)
+	_check(t1 < 60.0, "1 ouvrier finit la tourelle (%.1f s)" % t1)
+	_check(t2 < t1 - Balance.TOWER_BUILD_WORK * 0.4, "2 ouvriers vont nettement plus vite (%.1f s)" % t2)
+
+
+func _test_anti_block() -> void:
+	print("Anti-blocage")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.metal = 1000
+	_check(world.can_place_tower(Vector2i(5, 2)) != "", "boucher le seul passage est refusé")
+	_check(world.can_place_tower(Vector2i(2, 2)) == "", "une case libre ailleurs est acceptée")
+	_check(world.can_place_tower(Vector2i(5, 0)) != "", "un rocher est refusé")
+	world.metal = 0
+	_check(world.can_place_tower(Vector2i(2, 2)) != "", "sans métal, refusé")
+
+
+func _test_worker_training() -> void:
+	print("Production d'ouvriers")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	var n := world.workers.size()
+	_check(world.train_worker(), "achat d'un ouvrier")
+	_check(world.metal == Balance.START_METAL - Balance.WORKER_COST_METAL, "métal débité")
+	_run(world, Balance.WORKER_TRAIN_TIME + 0.2)
+	_check(world.workers.size() == n + 1, "l'ouvrier apparaît après le temps de formation")

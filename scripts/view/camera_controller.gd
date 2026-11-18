@@ -1,11 +1,15 @@
 class_name CameraController
 extends Camera2D
 ## Caméra du joueur.
-## Mobile : 2 doigts pour déplacer et pincer pour zoomer, tap à 1 doigt = sélection.
-## PC : clic gauche = sélection, clic droit ou molette enfoncée = déplacer,
+## Mobile : 2 doigts pour déplacer et pincer pour zoomer, tap = action,
+##          glisser à 1 doigt = sélection par zone.
+## PC : clic gauche = action, glisser = sélection par zone, clic droit ou molette enfoncée = déplacer,
 ##      molette = zoom, ZQSD / WASD / flèches = déplacer.
 
 signal tapped(world_pos: Vector2)
+signal selection_updated(world_from: Vector2, world_to: Vector2)
+signal selection_ended(world_from: Vector2, world_to: Vector2)
+signal selection_cancelled
 
 @export var min_zoom := 0.5
 @export var max_zoom := 2.0
@@ -21,6 +25,10 @@ var _pinch_start_zoom := 1.0
 var _tap_candidate := false
 var _tap_start := Vector2.ZERO
 var _mouse_panning := false
+var _select_drag := false
+
+## Renvoie true si la position écran est sur un bouton de l'interface.
+var is_over_ui: Callable = func(_p: Vector2) -> bool: return false
 
 
 func set_bounds(r: Rect2) -> void:
@@ -69,17 +77,25 @@ func _on_touch(event: InputEventScreenTouch) -> void:
 	if event.pressed:
 		_touches[event.index] = event.position
 		if _touches.size() == 1:
-			_tap_candidate = true
+			var on_ui: bool = is_over_ui.call(event.position)
+			_tap_candidate = not on_ui
 			_tap_start = event.position
+			_select_drag = false
 		else:
 			_tap_candidate = false
+			if _select_drag:
+				_select_drag = false
+				selection_cancelled.emit()
 			_start_pinch()
 	else:
 		_touches.erase(event.index)
 		if _touches.is_empty():
 			if _tap_candidate and event.position.distance_to(_tap_start) <= TAP_MAX_MOVE:
 				tapped.emit(screen_to_world(event.position))
+			elif _select_drag:
+				selection_ended.emit(screen_to_world(_tap_start), screen_to_world(event.position))
 			_tap_candidate = false
+			_select_drag = false
 		elif _touches.size() >= 2:
 			_start_pinch()
 
@@ -93,8 +109,12 @@ func _on_drag(event: InputEventScreenDrag) -> void:
 		if _pinch_start_dist > 0.0:
 			_zoom_at(_pinch_start_zoom * _touch_distance() / _pinch_start_dist, new_center)
 		_clamp()
-	elif event.position.distance_to(_tap_start) > TAP_MAX_MOVE:
-		_tap_candidate = false
+	else:
+		if _tap_candidate and event.position.distance_to(_tap_start) > TAP_MAX_MOVE:
+			_tap_candidate = false
+			_select_drag = true
+		if _select_drag:
+			selection_updated.emit(screen_to_world(_tap_start), screen_to_world(event.position))
 
 
 func _on_mouse_button(event: InputEventMouseButton) -> void:

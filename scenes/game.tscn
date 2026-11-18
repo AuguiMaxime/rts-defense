@@ -3,12 +3,16 @@
 [ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
 [ext_resource type="Script" path="res://scripts/view/map_view.gd" id="2_map"]
 [ext_resource type="Script" path="res://scripts/view/camera_controller.gd" id="3_cam"]
+[ext_resource type="Script" path="res://scripts/view/units_view.gd" id="4_units"]
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1_game")
 
 [node name="MapView" type="Node2D" parent="."]
 script = ExtResource("2_map")
+
+[node name="UnitsView" type="Node2D" parent="."]
+script = ExtResource("4_units")
 
 [node name="Camera" type="Camera2D" parent="."]
 script = ExtResource("3_cam")
@@ -17,34 +21,80 @@ script = ExtResource("3_cam")
 
 [node name="TitleLabel" type="Label" parent="HUD"]
 offset_left = 24.0
-offset_top = 16.0
+offset_top = 12.0
 offset_right = 624.0
-offset_bottom = 60.0
+offset_bottom = 52.0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 8
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 26
 text = "RTS Defense"
+
+[node name="ResourcesLabel" type="Label" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -724.0
+offset_top = 14.0
+offset_right = -24.0
+offset_bottom = 54.0
+grow_horizontal = 0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 26
+horizontal_alignment = 2
 
 [node name="InfoLabel" type="Label" parent="HUD"]
 offset_left = 24.0
-offset_top = 60.0
-offset_right = 824.0
-offset_bottom = 96.0
+offset_top = 54.0
+offset_right = 1024.0
+offset_bottom = 86.0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 6
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 20
+text = "Glisse pour sélectionner des ouvriers"
 
-[node name="HintLabel" type="Label" parent="HUD"]
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 24.0
-offset_top = -48.0
-offset_right = 1224.0
-offset_bottom = -16.0
-grow_vertical = 0
-theme_override_colors/font_color = Color(1, 1, 1, 0.7)
+[node name="MessageLabel" type="Label" parent="HUD"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -400.0
+offset_top = 110.0
+offset_right = 400.0
+offset_bottom = 150.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.4, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
-text = "PC : clic = inspecter · clic droit glissé / ZQSD = caméra · molette = zoom    Mobile : 2 doigts = déplacer et zoomer"
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+
+[node name="Buttons" type="HBoxContainer" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -824.0
+offset_top = -100.0
+offset_right = -24.0
+offset_bottom = -24.0
+grow_horizontal = 0
+grow_vertical = 0
+alignment = 2
+theme_override_constants/separation = 16
+
+[node name="DeselectButton" type="Button" parent="HUD/Buttons"]
+custom_minimum_size = Vector2(200, 76)
+theme_override_font_sizes/font_size = 22
+text = "Désélectionner"
+
+[node name="WorkerButton" type="Button" parent="HUD/Buttons"]
+custom_minimum_size = Vector2(240, 76)
+theme_override_font_sizes/font_size = 22
+text = "+ Ouvrier"
+
+[node name="TowerButton" type="Button" parent="HUD/Buttons"]
+custom_minimum_size = Vector2(220, 76)
+theme_override_font_sizes/font_size = 22
+toggle_mode = true
+text = "Tourelle"
