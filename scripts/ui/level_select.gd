@@ -67,9 +67,20 @@ func _level_card(l: Dictionary) -> PanelContainer:
 	v.add_child(srow)
 
 	if unlocked:
+		var buttons := Ui.hbox(10)
 		var play := Ui.button("JOUER" if stars == 0 else "REJOUER", stars == 0, Vector2(0, 62))
+		play.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		play.pressed.connect(func() -> void: Ui.play_level(l.id))
-		v.add_child(play)
+		buttons.add_child(play)
+		if stars > 0:
+			var surv := Ui.button("SURVIE", false, Vector2(140, 62))
+			surv.add_theme_color_override("font_color", Ui.MAGENTA)
+			surv.pressed.connect(func() -> void: Ui.play_level(l.id, true))
+			buttons.add_child(surv)
+		v.add_child(buttons)
+		var rec := Save.survival_record(l.id)
+		if stars > 0:
+			v.add_child(Ui.label("Survie : record vague %d" % rec if rec > 0 else "Survie débloquée : vagues infinies", 18, Ui.MAGENTA))
 	else:
 		var lock := Ui.button("VERROUILLÉ", false, Vector2(0, 62))
 		lock.disabled = true

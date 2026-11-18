@@ -141,7 +141,11 @@ func _draw_enemy(e: Enemy) -> void:
 	var look: Dictionary = Sprites.ENEMY_LOOK[e.type]
 	var p := (e.pos + e.visual_offset) * TILE
 	var size: float = look.size
-	if not e.flying:
+	if e.type == "boss":
+		var pulse := 0.5 + 0.5 * sin(_anim * 5.0)
+		draw_circle(p, size * 0.55, Color(1.0, 0.1, 0.2, 0.18 + 0.12 * pulse))
+		draw_arc(p, size * 0.55, 0, TAU, 40, Color(1.0, 0.3, 0.35, 0.8), 3.0)
+	elif not e.flying:
 		draw_circle(p, size * 0.42, Color(0.9, 0.1, 0.1, 0.28))
 		draw_set_transform(p + Vector2(10, 18), e.facing.angle())
 		draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, Color(0, 0, 0, 0.3))
@@ -183,7 +187,7 @@ func _draw_effects() -> void:
 				draw_circle(ev.to * TILE, 6, Color(1, 0.35, 0.25, ev.ttl / ev.life))
 			"death":
 				var t: float = 1.0 - ev.ttl / ev.life
-				var size: float = (90.0 if ev.big else 60.0) * (0.6 + t * 0.6)
+				var size: float = (200.0 if ev.get("boss", false) else (90.0 if ev.big else 60.0)) * (0.6 + t * 0.6)
 				draw_texture_rect(Sprites.EXPLOSION, Rect2(ev.pos * TILE - Vector2(size, size) / 2, Vector2(size, size)),
 						false, Color(1, 1, 1, 1.0 - t))
 
@@ -214,6 +218,9 @@ func _sound(ev: Dictionary) -> void:
 					Sfx.play("shot", -10.0, 0.07)
 		"death":
 			Sfx.play("explosion", -5.0 if ev.big else -9.0, 0.08)
+			if ev.get("boss", false):
+				Sfx.play("victory", -4.0, 1.0)
+				Sfx.vibrate(250)
 		"orbital":
 			Sfx.play("orbital", 0.0, 0.5)
 			Sfx.vibrate(120)

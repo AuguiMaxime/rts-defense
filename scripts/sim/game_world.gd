@@ -160,7 +160,7 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 	e.hp -= maxi(1, amount - e.armor)
 	if e.hp <= 0:
 		kills += 1
-		events.append({"type": "death", "pos": e.pos, "big": e.type == "armored"})
+		events.append({"type": "death", "pos": e.pos, "big": e.type == "armored" or e.type == "boss", "boss": e.type == "boss"})
 
 
 func _tick_enemy(e: Enemy, delta: float) -> void:
@@ -612,3 +612,10 @@ func _resume_or_idle(w: Worker) -> void:
 		command_harvest([w], w.target_deposit)
 	else:
 		_set_idle(w)
+
+
+func boss() -> Enemy:
+	for e in enemies:
+		if e.type == "boss" and e.hp > 0:
+			return e
+	return null

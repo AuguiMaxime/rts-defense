@@ -28,6 +28,8 @@ var _build_cards := {} # kind -> Button
 var _orbital_label: Label
 var _worker_label: Label
 var _fps: Label
+var _boss_panel: PanelContainer
+var _boss_bar: ProgressBar
 var _pause_layer: Control
 var _pause_sub: Label
 var _end_layer: Control
@@ -54,6 +56,7 @@ func setup(g: Node) -> void:
 	_info = Ui.label("", 20, Ui.MUTED)
 	_info.add_theme_constant_override("outline_size", 6)
 	_column.add_child(_info)
+	_build_boss_bar()
 	var gap := Ui.spacer()
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_column.add_child(gap)
@@ -176,6 +179,26 @@ func _build_top_bar() -> void:
 	pause.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(pause)
 	_blocks.append(pause)
+
+
+func _build_boss_bar() -> void:
+	var c := CenterContainer.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_panel = Ui.panel(Vector2(520, 0))
+	_boss_panel.add_theme_stylebox_override("panel", Ui.box(Color(0.15, 0.03, 0.06, 0.9), Ui.RED, 2, 6, 0.12))
+	_boss_panel.visible = false
+	var v := Ui.vbox(4)
+	var t := Ui.title("☠  CUIRASSÉ — BOSS", 18, Ui.RED)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(t)
+	_boss_bar = ProgressBar.new()
+	_boss_bar.show_percentage = false
+	_boss_bar.custom_minimum_size = Vector2(0, 14)
+	_boss_bar.add_theme_stylebox_override("fill", Ui.box(Ui.RED, Ui.RED, 0, 3))
+	v.add_child(_boss_bar)
+	_boss_panel.add_child(v)
+	c.add_child(_boss_panel)
+	_column.add_child(c)
 
 
 func _build_bottom_bar() -> void:
@@ -403,7 +426,10 @@ func open_pause() -> void:
 		return
 	game.set_paused(true)
 	var lvl: Dictionary = game.level
-	_pause_sub.text = "%s · vague %d/%d" % [game.map_script.NAME, game.world.waves.wave, lvl.waves]
+	if game.survival:
+		_pause_sub.text = "%s · Survie · vague %d" % [game.map_script.NAME, game.world.waves.wave]
+	else:
+		_pause_sub.text = "%s · vague %d/%d" % [game.map_script.NAME, game.world.waves.wave, lvl.waves]
 	_pause_layer.visible = true
 
 
@@ -425,10 +451,16 @@ func show_end(won: bool) -> void:
 	var p := Ui.panel(Vector2(620, 0), true)
 	var v := Ui.vbox(14)
 	p.add_child(v)
-	var t := Ui.title("VICTOIRE" if won else "DÉFAITE", 54, Ui.CYAN if won else Ui.RED)
+	var title_text := "VICTOIRE" if won else "DÉFAITE"
+	if game.survival:
+		title_text = "NOUVEAU RECORD" if game.new_record else "FIN DE LA SURVIE"
+	var t := Ui.title(title_text, 50, Ui.CYAN if (won or game.new_record) else Ui.RED)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
-	var sub := Ui.label(game.map_script.NAME, 22, Ui.MUTED)
+	var sub_text: String = game.map_script.NAME
+	if game.survival:
+		sub_text += " · Survie · record : vague %d" % Save.survival_record(game.level.id)
+	var sub := Ui.label(sub_text, 22, Ui.MUTED)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(sub)
 
@@ -546,6 +578,11 @@ func _process(delta: float) -> void:
 
 	_selection_panel.visible = not game.selected.is_empty()
 	_update_site_panel()
+	var boss := w.boss()
+	_boss_panel.visible = boss != null
+	if boss != null:
+		_boss_bar.max_value = boss.max_hp
+		_boss_bar.value = boss.hp
 	_selection_label.text = "%d OUVRIER%s" % [game.selected.size(), "S" if game.selected.size() > 1 else ""]
 	_worker_label.text = "OUVRIER (+%d)" % w.train_queue if w.train_queue > 0 else "OUVRIER"
 

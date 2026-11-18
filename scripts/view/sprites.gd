@@ -36,6 +36,7 @@ const ENEMY_LOOK := {
 	"fast": {"tex": SOLDIER, "size": 64, "tint": Color(1.0, 0.40, 0.35)},
 	"armored": {"tex": TANK_HEAVY, "size": 76, "tint": Color(0.55, 0.30, 0.30)},
 	"flying": {"tex": PLANE, "size": 72, "tint": Color(1.0, 0.45, 0.40)},
+	"boss": {"tex": TANK_HEAVY, "size": 120, "tint": Color(0.75, 0.22, 0.28)},
 }
 
 ## Les unités du pack regardent vers la droite, les tourelles vers le haut.

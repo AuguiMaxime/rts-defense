@@ -32,6 +32,8 @@ var theme: Theme
 
 ## Niveau à lancer quand on ouvre l'écran de jeu.
 var current_level := 1
+## true = mode Survie (vagues infinies) sur la map choisie.
+var survival := false
 
 var _fade: ColorRect
 var _toast_layer: CanvasLayer
@@ -71,8 +73,9 @@ func goto(screen: String) -> void:
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func play_level(id: int) -> void:
+func play_level(id: int, survival_mode := false) -> void:
 	current_level = id
+	survival = survival_mode
 	goto("game")
 
 

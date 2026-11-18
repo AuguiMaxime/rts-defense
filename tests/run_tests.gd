@@ -27,6 +27,7 @@ func _init() -> void:
 	_test_config_bonuses()
 	_test_upgrade_sell()
 	_test_resume_harvest()
+	_test_boss()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -367,3 +368,16 @@ func _test_resume_harvest() -> void:
 	_run(world, 20.0)
 	_check(s.built, "chantier fini")
 	_check(w.job == Worker.Job.HARVEST, "l'ouvrier retourne à son gisement tout seul")
+
+
+func _test_boss() -> void:
+	print("Boss")
+	_check(WaveManager.composition(5).has("boss") and not WaveManager.composition(4).has("boss"), "boss à la vague 5, pas à la 4")
+	var wm := WaveManager.new()
+	wm.difficulty = 0.5
+	wm.wave = 4
+	wm.start_next()
+	_check(wm._queue.back() == "boss", "le boss arrive en dernier et n'est pas retiré par la difficulté")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.spawn_enemy("boss", Vector2i(0, 0), 1.0)
+	_check(world.boss() != null, "boss repéré pour la barre de vie")

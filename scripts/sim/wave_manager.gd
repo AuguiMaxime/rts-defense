@@ -27,7 +27,14 @@ static func composition(n: int) -> Array[String]:
 	if n >= 5:
 		for i in (n - 3) / 2:
 			list.insert(list.size() / 2, "flying")
+	if n % Balance.BOSS_EVERY == 0:
+		for i in n / Balance.BOSS_EVERY:
+			list.append("boss")
 	return list
+
+
+static func is_boss_wave(n: int) -> bool:
+	return n > 0 and n % Balance.BOSS_EVERY == 0
 
 
 func tick(delta: float, world: GameWorld) -> void:
@@ -49,11 +56,20 @@ func start_next() -> void:
 		return
 	wave += 1
 	var list := composition(wave)
+	var bosses := list.filter(func(t: String) -> bool: return t == "boss")
+	list = list.filter(func(t: String) -> bool: return t != "boss")
 	var keep := maxi(2, roundi(list.size() * difficulty))
 	# On retire des ennemis répartis dans la liste pour garder le mélange des types.
 	while list.size() > keep:
 		list.remove_at(list.size() * 2 / 3 if list.size() > 2 else 0)
+	var base_count := list.size()
+	var i := 0
+	while list.size() < keep and base_count > 0:
+		# Difficulté > 1 : on ajoute des renforts copiés de la vague, répartis dans la file.
+		list.insert(mini(list.size(), i * 2 + 1), list[i % base_count])
+		i += 1
 	_queue.append_array(list)
+	_queue.append_array(bosses) # le boss arrive en dernier
 	timer = Balance.WAVE_INTERVAL
 
 

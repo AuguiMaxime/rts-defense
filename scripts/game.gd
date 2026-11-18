@@ -11,6 +11,8 @@ var focused_site: BuildSite = null
 var build_kind := "" # "" = pas en mode construction ; "orbital" = ciblage du pouvoir
 var speed := 1
 var paused := false
+var survival := false
+var new_record := false
 var _ended := false
 var _granted_waves := 0
 var _granted_kills := 0
@@ -25,7 +27,10 @@ var _last_wave := 0
 func _ready() -> void:
 	level = Content.level(Ui.current_level)
 	map_script = load(level.map)
+	survival = Ui.survival
 	world = GameWorld.new(MapLoader.from_layout(map_script.LAYOUT), _build_config())
+	if survival:
+		world.waves.infinite = true
 	map_view.setup(world.grid, map_script.GROUND)
 	units_view.world = world
 	units_view.skin_tint = Content.skin(Save.data.skin).tint
@@ -46,7 +51,7 @@ func _ready() -> void:
 func _build_config() -> Dictionary:
 	var cfg := {
 		"waves": level.waves,
-		"difficulty": level.difficulty,
+		"difficulty": 1.0 if Ui.survival else level.difficulty,
 		"start_metal": Balance.START_METAL + int(Content.tech("reserves").value) * Save.tech_level("reserves"),
 		"start_workers": Balance.START_WORKERS,
 		"base_hp": roundi(Balance.BASE_HP * (1.0 + Content.tech("hull").value * Save.tech_level("hull"))),
@@ -85,7 +90,11 @@ func _process(delta: float) -> void:
 		_last_wave = world.waves.wave
 		Sfx.play("wave", -2.0, 1.0)
 		Sfx.vibrate(60)
-		hud.flash("VAGUE %d EN APPROCHE" % _last_wave, Ui.RED)
+		if WaveManager.is_boss_wave(_last_wave):
+			hud.flash("ALERTE : BOSS EN APPROCHE", Ui.RED)
+			Sfx.vibrate(150)
+		else:
+			hud.flash("VAGUE %d EN APPROCHE" % _last_wave, Ui.RED)
 	if world.state != GameWorld.State.PLAYING and not _ended:
 		_ended = true
 		hud.show_end(world.state == GameWorld.State.WON)
@@ -268,13 +277,15 @@ func grant_rewards() -> int:
 	_granted_waves = maxi(_granted_waves, waves_done)
 	_granted_kills = world.kills
 	Save.add("credits", credits)
-	if won:
+	if survival:
+		new_record = Save.record_survival(level.id, world.waves.wave)
+	elif won:
 		Save.record_level(level.id, stars(), world.waves.wave)
 	return credits
 
 
 func restart() -> void:
-	Ui.play_level(level.id)
+	Ui.play_level(level.id, survival)
 
 
 func next_level_id() -> int:

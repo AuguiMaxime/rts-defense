@@ -19,6 +19,8 @@ func defaults() -> Dictionary:
 		"credits": 0, # monnaie gagnée en jouant : technos, augments
 		"gold": 0, # monnaie premium : skins, tourelles spéciales
 		"levels": {}, # "1": {"stars": 3, "best_wave": 10}
+		"survival": {}, # "1": meilleure vague en mode Survie
+		"tutorial_done": false,
 		"tech": {}, # id -> niveau
 		"augments": {}, # id -> quantité en stock
 		"owned": ["skin_classic"],
@@ -88,6 +90,19 @@ func record_level(level_id: int, stars: int, wave: int) -> void:
 	var prev: Dictionary = data.levels.get(key, {"stars": 0, "best_wave": 0})
 	data.levels[key] = {"stars": maxi(int(prev.stars), stars), "best_wave": maxi(int(prev.best_wave), wave)}
 	save_data()
+
+
+func survival_record(level_id: int) -> int:
+	return int(data.survival.get(str(level_id), 0))
+
+
+## Renvoie true si c'est un nouveau record.
+func record_survival(level_id: int, wave: int) -> bool:
+	if wave <= survival_record(level_id):
+		return false
+	data.survival[str(level_id)] = wave
+	save_data()
+	return true
 
 
 # --- Technos, augments, boutique ------------------------------------------------
