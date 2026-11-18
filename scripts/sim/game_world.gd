@@ -253,7 +253,7 @@ func _remove_dead() -> void:
 			events.append({"type": "death", "pos": Vector2(s.cell) + Vector2(0.5, 0.5), "big": true})
 			for w in workers:
 				if w.target_site == s:
-					_set_idle(w)
+					_resume_or_idle(w)
 
 
 static func _dist_to_rect(p: Vector2, r: Rect2) -> float:
@@ -286,6 +286,8 @@ func _tick_worker(w: Worker, delta: float) -> void:
 				_set_idle(w)
 				return
 			s.hp = mini(s.max_hp, s.hp + ceili(Balance.REPAIR_RATE * delta))
+			if s.hp >= s.max_hp:
+				_resume_or_idle(w)
 
 
 func _follow_path(w: Worker, delta: float) -> bool:
@@ -356,6 +358,7 @@ func command_move(ws: Array, c: Vector2i) -> void:
 			continue
 		w.job = Worker.Job.NONE
 		w.target_site = null
+		w.target_deposit = Vector2i(-1, -1)
 		if pathfinder.is_free(c):
 			_set_path(w, pathfinder.find_path(w.cell(), c))
 		else:
@@ -440,6 +443,53 @@ func can_place_tower(c: Vector2i) -> String:
 
 func place_tower(c: Vector2i) -> BuildSite:
 	return place("gun", c)
+
+
+# --- Amélioration et vente -------------------------------------------------------------
+
+func can_upgrade(s: BuildSite) -> String:
+	if not s.built or not s.is_tower():
+		return "Pas améliorable"
+	if s.level >= BuildSite.MAX_LEVEL:
+		return "Niveau maximum"
+	var cost := s.upgrade_cost()
+	if metal < cost.metal:
+		return "Pas assez de métal (%d)" % cost.metal
+	if essence < cost.essence:
+		return "Pas assez d'essence (%d)" % cost.essence
+	return ""
+
+
+func upgrade(s: BuildSite) -> bool:
+	if can_upgrade(s) != "":
+		return false
+	var cost := s.upgrade_cost()
+	metal -= cost.metal
+	essence -= cost.essence
+	s.invested_metal += cost.metal
+	s.invested_essence += cost.essence
+	var old_max := s.max_hp
+	s.level += 1
+	s.max_hp = s.stats().hp
+	s.hp += s.max_hp - old_max
+	events.append({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
+	return true
+
+
+func sell(s: BuildSite) -> void:
+	if not sites.has(s):
+		return
+	var refund := s.sell_value()
+	metal += refund.metal
+	essence += refund.essence
+	sites.erase(s)
+	if s.built and s.kind == "house":
+		pop_cap -= Content.HOUSE.pop
+	pathfinder.set_solid(s.cell, false)
+	_flow_dirty = true
+	for w in workers:
+		if w.target_site == s:
+			_resume_or_idle(w)
 
 
 # --- Pouvoir de base ------------------------------------------------------------------
@@ -553,4 +603,12 @@ func _finish_site(s: BuildSite) -> void:
 		pop_cap += Content.HOUSE.pop
 	for w in workers:
 		if w.target_site == s:
-			_set_idle(w)
+			_resume_or_idle(w)
+
+
+## Après un chantier ou une réparation, l'ouvrier retourne à son gisement s'il en avait un.
+func _resume_or_idle(w: Worker) -> void:
+	if grid.is_inside(w.target_deposit):
+		command_harvest([w], w.target_deposit)
+	else:
+		_set_idle(w)

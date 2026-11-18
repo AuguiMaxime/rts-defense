@@ -7,6 +7,7 @@ var world: GameWorld
 var level: Dictionary
 var map_script: Variant
 var selected: Array[Worker] = []
+var focused_site: BuildSite = null
 var build_kind := "" # "" = pas en mode construction ; "orbital" = ciblage du pouvoir
 var speed := 1
 var paused := false
@@ -76,6 +77,8 @@ func _process(delta: float) -> void:
 	if not paused:
 		for i in speed:
 			world.tick(delta)
+	if focused_site != null and not world.sites.has(focused_site):
+		focus_site(null)
 	if selected.any(func(w: Worker) -> bool: return not world.workers.has(w)):
 		_set_selection(selected.filter(func(w: Worker) -> bool: return world.workers.has(w)))
 	if world.waves.wave != _last_wave:
@@ -111,10 +114,12 @@ func _on_tapped(world_px: Vector2) -> void:
 
 	var site := world.site_at(c)
 	if selected.is_empty():
-		map_view.set_selected(c)
 		if site != null:
-			hud.show_info(_site_info(site))
-		elif world.grid.is_inside(c):
+			focus_site(site)
+			return
+		focus_site(null)
+		map_view.set_selected(c)
+		if world.grid.is_inside(c):
 			hud.show_info(GameGrid.CELL_NAMES[world.grid.get_cell(c)])
 		return
 
@@ -132,14 +137,47 @@ func _on_tapped(world_px: Vector2) -> void:
 			world.command_move(selected, c)
 
 
-func _site_info(s: BuildSite) -> String:
-	var name: String = s.stats().name
-	if not s.built:
-		return "%s · chantier %d %%" % [name, roundi(s.progress() * 100)]
-	var txt := "%s · %d/%d PV" % [name, s.hp, s.max_hp]
-	if s.hp < s.max_hp:
-		txt += " · sélectionne des ouvriers puis touche-la pour réparer"
-	return txt
+func focus_site(s: BuildSite) -> void:
+	focused_site = s
+	units_view.focused_site = s
+	if s != null:
+		_set_selection([])
+		map_view.set_selected(Vector2i(-1, -1))
+
+
+func upgrade_focused() -> void:
+	var s := focused_site
+	if s == null:
+		return
+	var reason := world.can_upgrade(s)
+	if reason != "":
+		hud.flash(reason, Ui.RED)
+	else:
+		world.upgrade(s)
+		hud.flash("%s niveau %d" % [s.stats().name, s.level], Ui.GREEN)
+
+
+func repair_focused() -> void:
+	var s := focused_site
+	if s == null:
+		return
+	var crew: Array = []
+	for i in 2:
+		var w := world.nearest_available_worker(s.cell)
+		if w == null:
+			break
+		world.command_repair([w], s)
+		crew.append(w)
+	hud.flash("%d ouvrier(s) envoyé(s) en réparation" % crew.size() if not crew.is_empty() else "Aucun ouvrier disponible", Ui.GREEN if not crew.is_empty() else Ui.RED)
+
+
+func sell_focused() -> void:
+	if focused_site == null:
+		return
+	var refund := focused_site.sell_value()
+	world.sell(focused_site)
+	hud.flash("Vendu : +%d métal" % refund.metal, Ui.GOLD)
+	focus_site(null)
 
 
 func _try_place(c: Vector2i) -> void:
@@ -164,12 +202,18 @@ func _on_selection_ended(a: Vector2, b: Vector2) -> void:
 
 func _set_selection(ws: Array) -> void:
 	selected.assign(ws)
+	if not ws.is_empty() and focused_site != null:
+		focused_site = null
+		units_view.focused_site = null
 	units_view.selected = selected
 	map_view.set_selected(Vector2i(-1, -1))
 
 
 func set_build_kind(kind: String) -> void:
 	build_kind = kind
+	units_view.show_ranges = kind in Content.TOWERS
+	if kind != "":
+		focus_site(null)
 	hud.refresh_build_buttons()
 	if kind == "orbital":
 		hud.flash("Touche la zone à frapper", Ui.CYAN)

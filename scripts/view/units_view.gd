@@ -17,6 +17,8 @@ const COLOR_SELECT_FILL := Color(0.40, 1.0, 0.45, 0.12)
 
 var world: GameWorld
 var skin_tint := Color(1, 1, 1)
+var focused_site: BuildSite = null
+var show_ranges := false
 var selected: Array[Worker] = []
 var selection_rect := Rect2() # en pixels monde, vide = pas de sélection en cours
 var _effects: Array[Dictionary] = []
@@ -40,6 +42,18 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if world == null:
 		return
+	if show_ranges:
+		for s in world.sites:
+			if s.built and s.is_tower():
+				draw_circle((Vector2(s.cell) + Vector2(0.5, 0.5)) * TILE, s.stats().range * TILE, Color(0.13, 0.83, 0.93, 0.06))
+				draw_arc((Vector2(s.cell) + Vector2(0.5, 0.5)) * TILE, s.stats().range * TILE, 0, TAU, 64, Color(0.13, 0.83, 0.93, 0.25), 1.5)
+	if focused_site != null and world.sites.has(focused_site):
+		var fc := (Vector2(focused_site.cell) + Vector2(0.5, 0.5)) * TILE
+		draw_rect(Rect2(Vector2(focused_site.cell) * TILE, Vector2(TILE, TILE)).grow(3), Color(0.13, 0.83, 0.93), false, 3.0)
+		if focused_site.is_tower():
+			var rad: float = focused_site.stats().range * TILE
+			draw_circle(fc, rad, Color(0.13, 0.83, 0.93, 0.10))
+			draw_arc(fc, rad, 0, TAU, 72, Color(0.13, 0.83, 0.93, 0.7), 2.5)
 	for s in world.sites:
 		_draw_site(s)
 	for w in world.workers:
@@ -101,8 +115,11 @@ func _draw_site(s: BuildSite) -> void:
 			draw_line(from, to, Color(0.85, 1.0, 1.0, 0.95), 3.0)
 			draw_circle(to, 7, Color(0.85, 1.0, 1.0, 0.8))
 		draw_set_transform(r.get_center(), s.aim_angle + Sprites.TURRET_ANGLE_OFFSET)
-		draw_texture_rect(look.turret, Rect2(-30, -30, 60, 60), false, look.tint * skin_tint)
+		var ts := 60.0 + 4.0 * (s.level - 1)
+		draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint * skin_tint)
 		draw_set_transform(Vector2.ZERO)
+		for i in s.level - 1:
+			draw_rect(Rect2(r.position + Vector2(6 + i * 10, r.size.y - 12), Vector2(7, 7)), Color(0.98, 0.75, 0.15))
 	if s.hp < s.max_hp:
 		_draw_bar(r.grow(-6), float(s.hp) / s.max_hp)
 	for w in world.workers:

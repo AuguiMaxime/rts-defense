@@ -17,6 +17,13 @@ var _base_label: Label
 var _speed_btn: Button
 var _selection_panel: PanelContainer
 var _selection_label: Label
+var _site_panel: PanelContainer
+var _site_title: Label
+var _site_stats: Label
+var _site_hp: ProgressBar
+var _upgrade_btn: Button
+var _repair_btn: Button
+var _sell_btn: Button
 var _build_cards := {} # kind -> Button
 var _orbital_label: Label
 var _worker_label: Label
@@ -191,6 +198,7 @@ func _build_bottom_bar() -> void:
 	_selection_panel.size_flags_vertical = Control.SIZE_SHRINK_END
 	row.add_child(_selection_panel)
 	_blocks.append(_selection_panel)
+	_build_site_panel(row)
 
 	row.add_child(Ui.spacer())
 
@@ -232,6 +240,76 @@ func _build_bottom_bar() -> void:
 				flash("Frappe orbitale en recharge", Ui.RED))
 		_build_cards["orbital"] = orb
 		cards.add_child(orb)
+
+
+func _build_site_panel(row: HBoxContainer) -> void:
+	_site_panel = Ui.panel(Vector2(330, 0))
+	_site_panel.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.94), Color(Ui.CYAN, 0.6), 2, 8, 0.0))
+	_site_panel.size_flags_vertical = Control.SIZE_SHRINK_END
+	_site_panel.visible = false
+	var v := Ui.vbox(6)
+	var top := Ui.hbox(8)
+	_site_title = Ui.title("", 17, Ui.CYAN)
+	_site_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(_site_title)
+	var close := Ui.button("✕", false, Vector2(44, 36))
+	close.add_theme_font_size_override("font_size", 14)
+	close.pressed.connect(func() -> void: game.focus_site(null))
+	top.add_child(close)
+	v.add_child(top)
+	_site_hp = ProgressBar.new()
+	_site_hp.show_percentage = false
+	_site_hp.custom_minimum_size = Vector2(0, 10)
+	_site_hp.add_theme_stylebox_override("fill", Ui.box(Ui.GREEN, Ui.GREEN, 0, 4))
+	v.add_child(_site_hp)
+	_site_stats = Ui.label("", 18, Ui.MUTED)
+	v.add_child(_site_stats)
+	var btns := Ui.hbox(6)
+	_upgrade_btn = Ui.button("", true, Vector2(0, 50))
+	_upgrade_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_upgrade_btn.add_theme_font_size_override("font_size", 13)
+	_upgrade_btn.pressed.connect(func() -> void: game.upgrade_focused())
+	btns.add_child(_upgrade_btn)
+	_repair_btn = Ui.button("RÉPARER", false, Vector2(96, 50))
+	_repair_btn.add_theme_font_size_override("font_size", 13)
+	_repair_btn.pressed.connect(func() -> void: game.repair_focused())
+	btns.add_child(_repair_btn)
+	_sell_btn = Ui.button("", false, Vector2(96, 50))
+	_sell_btn.add_theme_font_size_override("font_size", 13)
+	_sell_btn.pressed.connect(func() -> void: game.sell_focused())
+	btns.add_child(_sell_btn)
+	v.add_child(btns)
+	_site_panel.add_child(v)
+	row.add_child(_site_panel)
+	_blocks.append(_site_panel)
+
+
+func _update_site_panel() -> void:
+	var s: BuildSite = game.focused_site
+	_site_panel.visible = s != null
+	if s == null:
+		return
+	var st := s.stats()
+	_site_title.text = "%s  ·  NIV. %d" % [st.name.to_upper(), s.level] if s.is_tower() else st.name.to_upper()
+	_site_hp.max_value = s.max_hp
+	_site_hp.value = s.hp
+	if not s.built:
+		_site_stats.text = "Chantier : %d %%" % roundi(s.progress() * 100)
+	elif s.is_tower():
+		var targets: String = {"both": "sol + air", "ground": "sol", "air": "air"}[st.targets]
+		_site_stats.text = "%d/%d PV · %d dégâts · portée %.1f · %s" % [s.hp, s.max_hp, st.damage, st.range, targets]
+	else:
+		_site_stats.text = "%d/%d PV · +%d population" % [s.hp, s.max_hp, Content.HOUSE.pop]
+	var can_up := s.built and s.is_tower() and s.level < BuildSite.MAX_LEVEL
+	_upgrade_btn.visible = can_up
+	if can_up:
+		var cost := s.upgrade_cost()
+		_upgrade_btn.text = "AMÉLIORER %dM%s" % [cost.metal, (" %dE" % cost.essence) if cost.essence > 0 else ""]
+		var ok: bool = game.world.can_upgrade(s) == ""
+		_upgrade_btn.modulate = Color(1, 1, 1) if ok else Color(1, 1, 1, 0.55)
+	_repair_btn.visible = s.built and s.hp < s.max_hp
+	var refund := s.sell_value()
+	_sell_btn.text = "VENDRE +%d" % refund.metal
 
 
 func _card(tex: Texture2D, title: String, metal: int, essence: int, icon_kind := "") -> Button:
@@ -467,6 +545,7 @@ func _process(delta: float) -> void:
 	_base_label.text = str(w.base_hp)
 
 	_selection_panel.visible = not game.selected.is_empty()
+	_update_site_panel()
 	_selection_label.text = "%d OUVRIER%s" % [game.selected.size(), "S" if game.selected.size() > 1 else ""]
 	_worker_label.text = "OUVRIER (+%d)" % w.train_queue if w.train_queue > 0 else "OUVRIER"
 

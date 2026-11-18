@@ -25,6 +25,8 @@ func _init() -> void:
 	_test_orbital()
 	_test_all_maps()
 	_test_config_bonuses()
+	_test_upgrade_sell()
+	_test_resume_harvest()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -330,3 +332,38 @@ func _test_config_bonuses() -> void:
 	world.command_harvest([world.workers[0]], Vector2i(1, 5))
 	_run(world, 30.0)
 	_check((world.metal - 400) % (Balance.CARRY_CAPACITY + 2) == 0 and world.metal > 400, "charge des ouvriers augmentée")
+
+
+func _test_upgrade_sell() -> void:
+	print("Amélioration et vente")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	var s := _built(world, "gun", Vector2i(2, 2))
+	world.metal = 1000
+	var dmg1: int = s.stats().damage
+	_check(world.upgrade(s) and s.level == 2, "amélioration au niveau 2")
+	_check(s.stats().damage > dmg1 and s.max_hp > Content.TOWERS.gun.hp, "dégâts et PV augmentés")
+	world.upgrade(s)
+	_check(world.can_upgrade(s) == "Niveau maximum", "niveau 3 maximum")
+	var before := world.metal
+	var refund: int = s.sell_value().metal
+	world.sell(s)
+	_check(not world.sites.has(s) and world.metal == before + refund and refund > 0, "vente : +%d métal" % refund)
+	_check(world.pathfinder.is_free(Vector2i(2, 2)), "la case se libère")
+	var site := world.place("gun", Vector2i(3, 3))
+	var m := world.metal
+	world.sell(site)
+	_check(world.metal == m + Content.TOWERS.gun.metal, "chantier pas commencé remboursé à 100 %")
+
+
+func _test_resume_harvest() -> void:
+	print("Retour à la récolte")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	var w := world.workers[0]
+	world.command_harvest([w], Vector2i(1, 5))
+	world.metal = 1000
+	var s := world.place("gun", Vector2i(3, 3))
+	world.command_build([w], s)
+	_run(world, 20.0)
+	_check(s.built, "chantier fini")
+	_check(w.job == Worker.Job.HARVEST, "l'ouvrier retourne à son gisement tout seul")
