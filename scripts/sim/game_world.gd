@@ -61,6 +61,8 @@ func _follow_path(w: Worker, delta: float) -> bool:
 	while step > 0.0 and not w.path.is_empty():
 		var target := Vector2(w.path[0]) + Vector2(0.5, 0.5)
 		var d := w.pos.distance_to(target)
+		if d > 0.001:
+			w.facing = (target - w.pos) / d
 		if d <= step:
 			w.pos = target
 			step -= d

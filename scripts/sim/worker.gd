@@ -7,6 +7,7 @@ enum Job { NONE, HARVEST, BUILD }
 
 var id := 0
 var pos := Vector2.ZERO
+var facing := Vector2.RIGHT # direction du dernier déplacement
 var state := State.IDLE
 var job := Job.NONE
 var path: Array[Vector2i] = []

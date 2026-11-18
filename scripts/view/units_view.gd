@@ -38,35 +38,36 @@ func _draw() -> void:
 func _draw_worker(w: Worker) -> void:
 	var p := w.pos * TILE
 	if selected.has(w):
-		draw_arc(p, 20, 0, TAU, 32, COLOR_SELECTED, 3.0)
-	draw_circle(p, 13, COLOR_WORKER_EDGE)
-	draw_circle(p, 11, COLOR_WORKER)
+		draw_circle(p, 22, Color(COLOR_SELECTED, 0.18))
+		draw_arc(p, 22, 0, TAU, 32, COLOR_SELECTED, 3.0)
+	draw_set_transform(p, w.facing.angle())
+	draw_texture_rect(Sprites.WORKER, Rect2(-42, -42, 84, 84), false)
+	draw_set_transform(Vector2.ZERO)
 	if w.carry_amount > 0:
 		var c := MapView.COLOR_METAL if w.carry_type == GameGrid.Cell.METAL else MapView.COLOR_ESSENCE
-		draw_circle(p + Vector2(9, -9), 6, COLOR_WORKER_EDGE)
-		draw_circle(p + Vector2(9, -9), 5, c)
+		draw_circle(p + Vector2(12, -14), 7, Color(0, 0, 0, 0.6))
+		draw_circle(p + Vector2(12, -14), 5.5, c)
 	if w.state == Worker.State.BUILDING:
-		draw_line(p + Vector2(-6, -16), p + Vector2(6, -22), COLOR_WORKER_EDGE, 4.0)
+		draw_arc(p, 16, -PI * 0.8, -PI * 0.2, 12, COLOR_WORKER, 3.0)
 
 
 func _draw_site(s: BuildSite) -> void:
-	var r := Rect2(Vector2(s.cell) * TILE, Vector2(TILE, TILE)).grow(-6)
-	var center := r.get_center()
+	var r := Rect2(Vector2(s.cell) * TILE, Vector2(TILE, TILE))
 	if s.built:
-		draw_rect(r, COLOR_TOWER_EDGE)
-		draw_rect(r.grow(-3), COLOR_TOWER)
-		draw_circle(center, 15, COLOR_TOWER_EDGE)
-		draw_circle(center, 12, COLOR_TOWER.lightened(0.25))
-		draw_line(center, center + Vector2(0, -24), COLOR_TOWER_EDGE, 7.0)
+		draw_texture_rect(Sprites.TOWER_BASE, r, false)
+		draw_set_transform(r.get_center(), s.aim_angle + Sprites.TURRET_ANGLE_OFFSET)
+		draw_texture_rect(Sprites.TURRET_GUN, Rect2(-30, -30, 60, 60), false)
+		draw_set_transform(Vector2.ZERO)
 		if s.hp < s.max_hp:
-			_draw_bar(r, float(s.hp) / s.max_hp)
+			_draw_bar(r.grow(-6), float(s.hp) / s.max_hp)
 	else:
-		var a := r.position
-		var b := r.end
+		draw_texture_rect(Sprites.TOWER_BASE, r, false, Color(1, 1, 1, 0.25 + 0.5 * s.progress()))
+		draw_texture_rect(Sprites.SITE, r.grow(-8), false, Color(1, 1, 1, 0.9))
+		var a := r.grow(-3).position
+		var b := r.grow(-3).end
 		for seg in [[a, Vector2(b.x, a.y)], [Vector2(b.x, a.y), b], [b, Vector2(a.x, b.y)], [Vector2(a.x, b.y), a]]:
 			draw_dashed_line(seg[0], seg[1], COLOR_SITE, 3.0, 8.0)
-		draw_circle(center, 12 * s.progress() + 2, Color(COLOR_TOWER, 0.6))
-		_draw_bar(r, s.progress())
+		_draw_bar(r.grow(-6), s.progress())
 
 
 func _draw_bar(r: Rect2, ratio: float) -> void:
