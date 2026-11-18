@@ -18,6 +18,7 @@ signal selection_cancelled
 const TAP_MAX_MOVE := 14.0
 
 var bounds := Rect2()
+var _shake := 0.0
 
 var _touches := {} # index du doigt -> position écran
 var _pinch_start_dist := 0.0
@@ -46,7 +47,18 @@ func screen_to_world(screen_pos: Vector2) -> Vector2:
 	return position + (screen_pos - half) / zoom.x
 
 
+## Secousse d'écran (explosions, frappe orbitale).
+func add_shake(strength: float) -> void:
+	_shake = maxf(_shake, strength)
+
+
 func _process(delta: float) -> void:
+	if _shake > 0.1:
+		offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
+		_shake = lerpf(_shake, 0.0, minf(1.0, delta * 9.0))
+	elif offset != Vector2.ZERO:
+		offset = Vector2.ZERO
+		_shake = 0.0
 	var dir := Vector2.ZERO
 	if Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_Q):
 		dir.x -= 1

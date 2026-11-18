@@ -19,6 +19,9 @@ var world: GameWorld
 var skin_tint := Color(1, 1, 1)
 var focused_site: BuildSite = null
 var show_ranges := false
+signal shake(strength: float)
+signal base_hit
+
 var tutorial_marker := Vector2.INF # en cases ; INF = aucun repère
 var selected: Array[Worker] = []
 var selection_rect := Rect2() # en pixels monde, vide = pas de sélection en cours
@@ -31,7 +34,7 @@ func _process(delta: float) -> void:
 	if world != null:
 		for ev in world.take_events():
 			_sound(ev)
-			ev["ttl"] = {"death": 0.45, "orbital": 0.9}.get(ev.type, 0.08 if ev.get("kind", "") == "gun" else 0.18)
+			ev["ttl"] = {"death": 0.45, "orbital": 0.9, "bounty": 0.9}.get(ev.type, 0.08 if ev.get("kind", "") == "gun" else 0.18)
 			ev["life"] = ev.ttl
 			_effects.append(ev)
 	for ev in _effects:
@@ -183,6 +186,11 @@ func _draw_effects() -> void:
 					_:
 						draw_line(ev.from * TILE, ev.to * TILE, Color(1, 0.95, 0.6, k), 3.0)
 						draw_circle(ev.to * TILE, 5, Color(1, 0.9, 0.5, k))
+			"bounty":
+				var t: float = 1.0 - ev.ttl / ev.life
+				var font := ThemeDB.fallback_font
+				draw_string_outline(font, ev.pos * TILE + Vector2(-12, -20 - 40 * t), "+%d" % ev.amount, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, 4, Color(0, 0, 0, 1.0 - t))
+				draw_string(font, ev.pos * TILE + Vector2(-12, -20 - 40 * t), "+%d" % ev.amount, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.62, 0.77, 1.0, 1.0 - t))
 			"orbital":
 				var t: float = 1.0 - ev.ttl / ev.life
 				var c: Vector2 = ev.pos * TILE
@@ -225,12 +233,17 @@ func _sound(ev: Dictionary) -> void:
 					Sfx.play("missile", -6.0, 0.15)
 				_:
 					Sfx.play("shot", -10.0, 0.07)
+		"base_hit":
+			base_hit.emit()
 		"death":
 			Sfx.play("explosion", -5.0 if ev.big else -9.0, 0.08)
+			if ev.big:
+				shake.emit(14.0 if ev.get("boss", false) else 5.0)
 			if ev.get("boss", false):
 				Sfx.play("victory", -4.0, 1.0)
 				Sfx.vibrate(250)
 		"orbital":
+			shake.emit(16.0)
 			Sfx.play("orbital", 0.0, 0.5)
 			Sfx.vibrate(120)
 		"built":

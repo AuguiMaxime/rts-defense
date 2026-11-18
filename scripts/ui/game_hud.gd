@@ -37,6 +37,8 @@ var _end_layer: Control
 var _blocks: Array[Control] = [] # zones qui bloquent les gestes sur la map
 var _flash_time := 0.0
 var _column: VBoxContainer
+var _damage_vignette: ColorRect
+var _damage_alpha := 0.0
 
 
 func setup(g: Node) -> void:
@@ -44,6 +46,16 @@ func setup(g: Node) -> void:
 	theme = Ui.theme
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_damage_vignette = ColorRect.new()
+	_damage_vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_damage_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_damage_vignette.color = Color(Ui.RED, 0.0)
+	var mat := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = "shader_type canvas_item;\nuniform float strength = 0.0;\nvoid fragment() {\n\tfloat d = distance(UV, vec2(0.5));\n\tCOLOR = vec4(0.97, 0.2, 0.25, smoothstep(0.35, 0.75, d) * strength);\n}"
+	mat.shader = sh
+	_damage_vignette.material = mat
+	add_child(_damage_vignette)
 	var m := MarginContainer.new()
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for side in ["left", "right", "top", "bottom"]:
@@ -529,6 +541,11 @@ func show_end(won: bool) -> void:
 
 # --- Mise à jour ----------------------------------------------------------------------
 
+## Voile rouge sur les bords quand la base est touchée.
+func flash_damage() -> void:
+	_damage_alpha = minf(0.75, _damage_alpha + 0.25)
+
+
 func show_info(text: String) -> void:
 	_info.text = text
 	_info.add_theme_color_override("font_color", Ui.MUTED)
@@ -616,5 +633,8 @@ func _process(delta: float) -> void:
 			_info.text = "Glisse un doigt pour sélectionner tes ouvriers, puis touche un gisement"
 		else:
 			_info.text = ""
+	if _damage_alpha > 0.0:
+		_damage_alpha = maxf(0.0, _damage_alpha - delta * 1.2)
+		(_damage_vignette.material as ShaderMaterial).set_shader_parameter("strength", _damage_alpha)
 	if _fps.visible:
 		_fps.text = "%d FPS" % Engine.get_frames_per_second()

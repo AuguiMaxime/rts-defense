@@ -71,6 +71,10 @@ func _process(delta: float) -> void:
 		return
 	_t += delta
 	var w: GameWorld = game.world
+	if w.waves.wave > 0:
+		# Le joueur a lancé une vague lui-même : il n'a plus besoin du tutoriel.
+		finish()
+		return
 	# Les vagues attendent que le joueur ait fini les étapes d'apprentissage.
 	if _step < STEPS.size() - 1:
 		w.waves.timer = maxf(w.waves.timer, Balance.FIRST_WAVE_DELAY)

@@ -46,6 +46,8 @@ func _ready() -> void:
 
 	$HUD.add_child(hud)
 	hud.setup(self)
+	units_view.shake.connect(camera.add_shake)
+	units_view.base_hit.connect(hud.flash_damage)
 	if level.id == 1 and not survival and not Save.data.get("tutorial_done", false):
 		tutorial = Tutorial.new()
 		tutorial.theme = Ui.theme

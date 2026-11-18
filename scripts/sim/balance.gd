@@ -45,3 +45,6 @@ const REPAIR_RATE := 12.0 # PV rendus par seconde et par ouvrier
 const HOUSE_BUILD_WORK := 6.0
 
 const BOSS_EVERY := 5 # un boss toutes les 5 vagues
+
+## Métal gagné en détruisant un ennemi.
+const KILL_BOUNTY := {"normal": 1, "fast": 1, "armored": 3, "flying": 2, "boss": 25}

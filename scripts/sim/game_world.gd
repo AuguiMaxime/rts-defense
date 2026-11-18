@@ -202,6 +202,9 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 	e.hp -= maxi(1, amount - e.armor)
 	if e.hp <= 0:
 		kills += 1
+		var bounty: int = Balance.KILL_BOUNTY.get(e.type, 1)
+		metal += bounty
+		events.append({"type": "bounty", "pos": e.pos, "amount": bounty})
 		events.append({"type": "death", "pos": e.pos, "big": e.type == "armored" or e.type == "boss", "boss": e.type == "boss"})
 
 
@@ -268,6 +271,7 @@ func _enemy_attack(e: Enemy) -> void:
 	match e.target_kind:
 		Enemy.Target.BASE:
 			base_hp -= e.damage
+			events.append({"type": "base_hit"})
 		Enemy.Target.WORKER:
 			var w: Worker = e.target_ref
 			w.hp -= e.damage
