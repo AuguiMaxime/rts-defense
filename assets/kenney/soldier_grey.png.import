@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://i4y88pvkol1v"
-path="res://.godot/imported/plane_green.png-8b7fd6b5eab309388035f5fc2b500468.ctex"
+uid="uid://btkvrg185xeuk"
+path="res://.godot/imported/soldier_grey.png-4fe7ad09f42d3b53e2c2378f886aa36a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/kenney/plane_green.png"
-dest_files=["res://.godot/imported/plane_green.png-8b7fd6b5eab309388035f5fc2b500468.ctex"]
+source_file="res://assets/kenney/soldier_grey.png"
+dest_files=["res://.godot/imported/soldier_grey.png-4fe7ad09f42d3b53e2c2378f886aa36a.ctex"]
 
 [params]
 

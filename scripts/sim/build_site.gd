@@ -7,7 +7,8 @@ var work_needed := Balance.TOWER_BUILD_WORK
 var work_done := 0.0
 var built := false
 var max_hp := Balance.TOWER_HP
-var hp := 0
+var hp := Balance.SITE_HP
+var cooldown := 0.0
 var aim_angle := -PI / 2.0 # orientation du canon (vers le haut par défaut)
 
 

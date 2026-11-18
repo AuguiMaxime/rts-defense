@@ -3,8 +3,17 @@ extends RefCounted
 ## État complet d'une partie et ses règles. Avancé par tick(delta).
 ## Aucune dépendance à l'affichage : c'est ce bloc qui tournera sur le serveur en multi.
 
+enum State { PLAYING, WON, LOST }
+
 var grid: GameGrid
 var pathfinder: Pathfinder
+var flow: FlowField
+var waves: WaveManager
+var state := State.PLAYING
+var base_hp := Balance.BASE_HP
+var enemies: Array[Enemy] = []
+## Événements visuels (tirs, destructions) que l'affichage récupère avec take_events().
+var events: Array[Dictionary] = []
 var metal := Balance.START_METAL
 var essence := Balance.START_ESSENCE
 var workers: Array[Worker] = []
@@ -13,11 +22,21 @@ var train_queue := 0
 var train_timer := 0.0
 
 var _next_id := 1
+var _flow_dirty := true
+var _base_rect := Rect2()
+var _rng := RandomNumberGenerator.new()
 
 
 func _init(g: GameGrid) -> void:
 	grid = g
 	pathfinder = Pathfinder.new(g)
+	flow = FlowField.new(g, pathfinder)
+	waves = WaveManager.new()
+	_rng.seed = 12345 # déterministe : même partie sur tous les appareils en multi
+	if not g.base_cells.is_empty():
+		_base_rect = Rect2(Vector2(g.base_cells[0]), Vector2.ONE)
+		for c in g.base_cells:
+			_base_rect = _base_rect.merge(Rect2(Vector2(c), Vector2.ONE))
 	for i in Balance.START_WORKERS:
 		_spawn_worker()
 
@@ -25,6 +44,12 @@ func _init(g: GameGrid) -> void:
 # --- Avancement du temps -------------------------------------------------
 
 func tick(delta: float) -> void:
+	if state != State.PLAYING:
+		return
+	waves.tick(delta, self)
+	if _flow_dirty:
+		flow.rebuild()
+		_flow_dirty = false
 	if train_queue > 0:
 		train_timer += delta
 		if train_timer >= Balance.WORKER_TRAIN_TIME:
@@ -33,6 +58,166 @@ func tick(delta: float) -> void:
 			_spawn_worker()
 	for w in workers:
 		_tick_worker(w, delta)
+	for s in sites:
+		if s.built:
+			_tick_tower(s, delta)
+	for e in enemies:
+		_tick_enemy(e, delta)
+	_remove_dead()
+	if base_hp <= 0:
+		base_hp = 0
+		state = State.LOST
+	elif waves.finished() and enemies.is_empty():
+		state = State.WON
+
+
+## Reprend la partie après une victoire, en waves infinies.
+func continue_infinite() -> void:
+	waves.infinite = true
+	waves.timer = Balance.WAVE_INTERVAL
+	state = State.PLAYING
+
+
+func take_events() -> Array[Dictionary]:
+	var e := events
+	events = []
+	return e
+
+
+func spawn_enemy(type_name: String, cell: Vector2i, hp_scale: float) -> void:
+	var at := Vector2(cell) + Vector2(0.5, 0.5) + Vector2(_rng.randf_range(-0.3, 0.3), _rng.randf_range(-0.3, 0.3))
+	var e := Enemy.create(type_name, at, hp_scale)
+	e.visual_offset = Vector2(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.2, 0.2))
+	enemies.append(e)
+
+
+func base_center() -> Vector2:
+	return _base_rect.get_center()
+
+
+# --- Combat ---------------------------------------------------------------------
+
+func _tick_tower(s: BuildSite, delta: float) -> void:
+	s.cooldown -= delta
+	var center := Vector2(s.cell) + Vector2(0.5, 0.5)
+	var best: Enemy = null
+	var best_d := Balance.TOWER_RANGE
+	for e in enemies:
+		if e.hp <= 0:
+			continue
+		var d := center.distance_to(e.pos)
+		if d <= best_d:
+			best = e
+			best_d = d
+	if best == null:
+		return
+	s.aim_angle = (best.pos - center).angle()
+	if s.cooldown <= 0.0:
+		s.cooldown = Balance.TOWER_FIRE_DELAY
+		_damage_enemy(best, Balance.TOWER_DAMAGE)
+		events.append({"type": "shot", "from": center, "to": best.pos})
+
+
+func _damage_enemy(e: Enemy, amount: int) -> void:
+	e.hp -= maxi(1, amount - e.armor)
+	if e.hp <= 0:
+		events.append({"type": "death", "pos": e.pos, "big": e.type == "armored"})
+
+
+func _tick_enemy(e: Enemy, delta: float) -> void:
+	if e.hp <= 0:
+		return
+	e.attack_timer -= delta
+	e.retarget_timer -= delta
+	if e.retarget_timer <= 0.0:
+		e.retarget_timer = 0.25
+		_pick_target(e)
+	if e.target_kind != Enemy.Target.NONE and _target_distance(e) <= e.attack_range:
+		if e.attack_timer <= 0.0:
+			e.attack_timer = e.cooldown
+			_enemy_attack(e)
+		return
+	var dir := Vector2.ZERO
+	if not e.flying:
+		dir = flow.direction_at(e.pos)
+	if dir == Vector2.ZERO:
+		dir = (base_center() - e.pos).normalized()
+	e.facing = dir
+	e.pos += dir * e.speed * delta
+
+
+## Cible la plus proche à portée : ouvrier, chantier, tourelle ou base.
+func _pick_target(e: Enemy) -> void:
+	e.target_kind = Enemy.Target.NONE
+	e.target_ref = null
+	var best_d := e.attack_range
+	var d := _dist_to_rect(e.pos, _base_rect)
+	if d <= best_d:
+		best_d = d
+		e.target_kind = Enemy.Target.BASE
+	for w in workers:
+		d = e.pos.distance_to(w.pos) - 0.3
+		if d < best_d:
+			best_d = d
+			e.target_kind = Enemy.Target.WORKER
+			e.target_ref = w
+	for s in sites:
+		d = _dist_to_rect(e.pos, Rect2(Vector2(s.cell), Vector2.ONE))
+		if d < best_d:
+			best_d = d
+			e.target_kind = Enemy.Target.SITE
+			e.target_ref = s
+
+
+func _target_distance(e: Enemy) -> float:
+	match e.target_kind:
+		Enemy.Target.BASE:
+			return _dist_to_rect(e.pos, _base_rect)
+		Enemy.Target.WORKER:
+			var w: Worker = e.target_ref
+			return e.pos.distance_to(w.pos) - 0.3 if workers.has(w) else INF
+		Enemy.Target.SITE:
+			var s: BuildSite = e.target_ref
+			return _dist_to_rect(e.pos, Rect2(Vector2(s.cell), Vector2.ONE)) if sites.has(s) else INF
+	return INF
+
+
+func _enemy_attack(e: Enemy) -> void:
+	var to := base_center()
+	match e.target_kind:
+		Enemy.Target.BASE:
+			base_hp -= e.damage
+		Enemy.Target.WORKER:
+			var w: Worker = e.target_ref
+			w.hp -= e.damage
+			to = w.pos
+		Enemy.Target.SITE:
+			var s: BuildSite = e.target_ref
+			s.hp -= e.damage
+			to = Vector2(s.cell) + Vector2(0.5, 0.5)
+	events.append({"type": "hit", "from": e.pos, "to": to, "ranged": e.attack_range > 1.5})
+
+
+func _remove_dead() -> void:
+	enemies = enemies.filter(func(e: Enemy) -> bool: return e.hp > 0)
+	for w in workers.duplicate():
+		if w.hp <= 0:
+			workers.erase(w)
+			events.append({"type": "death", "pos": w.pos, "big": false})
+	for s in sites.duplicate():
+		if s.hp <= 0:
+			sites.erase(s)
+			pathfinder.set_solid(s.cell, false)
+			_flow_dirty = true
+			events.append({"type": "death", "pos": Vector2(s.cell) + Vector2(0.5, 0.5), "big": true})
+			for w in workers:
+				if w.target_site == s:
+					_set_idle(w)
+
+
+static func _dist_to_rect(p: Vector2, r: Rect2) -> float:
+	var q := Vector2(clampf(p.x, r.position.x, r.end.x), clampf(p.y, r.position.y, r.end.y))
+	return p.distance_to(q)
 
 
 func _tick_worker(w: Worker, delta: float) -> void:
@@ -159,6 +344,7 @@ func place_tower(c: Vector2i) -> BuildSite:
 	s.cell = c
 	sites.append(s)
 	pathfinder.set_solid(c, true)
+	_flow_dirty = true
 	for w in workers:
 		if w.state == Worker.State.MOVING and w.path.has(c):
 			_set_path(w, pathfinder.find_path(w.cell(), w.path.back()))

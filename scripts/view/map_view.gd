@@ -6,7 +6,7 @@ extends Node2D
 const TILE := 64
 
 const COLOR_GRID := Color(0, 0, 0, 0.07)
-const GRASS_TINT := Color(0.52, 0.68, 0.50)
+const GRASS_TINT := Color(0.44, 0.58, 0.44)
 const COLOR_METAL := Color(0.62, 0.80, 1.0)
 const COLOR_ESSENCE := Color(1.0, 0.62, 0.18)
 const COLOR_TEAM := Color(0.30, 0.62, 1.0)

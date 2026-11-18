@@ -12,6 +12,13 @@ func _init() -> void:
 	_test_build_speed()
 	_test_anti_block()
 	_test_worker_training()
+	_test_flow_field()
+	_test_enemy_reaches_base()
+	_test_tower_kills()
+	_test_destroyed_tower_reopens()
+	_test_defeat()
+	_test_wave_composition()
+	_test_map01_full_run()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -112,3 +119,104 @@ func _test_worker_training() -> void:
 	_check(world.metal == Balance.START_METAL - Balance.WORKER_COST_METAL, "métal débité")
 	_run(world, Balance.WORKER_TRAIN_TIME + 0.2)
 	_check(world.workers.size() == n + 1, "l'ouvrier apparaît après le temps de formation")
+
+
+func _test_flow_field() -> void:
+	print("Flow field")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.tick(0.01)
+	_check(world.flow.distance_at(Vector2i(0, 0)) < FlowField.UNREACHABLE, "le spawn a un chemin vers la base")
+	var p := Vector2(0.5, 0.5)
+	for i in 400:
+		var d := world.flow.direction_at(p)
+		if d == Vector2.ZERO:
+			break
+		p += d * 0.1
+	_check(GameWorld._dist_to_rect(p, Rect2(7, 3, 3, 3)) < 1.6, "en suivant le champ on arrive au contact de la base")
+
+
+func _test_enemy_reaches_base() -> void:
+	print("Ennemis")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	_run(world, 25.0)
+	_check(world.base_hp < Balance.BASE_HP, "un ennemi au sol atteint la base et l'attaque (%d PV)" % world.base_hp)
+	var world2 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world2.waves.timer = 9999
+	world2.workers.clear()
+	world2.spawn_enemy("flying", Vector2i(0, 0), 1.0)
+	_run(world2, 10.0)
+	_check(world2.base_hp < Balance.BASE_HP, "un volant va droit sur la base")
+
+
+func _test_tower_kills() -> void:
+	print("Tourelles")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.metal = 1000
+	var s := world.place_tower(Vector2i(3, 1))
+	s.work_done = s.work_needed
+	s.built = true
+	s.hp = s.max_hp
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	_run(world, 8.0)
+	_check(world.enemies.is_empty(), "la tourelle tue un ennemi normal")
+	_check(world.base_hp == Balance.BASE_HP, "la base n'a rien pris")
+	world.spawn_enemy("armored", Vector2i(0, 0), 1.0)
+	var e: Enemy = world.enemies[0]
+	world._damage_enemy(e, Balance.TOWER_DAMAGE)
+	_check(e.max_hp - e.hp == Balance.TOWER_DAMAGE - e.armor, "l'armure réduit les dégâts")
+
+
+func _test_destroyed_tower_reopens() -> void:
+	print("Destruction")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.metal = 1000
+	var s := world.place_tower(Vector2i(2, 2))
+	world.tick(0.01)
+	s.hp = 0
+	world.tick(0.01)
+	_check(not world.sites.has(s), "un chantier à 0 PV disparaît")
+	_check(world.pathfinder.is_free(Vector2i(2, 2)), "sa case redevient praticable")
+	var w := world.workers[0]
+	w.hp = 0
+	world.tick(0.01)
+	_check(not world.workers.has(w), "un ouvrier à 0 PV disparaît")
+
+
+func _test_defeat() -> void:
+	print("Défaite et victoire")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.base_hp = 1
+	world.waves.timer = 9999
+	world.workers.clear()
+	world.spawn_enemy("normal", Vector2i(6, 2), 1.0)
+	_run(world, 5.0)
+	_check(world.state == GameWorld.State.LOST, "base détruite = défaite")
+	var world2 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world2.waves.wave = world2.waves.total
+	world2.tick(0.01)
+	_check(world2.state == GameWorld.State.WON, "toutes les waves passées et plus d'ennemis = victoire")
+	world2.continue_infinite()
+	_check(world2.state == GameWorld.State.PLAYING and world2.waves.has_more_waves(), "le mode infini relance les waves")
+
+
+func _test_wave_composition() -> void:
+	print("Composition des waves")
+	_check(WaveManager.composition(1).size() == 6, "wave 1 : 6 ennemis")
+	_check(not WaveManager.composition(3).has("armored"), "pas de blindé avant la wave 4")
+	_check(WaveManager.composition(4).has("armored"), "blindés dès la wave 4")
+	_check(WaveManager.composition(5).has("flying"), "volants dès la wave 5")
+
+
+## Partie complète sans aucune défense : la base doit tomber, et sans planter.
+func _test_map01_full_run() -> void:
+	print("Map 1 sans défense")
+	var world := GameWorld.new(MapLoader.from_layout(preload("res://maps/map_01.gd").LAYOUT))
+	var t := 0.0
+	while world.state == GameWorld.State.PLAYING and t < 900.0:
+		world.tick(0.05)
+		t += 0.05
+	_check(world.state == GameWorld.State.LOST, "sans tourelle, la base tombe (vague %d, %.0f s)" % [world.waves.wave, t])

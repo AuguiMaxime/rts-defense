@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ddyyq28lqcnir"
-path="res://.godot/imported/tank_green.png-92fc727ac7fdab09ad91ee5537785cf6.ctex"
+uid="uid://dpj4s1xf23vn4"
+path="res://.godot/imported/plane_grey.png-a31e8e8f2c1510fd1e0cbb9bfe5780a8.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/kenney/tank_green.png"
-dest_files=["res://.godot/imported/tank_green.png-92fc727ac7fdab09ad91ee5537785cf6.ctex"]
+source_file="res://assets/kenney/plane_grey.png"
+dest_files=["res://.godot/imported/plane_grey.png-a31e8e8f2c1510fd1e0cbb9bfe5780a8.ctex"]
 
 [params]
 
