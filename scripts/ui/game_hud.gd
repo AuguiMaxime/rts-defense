@@ -214,6 +214,7 @@ func _build_bottom_bar() -> void:
 			continue
 		var t: Dictionary = Content.TOWERS[kind]
 		var card := _card(Sprites.TOWER_LOOK[kind].turret, t.name.to_upper(), t.metal, t.essence)
+		(card.get_node("V").get_child(0) as TextureRect).modulate = Sprites.TOWER_LOOK[kind].tint
 		card.pressed.connect(func() -> void: game.set_build_kind("" if game.build_kind == kind else kind))
 		_build_cards[kind] = card
 		cards.add_child(card)
@@ -432,8 +433,9 @@ func refresh_build_buttons() -> void:
 	for kind in _build_cards:
 		var b: Button = _build_cards[kind]
 		b.theme_type_variation = "PrimaryButton" if game.build_kind == kind else ""
-		var name_label: Label = b.get_node("V/Name")
-		name_label.add_theme_color_override("font_color", Ui.BG if game.build_kind == kind else Ui.TEXT)
+		var on: bool = game.build_kind == kind
+		(b.get_node("V/Name") as Label).add_theme_color_override("font_color", Ui.BG if on else Ui.TEXT)
+		(b.get_node("V/Cost") as Label).add_theme_color_override("font_color", Ui.BG if on else Ui.METAL)
 
 
 func _process(delta: float) -> void:
@@ -474,7 +476,7 @@ func _process(delta: float) -> void:
 		var cost := Content.building(kind)
 		var ok: bool = w.metal >= cost.metal and w.essence >= cost.essence
 		(_build_cards[kind] as Button).modulate = Color(1, 1, 1) if ok else Color(1, 1, 1, 0.55)
-	if _orbital_label != null:
+	if _orbital_label != null and game.build_kind != "orbital":
 		_orbital_label.text = "PRÊTE" if w.orbital_ready() else "%d s" % ceili(w.orbital_cooldown)
 		_orbital_label.add_theme_color_override("font_color", Ui.GREEN if w.orbital_ready() else Ui.MUTED)
 

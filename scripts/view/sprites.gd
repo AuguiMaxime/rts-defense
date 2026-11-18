@@ -51,7 +51,7 @@ const TOWER_LOOK := {
 
 ## Sol de chaque map : texture et teinte.
 const GROUND_LOOK := {
-	"grass": {"tex": GRASS, "tint": Color(0.44, 0.58, 0.44)},
-	"sand": {"tex": SAND, "tint": Color(0.80, 0.68, 0.55)},
+	"grass": {"tex": GRASS, "tint": Color(0.34, 0.46, 0.38)},
+	"sand": {"tex": SAND, "tint": Color(0.70, 0.58, 0.48)},
 	"dirt": {"tex": DIRT, "tint": Color(0.55, 0.50, 0.50)},
 }
