@@ -17,6 +17,7 @@ var carry_type := -1 # GameGrid.Cell.METAL ou ESSENCE
 var carry_amount := 0
 var timer := 0.0
 var hp := Balance.WORKER_HP
+var alive := true
 
 
 func cell() -> Vector2i:

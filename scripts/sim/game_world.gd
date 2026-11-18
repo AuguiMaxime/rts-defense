@@ -35,6 +35,9 @@ var _next_id := 1
 var _flow_dirty := true
 var _base_rect := Rect2()
 var _rng := RandomNumberGenerator.new()
+## Grille spatiale des ennemis (cases de BUCKET x BUCKET), refaite à chaque tick.
+const BUCKET := 4
+var _buckets := {}
 
 
 ## config (optionnel) : start_metal, start_workers, base_hp, damage_mult, worker_speed_mult,
@@ -83,6 +86,7 @@ func tick(delta: float) -> void:
 			_spawn_worker()
 	for w in workers:
 		_tick_worker(w, delta)
+	_rebuild_buckets()
 	for s in sites:
 		if s.built and s.is_tower():
 			_tick_tower(s, delta)
@@ -122,32 +126,69 @@ func base_center() -> Vector2:
 
 # --- Combat ---------------------------------------------------------------------
 
-func _tick_tower(s: BuildSite, delta: float) -> void:
-	var st := s.stats()
-	s.cooldown -= delta
-	var center := Vector2(s.cell) + Vector2(0.5, 0.5)
-	var best: Enemy = null
-	var best_d: float = st.range
+func _rebuild_buckets() -> void:
+	_buckets.clear()
 	for e in enemies:
 		if e.hp <= 0:
 			continue
-		if (st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying):
-			continue
-		var d := center.distance_to(e.pos)
-		if d <= best_d:
-			best = e
-			best_d = d
-	s.beam_target = best if s.kind == "laser" else null
-	if best == null:
+		var k := Vector2i(int(e.pos.x) / BUCKET, int(e.pos.y) / BUCKET)
+		if _buckets.has(k):
+			_buckets[k].append(e)
+		else:
+			_buckets[k] = [e]
+
+
+func _can_hit(st: Dictionary, e: Enemy) -> bool:
+	return e.hp > 0 and not ((st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying))
+
+
+func _find_target(center: Vector2, st: Dictionary) -> Enemy:
+	var r: float = st.range
+	var best: Enemy = null
+	var best_d := r * r
+	var b0 := Vector2i(int(center.x - r) / BUCKET, int(center.y - r) / BUCKET)
+	var b1 := Vector2i(int(center.x + r) / BUCKET, int(center.y + r) / BUCKET)
+	for by in range(b0.y, b1.y + 1):
+		for bx in range(b0.x, b1.x + 1):
+			var list: Variant = _buckets.get(Vector2i(bx, by))
+			if list == null:
+				continue
+			for e: Enemy in list:
+				if not _can_hit(st, e):
+					continue
+				var d := center.distance_squared_to(e.pos)
+				if d <= best_d:
+					best = e
+					best_d = d
+	return best
+
+
+func _tick_tower(s: BuildSite, delta: float) -> void:
+	var st := s.stats()
+	s.cooldown -= delta
+	s.retarget_timer -= delta
+	var center := Vector2(s.cell) + Vector2(0.5, 0.5)
+	var t := s.target
+	# On garde la cible tant qu'elle est vivante et à portée ; sinon on cherche (au plus 5 fois par seconde).
+	if t == null or t.hp <= 0 or center.distance_squared_to(t.pos) > st.range * st.range:
+		t = null
+		if s.retarget_timer <= 0.0:
+			s.retarget_timer = 0.2
+			t = _find_target(center, st)
+	s.target = t
+	s.beam_target = t if s.kind == "laser" else null
+	if t == null:
 		return
+	var best := t
 	s.aim_angle = (best.pos - center).angle()
 	if s.cooldown > 0.0:
 		return
 	s.cooldown = st.delay
 	var dmg := roundi(st.damage * damage_mult)
 	if st.splash > 0.0:
+		var sp: float = st.splash
 		for e in enemies:
-			if e.hp > 0 and not e.flying and e.pos.distance_to(best.pos) <= st.splash:
+			if e.hp > 0 and not e.flying and e.pos.distance_squared_to(best.pos) <= sp * sp:
 				_damage_enemy(e, dmg)
 	else:
 		_damage_enemy(best, dmg)
@@ -215,10 +256,10 @@ func _target_distance(e: Enemy) -> float:
 			return _dist_to_rect(e.pos, _base_rect)
 		Enemy.Target.WORKER:
 			var w: Worker = e.target_ref
-			return e.pos.distance_to(w.pos) - 0.3 if workers.has(w) else INF
+			return e.pos.distance_to(w.pos) - 0.3 if w.alive else INF
 		Enemy.Target.SITE:
 			var s: BuildSite = e.target_ref
-			return _dist_to_rect(e.pos, Rect2(Vector2(s.cell), Vector2.ONE)) if sites.has(s) else INF
+			return _dist_to_rect(e.pos, Rect2(Vector2(s.cell), Vector2.ONE)) if s.alive else INF
 	return INF
 
 
@@ -239,13 +280,18 @@ func _enemy_attack(e: Enemy) -> void:
 
 
 func _remove_dead() -> void:
-	enemies = enemies.filter(func(e: Enemy) -> bool: return e.hp > 0)
-	for w in workers.duplicate():
+	for e in enemies:
+		if e.hp <= 0:
+			enemies = enemies.filter(func(x: Enemy) -> bool: return x.hp > 0)
+			break
+	for w in workers.filter(func(x: Worker) -> bool: return x.hp <= 0):
 		if w.hp <= 0:
+			w.alive = false
 			workers.erase(w)
 			events.append({"type": "death", "pos": w.pos, "big": false})
-	for s in sites.duplicate():
+	for s in sites.filter(func(x: BuildSite) -> bool: return x.hp <= 0):
 		if s.hp <= 0:
+			s.alive = false
 			sites.erase(s)
 			if s.built and s.kind == "house":
 				pop_cap -= Content.HOUSE.pop
@@ -275,7 +321,7 @@ func _tick_worker(w: Worker, delta: float) -> void:
 				_move_to_adjacent(w, grid.base_cells)
 		Worker.State.BUILDING:
 			var s := w.target_site
-			if s == null or s.built or not sites.has(s):
+			if s == null or s.built or not s.alive:
 				_set_idle(w)
 				return
 			s.work_done += delta
@@ -283,7 +329,7 @@ func _tick_worker(w: Worker, delta: float) -> void:
 				_finish_site(s)
 		Worker.State.REPAIRING:
 			var s := w.target_site
-			if s == null or not sites.has(s) or s.hp >= s.max_hp:
+			if s == null or not s.alive or s.hp >= s.max_hp:
 				_set_idle(w)
 				return
 			s.hp = mini(s.max_hp, s.hp + ceili(Balance.REPAIR_RATE * delta))
@@ -483,6 +529,7 @@ func sell(s: BuildSite) -> void:
 	var refund := s.sell_value()
 	metal += refund.metal
 	essence += refund.essence
+	s.alive = false
 	sites.erase(s)
 	if s.built and s.kind == "house":
 		pop_cap -= Content.HOUSE.pop

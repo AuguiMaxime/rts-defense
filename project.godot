@@ -7,7 +7,12 @@ run/main_scene="res://scenes/main_menu.tscn"
 
 config/name="RTS Defense"
 config/features=PackedStringArray("4.7", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="res://assets/branding/icon.png"
+boot_splash/bg_color=Color(0.027, 0.043, 0.078, 1)
+boot_splash/image="res://assets/branding/splash.png"
+boot_splash/fullsize=false
+boot_splash/show_image=true
+config/version="0.5"
 
 [autoload]
 

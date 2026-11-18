@@ -17,11 +17,17 @@ et tu tiens ta base face aux vagues.
 | Caméra | 2 doigts pour déplacer, pincer pour zoomer | clic droit glissé, ZQSD, molette |
 
 ## Contenu
-- **Écrans** : menu principal, campagne (3 secteurs), boutique, technologies, paramètres, pause, fin de partie.
-- **Tourelles** : mitrailleuse (sol + air), canon lourd (zone, sol, perce l'armure), anti-air, laser (boutique).
+- **Écrans** : menu principal, campagne (5 secteurs), boutique, technologies, paramètres, pause, fin de partie.
+- **Modes** : campagne, Survie (vagues infinies, débloquée après chaque secteur, record sauvegardé).
+- **Tutoriel** guidé à la première partie.
+- **Tourelles** : mitrailleuse (sol + air), canon lourd (zone, sol), anti-air, laser (boutique).
+  Chaque tourelle s'améliore jusqu'au niveau 3, se répare et se vend (touche-la).
 - **Bâtiments** : habitat (+3 de population). **Pouvoir** : frappe orbitale (techno).
-- **Ennemis** : normal, rapide, blindé (armure), volant (ignore le labyrinthe).
+- **Ennemis** : normal, rapide, blindé (armure), volant (ignore le labyrinthe), boss toutes les 5 vagues.
 - **Progression** : crédits gagnés en mission → technos permanentes et augments ; or → laser et skins.
+
+## Sur téléphone
+Voir [docs/ANDROID.md](docs/ANDROID.md) : installation des outils et déploiement en un clic.
 
 ## Organisation du code
 ```
