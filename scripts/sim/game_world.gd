@@ -59,6 +59,7 @@ func _init(g: GameGrid, config := {}) -> void:
 			_base_rect = _base_rect.merge(Rect2(Vector2(c), Vector2.ONE))
 	waves.total = config.get("waves", Balance.WAVE_COUNT)
 	waves.difficulty = config.get("difficulty", 1.0)
+	waves.interval = config.get("wave_interval", Balance.WAVE_INTERVAL)
 	for i in config.get("start_workers", Balance.START_WORKERS):
 		_spawn_worker()
 
@@ -98,7 +99,7 @@ func tick(delta: float) -> void:
 ## Reprend la partie après une victoire, en waves infinies.
 func continue_infinite() -> void:
 	waves.infinite = true
-	waves.timer = Balance.WAVE_INTERVAL
+	waves.timer = waves.interval
 	state = State.PLAYING
 
 

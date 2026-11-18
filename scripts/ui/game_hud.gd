@@ -27,6 +27,7 @@ var _sell_btn: Button
 var _build_cards := {} # kind -> Button
 var _orbital_label: Label
 var _worker_label: Label
+var _worker_card: Button
 var _fps: Label
 var _boss_panel: PanelContainer
 var _boss_bar: ProgressBar
@@ -70,6 +71,8 @@ func setup(g: Node) -> void:
 
 
 func is_over_ui(p: Vector2) -> bool:
+	if game.tutorial != null and is_instance_valid(game.tutorial) and game.tutorial.blocks(p):
+		return true
 	if _pause_layer.visible or (_end_layer != null and _end_layer.visible):
 		return true
 	for b in _blocks:
@@ -234,6 +237,7 @@ func _build_bottom_bar() -> void:
 
 	var worker := _card(Sprites.WORKER, "OUVRIER", Balance.WORKER_COST_METAL, 0)
 	_worker_label = worker.get_node("V/Name")
+	_worker_card = worker
 	worker.pressed.connect(func() -> void: game.train_worker())
 	cards.add_child(worker)
 	var sep := ColorRect.new()
@@ -539,6 +543,14 @@ func flash(text: String, color := Ui.CYAN) -> void:
 	_flash_time = 2.5
 
 
+## Fait clignoter une carte de construction (tutoriel). kind "" = aucune.
+func pulse_card(kind: String, t: float) -> void:
+	for k in _build_cards:
+		var b: Button = _build_cards[k]
+		b.self_modulate = Color(1, 1, 1).lerp(Color(0.4, 1.6, 1.8), 0.5 + 0.5 * sin(t * 6.0)) if k == kind else Color(1, 1, 1)
+	_worker_card.self_modulate = Color(1, 1, 1).lerp(Color(0.4, 1.6, 1.8), 0.5 + 0.5 * sin(t * 6.0)) if kind == "" and game.tutorial != null and game.tutorial._step == 3 else Color(1, 1, 1)
+
+
 func refresh_build_buttons() -> void:
 	for kind in _build_cards:
 		var b: Button = _build_cards[kind]
@@ -561,7 +573,7 @@ func _process(delta: float) -> void:
 	_wave_title.text = "VAGUE %d/%s" % [wv.wave, "∞" if wv.infinite else str(wv.total)]
 	_next_btn.visible = wv.has_more_waves()
 	if wv.has_more_waves():
-		var span := Balance.FIRST_WAVE_DELAY if wv.wave == 0 else Balance.WAVE_INTERVAL
+		var span := Balance.FIRST_WAVE_DELAY if wv.wave == 0 else wv.interval
 		_wave_bar.max_value = span
 		_wave_bar.value = span - wv.timer
 		_wave_detail.text = "Prochaine dans %d s  ·  %d ennemis" % [ceili(wv.timer), w.enemies.size()]
@@ -600,7 +612,7 @@ func _process(delta: float) -> void:
 		_flash_time -= delta
 	else:
 		_info.add_theme_color_override("font_color", Ui.MUTED)
-		if game.build_kind == "" and game.selected.is_empty() and w.waves.wave == 0:
+		if game.build_kind == "" and game.selected.is_empty() and w.waves.wave == 0 and not is_instance_valid(game.tutorial):
 			_info.text = "Glisse un doigt pour sélectionner tes ouvriers, puis touche un gisement"
 		else:
 			_info.text = ""

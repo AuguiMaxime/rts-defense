@@ -13,6 +13,7 @@ var speed := 1
 var paused := false
 var survival := false
 var new_record := false
+var tutorial: Tutorial = null
 var _ended := false
 var _granted_waves := 0
 var _granted_kills := 0
@@ -45,6 +46,11 @@ func _ready() -> void:
 
 	$HUD.add_child(hud)
 	hud.setup(self)
+	if level.id == 1 and not survival and not Save.data.get("tutorial_done", false):
+		tutorial = Tutorial.new()
+		tutorial.theme = Ui.theme
+		$HUD.add_child(tutorial)
+		tutorial.setup(self)
 
 
 ## Bonus de technos et augments appliqués à la partie.
@@ -52,6 +58,7 @@ func _build_config() -> Dictionary:
 	var cfg := {
 		"waves": level.waves,
 		"difficulty": 1.0 if Ui.survival else level.difficulty,
+		"wave_interval": level.get("interval", Balance.WAVE_INTERVAL),
 		"start_metal": Balance.START_METAL + int(Content.tech("reserves").value) * Save.tech_level("reserves"),
 		"start_workers": Balance.START_WORKERS,
 		"base_hp": roundi(Balance.BASE_HP * (1.0 + Content.tech("hull").value * Save.tech_level("hull"))),

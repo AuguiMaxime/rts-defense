@@ -19,6 +19,7 @@ var world: GameWorld
 var skin_tint := Color(1, 1, 1)
 var focused_site: BuildSite = null
 var show_ranges := false
+var tutorial_marker := Vector2.INF # en cases ; INF = aucun repère
 var selected: Array[Worker] = []
 var selection_rect := Rect2() # en pixels monde, vide = pas de sélection en cours
 var _effects: Array[Dictionary] = []
@@ -66,6 +67,14 @@ func _draw() -> void:
 			_draw_enemy(e)
 	_draw_effects()
 	_draw_base_hp()
+	if tutorial_marker != Vector2.INF:
+		var c := tutorial_marker * TILE
+		var k := fmod(_anim * 1.2, 1.0)
+		draw_arc(c, 34 + 40 * k, 0, TAU, 48, Color(0.13, 0.83, 0.93, 1.0 - k), 4.0)
+		draw_arc(c, 34, 0, TAU, 48, Color(0.13, 0.83, 0.93, 0.9), 3.0)
+		var bob := sin(_anim * 5.0) * 8.0
+		var tip := c + Vector2(0, -46 + bob)
+		draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-16, -26), tip + Vector2(16, -26)]), Color(0.13, 0.83, 0.93))
 	if selection_rect.has_area():
 		draw_rect(selection_rect, COLOR_SELECT_FILL)
 		draw_rect(selection_rect, COLOR_SELECTED, false, 2.0)

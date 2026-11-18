@@ -6,10 +6,14 @@ func _ready() -> void:
 	var root := Ui.screen_root(self)
 	root.add_child(Ui.header("CAMPAGNE"))
 
-	var cards := Ui.hbox(24)
-	cards.alignment = BoxContainer.ALIGNMENT_CENTER
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	root.add_child(scroll)
+	var cards := Ui.hbox(20)
 	cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(cards)
+	scroll.add_child(cards)
 	var i := 0
 	for l in Content.LEVELS:
 		var card := _level_card(l)
@@ -37,7 +41,7 @@ func _level_card(l: Dictionary) -> PanelContainer:
 	var map: Variant = load(l.map)
 	var unlocked := Save.is_level_unlocked(l.id)
 	var stars := Save.level_stars(l.id)
-	var card := Ui.panel(Vector2(360, 0), unlocked and stars == 0)
+	var card := Ui.panel(Vector2(330, 0), unlocked and stars == 0)
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var v := Ui.vbox(10)
 	card.add_child(v)
@@ -47,13 +51,13 @@ func _level_card(l: Dictionary) -> PanelContainer:
 	top.add_child(Ui.spacer())
 	top.add_child(Ui.label("%d VAGUES" % l.waves, 18, Ui.MUTED, true))
 	v.add_child(top)
-	v.add_child(Ui.title(map.NAME.to_upper(), 24))
+	v.add_child(Ui.title(map.NAME.to_upper(), 21))
 
 	var preview := MapPreview.new()
 	preview.grid = MapLoader.from_layout(map.LAYOUT)
 	preview.ground = map.GROUND
 	preview.locked = not unlocked
-	preview.custom_minimum_size = Vector2(316, 196)
+	preview.custom_minimum_size = Vector2(286, 170)
 	v.add_child(preview)
 
 	var srow := Ui.hbox(8)

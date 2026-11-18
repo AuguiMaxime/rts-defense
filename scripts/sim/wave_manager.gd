@@ -5,6 +5,7 @@ extends RefCounted
 var wave := 0 # nombre de waves lancées
 var total := Balance.WAVE_COUNT
 var infinite := false
+var interval := Balance.WAVE_INTERVAL # secondes entre deux vagues
 var difficulty := 1.0 # multiplie le nombre d'ennemis de chaque vague
 var timer := Balance.FIRST_WAVE_DELAY
 
@@ -70,7 +71,7 @@ func start_next() -> void:
 		i += 1
 	_queue.append_array(list)
 	_queue.append_array(bosses) # le boss arrive en dernier
-	timer = Balance.WAVE_INTERVAL
+	timer = interval
 
 
 func has_more_waves() -> bool:
