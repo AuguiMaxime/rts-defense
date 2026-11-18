@@ -5,6 +5,7 @@ extends RefCounted
 ## M  gisement de métal  E  gisement d'essence
 
 const NAME := "Plaine de l'aube"
+const GROUND := "grass"
 
 const LAYOUT := """
 ................................................

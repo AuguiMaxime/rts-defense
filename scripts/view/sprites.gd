@@ -13,6 +13,14 @@ const BUSH_SMALL := preload("res://assets/kenney/bush_small.png")
 const SCORCH := preload("res://assets/kenney/scorch.png")
 const SITE := preload("res://assets/kenney/site.png")
 const TOWER_BASE := preload("res://assets/kenney/tower_base.png")
+const TOWER_BASE2 := preload("res://assets/kenney/tower_base2.png")
+const TOWER_BASE3 := preload("res://assets/kenney/tower_base3.png")
+const TURRET_DOUBLE := preload("res://assets/kenney/turret_double.png")
+const TURRET_MISSILE := preload("res://assets/kenney/turret_missile.png")
+const TURRET_LIGHT := preload("res://assets/kenney/turret_light.png")
+const ROCKET := preload("res://assets/kenney/rocket.png")
+const SAND := preload("res://assets/kenney/sand.png")
+const DIRT := preload("res://assets/kenney/dirt.png")
 const TURRET_GUN := preload("res://assets/kenney/turret_gun.png")
 const BASE_CORE := preload("res://assets/kenney/base_core.png")
 const WORKER := preload("res://assets/kenney/worker.png")
@@ -32,3 +40,18 @@ const ENEMY_LOOK := {
 
 ## Les unités du pack regardent vers la droite, les tourelles vers le haut.
 const TURRET_ANGLE_OFFSET := PI / 2.0
+
+## Apparence de chaque tourelle : plateforme, canon, teinte du canon.
+const TOWER_LOOK := {
+	"gun": {"base": TOWER_BASE, "turret": TURRET_GUN, "tint": Color(1, 1, 1)},
+	"cannon": {"base": TOWER_BASE2, "turret": TURRET_DOUBLE, "tint": Color(1, 1, 1)},
+	"missile": {"base": TOWER_BASE3, "turret": TURRET_MISSILE, "tint": Color(1, 1, 1)},
+	"laser": {"base": TOWER_BASE2, "turret": TURRET_LIGHT, "tint": Color(0.55, 0.95, 1.0)},
+}
+
+## Sol de chaque map : texture et teinte.
+const GROUND_LOOK := {
+	"grass": {"tex": GRASS, "tint": Color(0.44, 0.58, 0.44)},
+	"sand": {"tex": SAND, "tint": Color(0.80, 0.68, 0.55)},
+	"dirt": {"tex": DIRT, "tint": Color(0.55, 0.50, 0.50)},
+}

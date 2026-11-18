@@ -3,11 +3,17 @@ config_version=5
 
 [application]
 
-run/main_scene="res://scenes/game.tscn"
+run/main_scene="res://scenes/main_menu.tscn"
 
 config/name="RTS Defense"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
+
+[autoload]
+
+Save="*res://scripts/data/save.gd"
+Ui="*res://scripts/ui/ui.gd"
+Sfx="*res://scripts/ui/sfx.gd"
 
 [display]
 

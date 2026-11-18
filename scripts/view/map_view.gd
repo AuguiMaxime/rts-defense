@@ -14,11 +14,13 @@ const COLOR_SPAWN := Color(1.0, 0.30, 0.25)
 const COLOR_SELECT := Color(1, 1, 1, 0.9)
 
 var grid: GameGrid
+var ground := "grass"
 var selected := Vector2i(-1, -1)
 
 
-func setup(g: GameGrid) -> void:
+func setup(g: GameGrid, ground_kind := "grass") -> void:
 	grid = g
+	ground = ground_kind
 	queue_redraw()
 
 
@@ -47,8 +49,9 @@ func _draw() -> void:
 			if t == GameGrid.Cell.BASE:
 				draw_texture_rect(Sprites.STONE, r, false)
 			else:
+				var look: Dictionary = Sprites.GROUND_LOOK[ground]
 				var shade := 1.0 - (cell_hash(c) % 5) * 0.007
-				draw_texture_rect(Sprites.GRASS, r, false, GRASS_TINT * Color(shade, shade, shade))
+				draw_texture_rect(look.tex, r, false, look.tint * Color(shade, shade, shade))
 			match t:
 				GameGrid.Cell.ROCK:
 					var tex := Sprites.ROCK_BIG if cell_hash(c) % 3 != 0 else Sprites.ROCK_SMALL
@@ -62,7 +65,7 @@ func _draw() -> void:
 					draw_arc(r.get_center(), TILE * 0.42, 0, TAU, 40, COLOR_SPAWN, 3.0)
 				GameGrid.Cell.EMPTY:
 					var h := cell_hash(c)
-					if h < 30:
+					if h < 30 and ground == "grass":
 						draw_texture_rect(Sprites.BUSH_SMALL, r.grow(-10), false, Color(0.75, 0.85, 0.72, 0.8))
 
 	for x in grid.width + 1:

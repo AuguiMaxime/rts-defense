@@ -5,6 +5,7 @@ extends RefCounted
 var wave := 0 # nombre de waves lancées
 var total := Balance.WAVE_COUNT
 var infinite := false
+var difficulty := 1.0 # multiplie le nombre d'ennemis de chaque vague
 var timer := Balance.FIRST_WAVE_DELAY
 
 var _queue: Array[String] = []
@@ -15,7 +16,7 @@ var _spawn_index := 0
 ## Composition de la wave n (1 = première).
 static func composition(n: int) -> Array[String]:
 	var list: Array[String] = []
-	for i in 3 + n * 3:
+	for i in 2 + n * 2 + n * n / 10:
 		list.append("normal")
 	if n >= 2:
 		for i in n:
@@ -47,7 +48,12 @@ func start_next() -> void:
 	if not has_more_waves():
 		return
 	wave += 1
-	_queue.append_array(composition(wave))
+	var list := composition(wave)
+	var keep := maxi(2, roundi(list.size() * difficulty))
+	# On retire des ennemis répartis dans la liste pour garder le mélange des types.
+	while list.size() > keep:
+		list.remove_at(list.size() * 2 / 3 if list.size() > 2 else 0)
+	_queue.append_array(list)
 	timer = Balance.WAVE_INTERVAL
 
 

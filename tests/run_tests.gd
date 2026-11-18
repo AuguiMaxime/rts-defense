@@ -19,6 +19,12 @@ func _init() -> void:
 	_test_defeat()
 	_test_wave_composition()
 	_test_map01_full_run()
+	_test_tower_types()
+	_test_house_and_pop()
+	_test_repair()
+	_test_orbital()
+	_test_all_maps()
+	_test_config_bonuses()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -205,7 +211,7 @@ func _test_defeat() -> void:
 
 func _test_wave_composition() -> void:
 	print("Composition des waves")
-	_check(WaveManager.composition(1).size() == 6, "wave 1 : 6 ennemis")
+	_check(WaveManager.composition(1).size() == 4, "wave 1 : 4 ennemis")
 	_check(not WaveManager.composition(3).has("armored"), "pas de blindé avant la wave 4")
 	_check(WaveManager.composition(4).has("armored"), "blindés dès la wave 4")
 	_check(WaveManager.composition(5).has("flying"), "volants dès la wave 5")
@@ -220,3 +226,107 @@ func _test_map01_full_run() -> void:
 		world.tick(0.05)
 		t += 0.05
 	_check(world.state == GameWorld.State.LOST, "sans tourelle, la base tombe (vague %d, %.0f s)" % [world.waves.wave, t])
+
+
+func _built(world: GameWorld, kind: String, c: Vector2i) -> BuildSite:
+	world.metal = 9999
+	world.essence = 9999
+	var s := world.place(kind, c)
+	s.work_done = s.work_needed
+	world._finish_site(s)
+	return s
+
+
+func _test_tower_types() -> void:
+	print("Types de tourelles")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.workers.clear()
+	_built(world, "missile", Vector2i(3, 1))
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	_run(world, 2.0)
+	_check(world.enemies.size() == 1 and world.enemies[0].hp == world.enemies[0].max_hp, "l'anti-air ignore les ennemis au sol")
+	world.enemies.clear()
+	world.spawn_enemy("flying", Vector2i(0, 0), 1.0)
+	_run(world, 1.5)
+	_check(world.enemies.is_empty() or world.enemies[0].hp < world.enemies[0].max_hp, "l'anti-air touche les volants")
+	var w2 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	w2.waves.timer = 9999
+	w2.workers.clear()
+	_built(w2, "cannon", Vector2i(3, 1))
+	for i in 3:
+		w2.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	w2.tick(0.01)
+	for e in w2.enemies:
+		e.pos = Vector2(1.5, 1.5)
+	w2.tick(0.05)
+	var hit := w2.enemies.filter(func(e: Enemy) -> bool: return e.hp < e.max_hp).size()
+	_check(hit >= 2 or w2.enemies.size() < 3, "le canon fait des dégâts de zone (%d touchés)" % hit)
+	var w3 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	w3.metal = 9999
+	w3.essence = 9999
+	_check(w3.can_place("laser", Vector2i(2, 2)) != "", "le laser est verrouillé sans achat")
+	var w4 := GameWorld.new(MapLoader.from_layout(TEST_MAP), {"laser": true})
+	w4.metal = 9999
+	w4.essence = 9999
+	_check(w4.can_place("laser", Vector2i(2, 2)) == "", "le laser se pose une fois débloqué")
+	var w5 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	w5.metal = 9999
+	w5.essence = 0
+	_check(w5.can_place("cannon", Vector2i(2, 2)).contains("essence"), "le canon demande de l'essence")
+
+
+func _test_house_and_pop() -> void:
+	print("Habitats et population")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.metal = 9999
+	world.waves.timer = 9999
+	for i in Content.BASE_POP - world.workers.size():
+		world.train_worker()
+	_check(world.can_train_worker() != "", "population max bloque la formation")
+	_built(world, "house", Vector2i(2, 2))
+	_check(world.pop_cap == Content.BASE_POP + Content.HOUSE.pop, "un habitat ajoute +3")
+	_check(world.can_train_worker() == "", "on peut de nouveau former")
+
+
+func _test_repair() -> void:
+	print("Réparation")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	var s := _built(world, "gun", Vector2i(6, 1))
+	s.hp = 50
+	world.command_repair([world.workers[0]], s)
+	_run(world, 20.0)
+	_check(s.hp == s.max_hp, "l'ouvrier répare la tourelle jusqu'au max")
+	_check(world.workers[0].state == Worker.State.IDLE, "puis il s'arrête")
+
+
+func _test_orbital() -> void:
+	print("Frappe orbitale")
+	var locked := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	_check(not locked.orbital_unlocked(), "verrouillée sans la techno")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP), {"orbital": true})
+	world.waves.timer = 9999
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	_check(world.cast_orbital(world.enemies[0].pos), "elle se lance")
+	world.tick(0.01)
+	_check(world.enemies.is_empty(), "elle tue un ennemi normal")
+	_check(not world.orbital_ready(), "puis elle recharge")
+
+
+func _test_all_maps() -> void:
+	print("Toutes les maps")
+	for l in Content.LEVELS:
+		var map: Variant = load(l.map)
+		var world := GameWorld.new(MapLoader.from_layout(map.LAYOUT), {"waves": l.waves})
+		_check(world.grid.base_cells.size() == 9 and world.enemies_can_reach_base() and world.workers.size() == 3,
+				"map %d « %s » valide (%d spawns)" % [l.id, map.NAME, world.grid.spawn_points.size()])
+
+
+func _test_config_bonuses() -> void:
+	print("Bonus de progression")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP), {"start_metal": 400, "start_workers": 5, "base_hp": 1500, "carry_bonus": 2})
+	_check(world.metal == 400 and world.workers.size() == 5 and world.base_hp == 1500, "métal, ouvriers et PV de départ")
+	world.command_harvest([world.workers[0]], Vector2i(1, 5))
+	_run(world, 30.0)
+	_check((world.metal - 400) % (Balance.CARRY_CAPACITY + 2) == 0 and world.metal > 400, "charge des ouvriers augmentée")

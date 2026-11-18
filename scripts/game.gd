@@ -1,77 +1,107 @@
 extends Node2D
-## Scène principale d'une partie : relie la simulation (GameWorld) à l'affichage et aux contrôles.
+## Écran de jeu : relie la simulation (GameWorld) à l'affichage, aux contrôles et au HUD.
 
-const Map01 := preload("res://maps/map_01.gd")
 const TILE := MapView.TILE
 
 var world: GameWorld
+var level: Dictionary
+var map_script: Variant
 var selected: Array[Worker] = []
-var build_mode := false
-var _message_time := 0.0
+var build_kind := "" # "" = pas en mode construction ; "orbital" = ciblage du pouvoir
+var speed := 1
+var paused := false
+var _ended := false
+var _granted_waves := 0
+var _granted_kills := 0
+var _last_wave := 0
 
 @onready var map_view: MapView = $MapView
 @onready var units_view: UnitsView = $UnitsView
 @onready var camera: CameraController = $Camera
-@onready var title_label: Label = $HUD/TitleLabel
-@onready var resources_label: Label = $HUD/ResourcesLabel
-@onready var info_label: Label = $HUD/InfoLabel
-@onready var message_label: Label = $HUD/MessageLabel
-@onready var worker_button: Button = $HUD/Buttons/WorkerButton
-@onready var tower_button: Button = $HUD/Buttons/TowerButton
-@onready var deselect_button: Button = $HUD/Buttons/DeselectButton
-@onready var wave_label: Label = $HUD/WaveLabel
-@onready var next_wave_button: Button = $HUD/NextWaveButton
-@onready var end_panel: Control = $HUD/EndPanel
-@onready var end_label: Label = $HUD/EndPanel/Box/EndLabel
-@onready var end_detail: Label = $HUD/EndPanel/Box/EndDetail
-@onready var infinite_button: Button = $HUD/EndPanel/Box/EndButtons/InfiniteButton
+@onready var hud: GameHud = GameHud.new()
 
 
 func _ready() -> void:
-	world = GameWorld.new(MapLoader.from_layout(Map01.LAYOUT))
-	map_view.setup(world.grid)
+	level = Content.level(Ui.current_level)
+	map_script = load(level.map)
+	world = GameWorld.new(MapLoader.from_layout(map_script.LAYOUT), _build_config())
+	map_view.setup(world.grid, map_script.GROUND)
 	units_view.world = world
+	units_view.skin_tint = Content.skin(Save.data.skin).tint
 
 	camera.set_bounds(Rect2(Vector2.ZERO, Vector2(world.grid.width, world.grid.height) * TILE).grow(TILE))
-	camera.center_on(world.grid.get_base_center() * TILE)
-	camera.is_over_ui = _is_over_ui
+	camera.center_on(world.base_center() * TILE)
+	camera.is_over_ui = func(p: Vector2) -> bool: return hud.is_over_ui(p)
 	camera.tapped.connect(_on_tapped)
-	camera.selection_updated.connect(_on_selection_updated)
+	camera.selection_updated.connect(func(a: Vector2, b: Vector2) -> void: units_view.selection_rect = Rect2(a, b - a).abs())
 	camera.selection_ended.connect(_on_selection_ended)
 	camera.selection_cancelled.connect(func() -> void: units_view.selection_rect = Rect2())
 
-	worker_button.pressed.connect(_on_worker_button)
-	tower_button.pressed.connect(func() -> void: _set_build_mode(not build_mode))
-	deselect_button.pressed.connect(func() -> void: _set_selection([]))
-	next_wave_button.pressed.connect(func() -> void: world.waves.start_next())
-	$HUD/EndPanel/Box/EndButtons/RestartButton.pressed.connect(func() -> void: get_tree().reload_current_scene())
-	infinite_button.pressed.connect(func() -> void:
-		world.continue_infinite()
-		end_panel.visible = false)
+	$HUD.add_child(hud)
+	hud.setup(self)
 
-	title_label.text = Map01.NAME
-	_update_hud()
+
+## Bonus de technos et augments appliqués à la partie.
+func _build_config() -> Dictionary:
+	var cfg := {
+		"waves": level.waves,
+		"difficulty": level.difficulty,
+		"start_metal": Balance.START_METAL + int(Content.tech("reserves").value) * Save.tech_level("reserves"),
+		"start_workers": Balance.START_WORKERS,
+		"base_hp": roundi(Balance.BASE_HP * (1.0 + Content.tech("hull").value * Save.tech_level("hull"))),
+		"damage_mult": 1.0 + Content.tech("ammo").value * Save.tech_level("ammo"),
+		"worker_speed_mult": 1.0 + Content.tech("logistics").value * Save.tech_level("logistics"),
+		"carry_bonus": Save.tech_level("logistics"),
+		"orbital": Save.tech_level("orbital") > 0,
+		"laser": Save.owns("tower_laser"),
+	}
+	var used: Array[String] = []
+	if Save.augment_count("starter_kit") > 0:
+		cfg.start_metal += 150
+		used.append("starter_kit")
+	if Save.augment_count("extra_workers") > 0:
+		cfg.start_workers += 2
+		used.append("extra_workers")
+	if Save.augment_count("shield") > 0:
+		cfg.base_hp += 300
+		used.append("shield")
+	for id in used:
+		Save.change_augment(id, -1)
+	if not used.is_empty():
+		Ui.toast.call_deferred("%d augment(s) activé(s)" % used.size(), Ui.GREEN)
+	return cfg
 
 
 func _process(delta: float) -> void:
-	world.tick(delta)
+	if not paused:
+		for i in speed:
+			world.tick(delta)
 	if selected.any(func(w: Worker) -> bool: return not world.workers.has(w)):
 		_set_selection(selected.filter(func(w: Worker) -> bool: return world.workers.has(w)))
-	if _message_time > 0.0:
-		_message_time -= delta
-		if _message_time <= 0.0:
-			message_label.text = ""
-	_update_hud()
+	if world.waves.wave != _last_wave:
+		_last_wave = world.waves.wave
+		Sfx.play("wave", -2.0, 1.0)
+		Sfx.vibrate(60)
+		hud.flash("VAGUE %d EN APPROCHE" % _last_wave, Ui.RED)
+	if world.state != GameWorld.State.PLAYING and not _ended:
+		_ended = true
+		hud.show_end(world.state == GameWorld.State.WON)
 
 
-# --- Contrôles -----------------------------------------------------------------
+# --- Contrôles --------------------------------------------------------------------
 
 func _on_tapped(world_px: Vector2) -> void:
+	if paused:
+		return
 	var p := world_px / TILE
 	var c := Vector2i(p.floor())
 
-	if build_mode:
-		_try_place_tower(c)
+	if build_kind == "orbital":
+		if world.cast_orbital(p):
+			set_build_kind("")
+		return
+	if build_kind != "":
+		_try_place(c)
 		return
 
 	var w := world.worker_at(p)
@@ -79,15 +109,21 @@ func _on_tapped(world_px: Vector2) -> void:
 		_set_selection([w])
 		return
 
+	var site := world.site_at(c)
 	if selected.is_empty():
-		if world.grid.is_inside(c):
-			map_view.set_selected(c)
-			info_label.text = "%s  (%d, %d)" % [GameGrid.CELL_NAMES[world.grid.get_cell(c)], c.x, c.y]
+		map_view.set_selected(c)
+		if site != null:
+			hud.show_info(_site_info(site))
+		elif world.grid.is_inside(c):
+			hud.show_info(GameGrid.CELL_NAMES[world.grid.get_cell(c)])
 		return
 
-	var site := world.site_at(c)
-	if site != null and not site.built:
-		world.command_build(selected, site)
+	if site != null:
+		if not site.built:
+			world.command_build(selected, site)
+		elif site.hp < site.max_hp:
+			world.command_repair(selected, site)
+			hud.flash("Réparation en cours", Ui.GREEN)
 		return
 	match world.grid.get_cell(c):
 		GameGrid.Cell.METAL, GameGrid.Cell.ESSENCE:
@@ -96,34 +132,34 @@ func _on_tapped(world_px: Vector2) -> void:
 			world.command_move(selected, c)
 
 
-func _try_place_tower(c: Vector2i) -> void:
-	var reason := world.can_place_tower(c)
+func _site_info(s: BuildSite) -> String:
+	var name: String = s.stats().name
+	if not s.built:
+		return "%s · chantier %d %%" % [name, roundi(s.progress() * 100)]
+	var txt := "%s · %d/%d PV" % [name, s.hp, s.max_hp]
+	if s.hp < s.max_hp:
+		txt += " · sélectionne des ouvriers puis touche-la pour réparer"
+	return txt
+
+
+func _try_place(c: Vector2i) -> void:
+	var reason := world.can_place(build_kind, c)
 	if reason != "":
-		_show_message(reason)
+		hud.flash(reason, Ui.RED)
 		return
-	var site := world.place_tower(c)
+	var site := world.place(build_kind, c)
 	var builders: Array = selected.duplicate()
 	if builders.is_empty():
 		var nearest := world.nearest_available_worker(c)
 		if nearest != null:
 			builders.append(nearest)
 	world.command_build(builders, site)
-	_set_build_mode(false)
-
-
-func _on_selection_updated(a: Vector2, b: Vector2) -> void:
-	units_view.selection_rect = Rect2(a, b - a).abs()
+	set_build_kind("")
 
 
 func _on_selection_ended(a: Vector2, b: Vector2) -> void:
 	units_view.selection_rect = Rect2()
-	var r := Rect2(a / TILE, (b - a) / TILE).abs()
-	_set_selection(world.workers_in_rect(r))
-
-
-func _on_worker_button() -> void:
-	if not world.train_worker():
-		_show_message("Pas assez de métal (%d)" % Balance.WORKER_COST_METAL)
+	_set_selection(world.workers_in_rect(Rect2(a / TILE, (b - a) / TILE).abs()))
 
 
 func _set_selection(ws: Array) -> void:
@@ -132,57 +168,78 @@ func _set_selection(ws: Array) -> void:
 	map_view.set_selected(Vector2i(-1, -1))
 
 
-func _set_build_mode(on: bool) -> void:
-	build_mode = on
-	tower_button.set_pressed_no_signal(on)
-	if on:
-		_show_message("Touche une case libre pour poser la tourelle", 3.0)
+func set_build_kind(kind: String) -> void:
+	build_kind = kind
+	hud.refresh_build_buttons()
+	if kind == "orbital":
+		hud.flash("Touche la zone à frapper", Ui.CYAN)
+	elif kind != "":
+		hud.flash("Touche une case libre pour construire : %s" % Content.building(kind).name, Ui.CYAN)
 
 
-func _is_over_ui(screen_pos: Vector2) -> bool:
-	if end_panel.visible:
-		return true
-	for b: Button in [worker_button, tower_button, deselect_button, next_wave_button]:
-		if b.visible and b.get_global_rect().has_point(screen_pos):
-			return true
-	return false
+func deselect() -> void:
+	_set_selection([])
 
 
-# --- Interface -----------------------------------------------------------------
-
-func _show_message(text: String, duration := 2.0) -> void:
-	message_label.text = text
-	_message_time = duration
-
-
-func _update_hud() -> void:
-	resources_label.text = "Métal %d    Essence %d    Ouvriers %d" % [world.metal, world.essence, world.workers.size()]
-	var queue := "  (+%d)" % world.train_queue if world.train_queue > 0 else ""
-	worker_button.text = "+ Ouvrier  %d%s" % [Balance.WORKER_COST_METAL, queue]
-	tower_button.text = "Tourelle  %d" % Balance.TOWER_COST_METAL
-	deselect_button.visible = not selected.is_empty()
-	_update_waves()
-	if not selected.is_empty():
-		info_label.text = "%d ouvrier(s) sélectionné(s) : touche un gisement, un chantier ou le sol" % selected.size()
-	elif build_mode:
-		info_label.text = "Mode construction"
-	elif info_label.text.begins_with("Mode") or info_label.text.contains("sélectionné"):
-		info_label.text = "Glisse pour sélectionner des ouvriers"
+func train_worker() -> void:
+	var reason := world.can_train_worker()
+	if reason != "":
+		hud.flash(reason, Ui.RED)
+	else:
+		world.train_worker()
 
 
-func _update_waves() -> void:
-	var wv := world.waves
-	var total := "∞" if wv.infinite else str(wv.total)
-	var text := "Vague %d/%s" % [wv.wave, total]
-	if wv.has_more_waves():
-		text += "  ·  prochaine dans %d s" % ceili(wv.timer)
-	text += "  ·  Ennemis %d  ·  Base %d" % [world.enemies.size(), world.base_hp]
-	wave_label.text = text
-	next_wave_button.visible = wv.has_more_waves()
+func toggle_speed() -> void:
+	speed = 2 if speed == 1 else 1
 
-	if world.state != GameWorld.State.PLAYING and not end_panel.visible:
-		end_panel.visible = true
-		var won := world.state == GameWorld.State.WON
-		end_label.text = "Victoire !" if won else "Défaite"
-		end_detail.text = ("Les %d vagues ont été repoussées" % wv.wave) if won else ("Base détruite à la vague %d" % wv.wave)
-		infinite_button.visible = won
+
+func set_paused(on: bool) -> void:
+	paused = on
+
+
+func _notification(what: int) -> void:
+	# Mise en pause automatique quand l'appli passe en arrière-plan sur mobile.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and not _ended and is_node_ready():
+		hud.open_pause()
+
+
+# --- Fin de partie -------------------------------------------------------------------
+
+## Étoiles : 3 si la base a gardé 70 % de ses PV, 2 au-dessus de 35 %, sinon 1.
+func stars() -> int:
+	if world.state != GameWorld.State.WON:
+		return 0
+	var ratio := float(world.base_hp) / world.max_base_hp
+	return 3 if ratio >= 0.7 else (2 if ratio >= 0.35 else 1)
+
+
+## Crédits gagnés, enregistre la progression. À n'appeler qu'une fois par fin.
+func grant_rewards() -> int:
+	var won := world.state == GameWorld.State.WON
+	var waves_done := world.waves.wave if won else maxi(0, world.waves.wave - 1)
+	var credits := (waves_done - _granted_waves) * 12 + (world.kills - _granted_kills)
+	if won and _granted_waves == 0:
+		credits += 80 + stars() * 25
+	credits = maxi(0, credits)
+	_granted_waves = maxi(_granted_waves, waves_done)
+	_granted_kills = world.kills
+	Save.add("credits", credits)
+	if won:
+		Save.record_level(level.id, stars(), world.waves.wave)
+	return credits
+
+
+func restart() -> void:
+	Ui.play_level(level.id)
+
+
+func next_level_id() -> int:
+	for l in Content.LEVELS:
+		if l.id == level.id + 1:
+			return l.id
+	return -1
+
+
+func continue_infinite() -> void:
+	_ended = false
+	world.continue_infinite()

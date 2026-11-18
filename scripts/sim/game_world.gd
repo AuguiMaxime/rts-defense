@@ -12,10 +12,20 @@ var waves: WaveManager
 var state := State.PLAYING
 var base_hp := Balance.BASE_HP
 var enemies: Array[Enemy] = []
+var kills := 0
 ## Événements visuels (tirs, destructions) que l'affichage récupère avec take_events().
 var events: Array[Dictionary] = []
 var metal := Balance.START_METAL
 var essence := Balance.START_ESSENCE
+var max_base_hp := Balance.BASE_HP
+var pop_cap := Content.BASE_POP
+var orbital_cooldown := 0.0 # < 0 = pouvoir non débloqué
+
+## Bonus de progression (technos, augments). Voir GameWorld.new().
+var damage_mult := 1.0
+var worker_speed_mult := 1.0
+var carry_bonus := 0
+var laser_unlocked := false
 var workers: Array[Worker] = []
 var sites: Array[BuildSite] = []
 var train_queue := 0
@@ -27,8 +37,18 @@ var _base_rect := Rect2()
 var _rng := RandomNumberGenerator.new()
 
 
-func _init(g: GameGrid) -> void:
+## config (optionnel) : start_metal, start_workers, base_hp, damage_mult, worker_speed_mult,
+## carry_bonus, orbital (bool), waves (nombre de vagues), difficulty, laser (bool).
+func _init(g: GameGrid, config := {}) -> void:
 	grid = g
+	metal = config.get("start_metal", Balance.START_METAL)
+	max_base_hp = config.get("base_hp", Balance.BASE_HP)
+	base_hp = max_base_hp
+	damage_mult = config.get("damage_mult", 1.0)
+	worker_speed_mult = config.get("worker_speed_mult", 1.0)
+	carry_bonus = config.get("carry_bonus", 0)
+	laser_unlocked = config.get("laser", false)
+	orbital_cooldown = 0.0 if config.get("orbital", false) else -1.0
 	pathfinder = Pathfinder.new(g)
 	flow = FlowField.new(g, pathfinder)
 	waves = WaveManager.new()
@@ -37,7 +57,9 @@ func _init(g: GameGrid) -> void:
 		_base_rect = Rect2(Vector2(g.base_cells[0]), Vector2.ONE)
 		for c in g.base_cells:
 			_base_rect = _base_rect.merge(Rect2(Vector2(c), Vector2.ONE))
-	for i in Balance.START_WORKERS:
+	waves.total = config.get("waves", Balance.WAVE_COUNT)
+	waves.difficulty = config.get("difficulty", 1.0)
+	for i in config.get("start_workers", Balance.START_WORKERS):
 		_spawn_worker()
 
 
@@ -47,6 +69,8 @@ func tick(delta: float) -> void:
 	if state != State.PLAYING:
 		return
 	waves.tick(delta, self)
+	if orbital_cooldown > 0.0:
+		orbital_cooldown = maxf(0.0, orbital_cooldown - delta)
 	if _flow_dirty:
 		flow.rebuild()
 		_flow_dirty = false
@@ -59,7 +83,7 @@ func tick(delta: float) -> void:
 	for w in workers:
 		_tick_worker(w, delta)
 	for s in sites:
-		if s.built:
+		if s.built and s.is_tower():
 			_tick_tower(s, delta)
 	for e in enemies:
 		_tick_enemy(e, delta)
@@ -98,29 +122,44 @@ func base_center() -> Vector2:
 # --- Combat ---------------------------------------------------------------------
 
 func _tick_tower(s: BuildSite, delta: float) -> void:
+	var st := s.stats()
 	s.cooldown -= delta
 	var center := Vector2(s.cell) + Vector2(0.5, 0.5)
 	var best: Enemy = null
-	var best_d := Balance.TOWER_RANGE
+	var best_d: float = st.range
 	for e in enemies:
 		if e.hp <= 0:
+			continue
+		if (st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying):
 			continue
 		var d := center.distance_to(e.pos)
 		if d <= best_d:
 			best = e
 			best_d = d
+	s.beam_target = best if s.kind == "laser" else null
 	if best == null:
 		return
 	s.aim_angle = (best.pos - center).angle()
-	if s.cooldown <= 0.0:
-		s.cooldown = Balance.TOWER_FIRE_DELAY
-		_damage_enemy(best, Balance.TOWER_DAMAGE)
-		events.append({"type": "shot", "from": center, "to": best.pos})
+	if s.cooldown > 0.0:
+		return
+	s.cooldown = st.delay
+	var dmg := roundi(st.damage * damage_mult)
+	if st.splash > 0.0:
+		for e in enemies:
+			if e.hp > 0 and not e.flying and e.pos.distance_to(best.pos) <= st.splash:
+				_damage_enemy(e, dmg)
+	else:
+		_damage_enemy(best, dmg)
+	if s.kind != "laser":
+		events.append({"type": "shot", "kind": s.kind, "from": center, "to": best.pos})
 
 
 func _damage_enemy(e: Enemy, amount: int) -> void:
+	if e.hp <= 0:
+		return
 	e.hp -= maxi(1, amount - e.armor)
 	if e.hp <= 0:
+		kills += 1
 		events.append({"type": "death", "pos": e.pos, "big": e.type == "armored"})
 
 
@@ -207,6 +246,8 @@ func _remove_dead() -> void:
 	for s in sites.duplicate():
 		if s.hp <= 0:
 			sites.erase(s)
+			if s.built and s.kind == "house":
+				pop_cap -= Content.HOUSE.pop
 			pathfinder.set_solid(s.cell, false)
 			_flow_dirty = true
 			events.append({"type": "death", "pos": Vector2(s.cell) + Vector2(0.5, 0.5), "big": true})
@@ -229,7 +270,7 @@ func _tick_worker(w: Worker, delta: float) -> void:
 			w.timer -= delta
 			if w.timer <= 0.0:
 				w.carry_type = grid.get_cell(w.target_deposit)
-				w.carry_amount = Balance.CARRY_CAPACITY
+				w.carry_amount = Balance.CARRY_CAPACITY + carry_bonus
 				_move_to_adjacent(w, grid.base_cells)
 		Worker.State.BUILDING:
 			var s := w.target_site
@@ -239,10 +280,16 @@ func _tick_worker(w: Worker, delta: float) -> void:
 			s.work_done += delta
 			if s.work_done >= s.work_needed:
 				_finish_site(s)
+		Worker.State.REPAIRING:
+			var s := w.target_site
+			if s == null or not sites.has(s) or s.hp >= s.max_hp:
+				_set_idle(w)
+				return
+			s.hp = mini(s.max_hp, s.hp + ceili(Balance.REPAIR_RATE * delta))
 
 
 func _follow_path(w: Worker, delta: float) -> bool:
-	var step := Balance.WORKER_SPEED * delta
+	var step := Balance.WORKER_SPEED * worker_speed_mult * delta
 	while step > 0.0 and not w.path.is_empty():
 		var target := Vector2(w.path[0]) + Vector2(0.5, 0.5)
 		var d := w.pos.distance_to(target)
@@ -269,6 +316,8 @@ func _on_arrived(w: Worker) -> void:
 				w.timer = Balance.HARVEST_TIME
 		Worker.Job.BUILD:
 			w.state = Worker.State.BUILDING
+		Worker.Job.REPAIR:
+			w.state = Worker.State.REPAIRING
 		_:
 			w.state = Worker.State.IDLE
 
@@ -284,8 +333,17 @@ func _deposit(w: Worker) -> void:
 
 # --- Ordres du joueur ---------------------------------------------------------
 
-func train_worker() -> bool:
+## Raison du refus, ou "" si on peut former un ouvrier.
+func can_train_worker() -> String:
+	if workers.size() + train_queue >= pop_cap:
+		return "Population max atteinte : construis un habitat"
 	if metal < Balance.WORKER_COST_METAL:
+		return "Pas assez de métal (%d)" % Balance.WORKER_COST_METAL
+	return ""
+
+
+func train_worker() -> bool:
+	if can_train_worker() != "":
 		return false
 	metal -= Balance.WORKER_COST_METAL
 	train_queue += 1
@@ -294,6 +352,8 @@ func train_worker() -> bool:
 
 func command_move(ws: Array, c: Vector2i) -> void:
 	for w: Worker in ws:
+		if w == null:
+			continue
 		w.job = Worker.Job.NONE
 		w.target_site = null
 		if pathfinder.is_free(c):
@@ -304,6 +364,8 @@ func command_move(ws: Array, c: Vector2i) -> void:
 
 func command_harvest(ws: Array, deposit: Vector2i) -> void:
 	for w: Worker in ws:
+		if w == null:
+			continue
 		w.job = Worker.Job.HARVEST
 		w.target_site = null
 		w.target_deposit = deposit
@@ -315,19 +377,35 @@ func command_harvest(ws: Array, deposit: Vector2i) -> void:
 
 func command_build(ws: Array, site: BuildSite) -> void:
 	for w: Worker in ws:
+		if w == null:
+			continue
 		w.job = Worker.Job.BUILD
 		w.target_site = site
 		_move_to_adjacent(w, [site.cell] as Array[Vector2i])
 
 
-## Raison du refus, ou "" si la tourelle peut être posée.
-func can_place_tower(c: Vector2i) -> String:
+func command_repair(ws: Array, site: BuildSite) -> void:
+	for w: Worker in ws:
+		if w == null:
+			continue
+		w.job = Worker.Job.REPAIR
+		w.target_site = site
+		_move_to_adjacent(w, [site.cell] as Array[Vector2i])
+
+
+## Raison du refus, ou "" si le bâtiment peut être posé.
+func can_place(kind: String, c: Vector2i) -> String:
+	if kind == "laser" and not laser_unlocked:
+		return "Laser à débloquer dans la boutique"
+	var cost := Content.building(kind)
 	if not grid.is_inside(c):
 		return "Hors de la map"
 	if grid.get_cell(c) != GameGrid.Cell.EMPTY or site_at(c) != null:
 		return "Case occupée"
-	if metal < Balance.TOWER_COST_METAL:
-		return "Pas assez de métal (%d)" % Balance.TOWER_COST_METAL
+	if metal < cost.metal:
+		return "Pas assez de métal (%d)" % cost.metal
+	if essence < cost.essence:
+		return "Pas assez d'essence (%d)" % cost.essence
 	pathfinder.set_solid(c, true)
 	var open := enemies_can_reach_base()
 	pathfinder.set_solid(c, false)
@@ -336,12 +414,16 @@ func can_place_tower(c: Vector2i) -> String:
 	return ""
 
 
-func place_tower(c: Vector2i) -> BuildSite:
-	if can_place_tower(c) != "":
+func place(kind: String, c: Vector2i) -> BuildSite:
+	if can_place(kind, c) != "":
 		return null
-	metal -= Balance.TOWER_COST_METAL
-	var s := BuildSite.new()
+	var cost := Content.building(kind)
+	metal -= cost.metal
+	essence -= cost.essence
+	var s := BuildSite.new(kind)
 	s.cell = c
+	if kind == "house":
+		s.work_needed = Balance.HOUSE_BUILD_WORK
 	sites.append(s)
 	pathfinder.set_solid(c, true)
 	_flow_dirty = true
@@ -349,6 +431,36 @@ func place_tower(c: Vector2i) -> BuildSite:
 		if w.state == Worker.State.MOVING and w.path.has(c):
 			_set_path(w, pathfinder.find_path(w.cell(), w.path.back()))
 	return s
+
+
+## Raccourcis pour la mitrailleuse (utilisés par les tests).
+func can_place_tower(c: Vector2i) -> String:
+	return can_place("gun", c)
+
+
+func place_tower(c: Vector2i) -> BuildSite:
+	return place("gun", c)
+
+
+# --- Pouvoir de base ------------------------------------------------------------------
+
+func orbital_unlocked() -> bool:
+	return orbital_cooldown >= 0.0
+
+
+func orbital_ready() -> bool:
+	return orbital_cooldown == 0.0
+
+
+func cast_orbital(at: Vector2) -> bool:
+	if not orbital_ready():
+		return false
+	orbital_cooldown = Content.ORBITAL.cooldown
+	for e in enemies:
+		if e.hp > 0 and e.pos.distance_to(at) <= Content.ORBITAL.radius:
+			_damage_enemy(e, roundi(Content.ORBITAL.damage * damage_mult))
+	events.append({"type": "orbital", "pos": at})
+	return true
 
 
 ## Règle anti-blocage : chaque point d'apparition doit garder un chemin vers la base.
@@ -393,7 +505,7 @@ func nearest_available_worker(c: Vector2i) -> Worker:
 	var best: Worker = null
 	var best_score := INF
 	for w in workers:
-		if w.job == Worker.Job.BUILD:
+		if w.job == Worker.Job.BUILD or w.job == Worker.Job.REPAIR:
 			continue
 		var score := w.pos.distance_to(target) + (0.0 if w.state == Worker.State.IDLE else 1000.0)
 		if score < best_score:
@@ -436,6 +548,9 @@ func _set_idle(w: Worker) -> void:
 func _finish_site(s: BuildSite) -> void:
 	s.built = true
 	s.hp = s.max_hp
+	events.append({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
+	if s.kind == "house":
+		pop_cap += Content.HOUSE.pop
 	for w in workers:
 		if w.target_site == s:
 			_set_idle(w)
