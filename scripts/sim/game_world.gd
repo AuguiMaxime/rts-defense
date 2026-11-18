@@ -15,6 +15,9 @@ var enemies: Array[Enemy] = []
 var kills := 0
 ## Événements visuels (tirs, destructions) que l'affichage récupère avec take_events().
 var events: Array[Dictionary] = []
+## En coop, l'hôte garde aussi une copie des événements pour l'autre joueur.
+var record_net_events := false
+var net_events: Array[Dictionary] = []
 var metal := Balance.START_METAL
 var essence := Balance.START_ESSENCE
 var max_base_hp := Balance.BASE_HP
@@ -32,6 +35,8 @@ var train_queue := 0
 var train_timer := 0.0
 
 var _next_id := 1
+var _next_enemy_id := 1
+var _next_site_id := 1
 var _flow_dirty := true
 var _base_rect := Rect2()
 var _rng := RandomNumberGenerator.new()
@@ -107,6 +112,18 @@ func continue_infinite() -> void:
 	state = State.PLAYING
 
 
+func _emit(ev: Dictionary) -> void:
+	events.append(ev)
+	if record_net_events:
+		net_events.append(ev)
+
+
+func take_net_events() -> Array[Dictionary]:
+	var e := net_events
+	net_events = []
+	return e
+
+
 func take_events() -> Array[Dictionary]:
 	var e := events
 	events = []
@@ -116,6 +133,8 @@ func take_events() -> Array[Dictionary]:
 func spawn_enemy(type_name: String, cell: Vector2i, hp_scale: float) -> void:
 	var at := Vector2(cell) + Vector2(0.5, 0.5) + Vector2(_rng.randf_range(-0.3, 0.3), _rng.randf_range(-0.3, 0.3))
 	var e := Enemy.create(type_name, at, hp_scale)
+	e.id = _next_enemy_id
+	_next_enemy_id += 1
 	e.visual_offset = Vector2(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.2, 0.2))
 	enemies.append(e)
 
@@ -193,7 +212,7 @@ func _tick_tower(s: BuildSite, delta: float) -> void:
 	else:
 		_damage_enemy(best, dmg)
 	if s.kind != "laser":
-		events.append({"type": "shot", "kind": s.kind, "from": center, "to": best.pos})
+		_emit({"type": "shot", "kind": s.kind, "from": center, "to": best.pos})
 
 
 func _damage_enemy(e: Enemy, amount: int) -> void:
@@ -204,8 +223,8 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 		kills += 1
 		var bounty: int = Balance.KILL_BOUNTY.get(e.type, 1)
 		metal += bounty
-		events.append({"type": "bounty", "pos": e.pos, "amount": bounty})
-		events.append({"type": "death", "pos": e.pos, "big": e.type == "armored" or e.type == "boss", "boss": e.type == "boss"})
+		_emit({"type": "bounty", "pos": e.pos, "amount": bounty})
+		_emit({"type": "death", "pos": e.pos, "big": e.type == "armored" or e.type == "boss", "boss": e.type == "boss"})
 
 
 func _tick_enemy(e: Enemy, delta: float) -> void:
@@ -271,7 +290,7 @@ func _enemy_attack(e: Enemy) -> void:
 	match e.target_kind:
 		Enemy.Target.BASE:
 			base_hp -= e.damage
-			events.append({"type": "base_hit"})
+			_emit({"type": "base_hit"})
 		Enemy.Target.WORKER:
 			var w: Worker = e.target_ref
 			w.hp -= e.damage
@@ -280,7 +299,7 @@ func _enemy_attack(e: Enemy) -> void:
 			var s: BuildSite = e.target_ref
 			s.hp -= e.damage
 			to = Vector2(s.cell) + Vector2(0.5, 0.5)
-	events.append({"type": "hit", "from": e.pos, "to": to, "ranged": e.attack_range > 1.5})
+	_emit({"type": "hit", "from": e.pos, "to": to, "ranged": e.attack_range > 1.5})
 
 
 func _remove_dead() -> void:
@@ -292,7 +311,7 @@ func _remove_dead() -> void:
 		if w.hp <= 0:
 			w.alive = false
 			workers.erase(w)
-			events.append({"type": "death", "pos": w.pos, "big": false})
+			_emit({"type": "death", "pos": w.pos, "big": false})
 	for s in sites.filter(func(x: BuildSite) -> bool: return x.hp <= 0):
 		if s.hp <= 0:
 			s.alive = false
@@ -301,7 +320,7 @@ func _remove_dead() -> void:
 				pop_cap -= Content.HOUSE.pop
 			pathfinder.set_solid(s.cell, false)
 			_flow_dirty = true
-			events.append({"type": "death", "pos": Vector2(s.cell) + Vector2(0.5, 0.5), "big": true})
+			_emit({"type": "death", "pos": Vector2(s.cell) + Vector2(0.5, 0.5), "big": true})
 			for w in workers:
 				if w.target_site == s:
 					_resume_or_idle(w)
@@ -475,6 +494,8 @@ func place(kind: String, c: Vector2i) -> BuildSite:
 	metal -= cost.metal
 	essence -= cost.essence
 	var s := BuildSite.new(kind)
+	s.id = _next_site_id
+	_next_site_id += 1
 	s.cell = c
 	if kind == "house":
 		s.work_needed = Balance.HOUSE_BUILD_WORK
@@ -523,7 +544,7 @@ func upgrade(s: BuildSite) -> bool:
 	s.level += 1
 	s.max_hp = s.stats().hp
 	s.hp += s.max_hp - old_max
-	events.append({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
+	_emit({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
 	return true
 
 
@@ -561,7 +582,7 @@ func cast_orbital(at: Vector2) -> bool:
 	for e in enemies:
 		if e.hp > 0 and e.pos.distance_to(at) <= Content.ORBITAL.radius:
 			_damage_enemy(e, roundi(Content.ORBITAL.damage * damage_mult))
-	events.append({"type": "orbital", "pos": at})
+	_emit({"type": "orbital", "pos": at})
 	return true
 
 
@@ -650,7 +671,7 @@ func _set_idle(w: Worker) -> void:
 func _finish_site(s: BuildSite) -> void:
 	s.built = true
 	s.hp = s.max_hp
-	events.append({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
+	_emit({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
 	if s.kind == "house":
 		pop_cap += Content.HOUSE.pop
 	for w in workers:
@@ -670,4 +691,18 @@ func boss() -> Enemy:
 	for e in enemies:
 		if e.type == "boss" and e.hp > 0:
 			return e
+	return null
+
+
+func worker_by_id(id: int) -> Worker:
+	for w in workers:
+		if w.id == id:
+			return w
+	return null
+
+
+func site_by_id(id: int) -> BuildSite:
+	for s in sites:
+		if s.id == id:
+			return s
 	return null

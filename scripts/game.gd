@@ -14,6 +14,8 @@ var paused := false
 var survival := false
 var new_record := false
 var tutorial: Tutorial = null
+var coop := false
+var _snapshot_timer := 0.0
 var _ended := false
 var _granted_waves := 0
 var _granted_kills := 0
@@ -29,7 +31,20 @@ func _ready() -> void:
 	level = Content.level(Ui.current_level)
 	map_script = load(level.map)
 	survival = Ui.survival
+	coop = Net.online
 	world = GameWorld.new(MapLoader.from_layout(map_script.LAYOUT), _build_config())
+	if coop:
+		if Net.is_host:
+			world.record_net_events = true
+			Net.command_received.connect(_on_remote_command)
+		else:
+			world.workers.clear() # le client reçoit tout de l'hôte
+			Net.snapshot_received.connect(func(snap: Dictionary) -> void: NetSync.apply(world, snap))
+			Net.command_refused.connect(func(reason: String) -> void: hud.flash(reason, Ui.RED))
+		Net.partner_left.connect(func() -> void: Ui.toast("Ton partenaire s'est déconnecté — tu continues seul", Ui.RED))
+		Net.disconnected.connect(func() -> void:
+			Ui.toast("Connexion à l'hôte perdue", Ui.RED)
+			Ui.goto("menu"))
 	if survival:
 		world.waves.infinite = true
 	map_view.setup(world.grid, map_script.GROUND)
@@ -48,7 +63,7 @@ func _ready() -> void:
 	hud.setup(self)
 	units_view.shake.connect(camera.add_shake)
 	units_view.base_hit.connect(hud.flash_damage)
-	if level.id == 1 and not survival and not Save.data.get("tutorial_done", false):
+	if level.id == 1 and not survival and not coop and not Save.data.get("tutorial_done", false):
 		tutorial = Tutorial.new()
 		tutorial.theme = Ui.theme
 		$HUD.add_child(tutorial)
@@ -71,6 +86,8 @@ func _build_config() -> Dictionary:
 		"laser": Save.owns("tower_laser"),
 	}
 	var used: Array[String] = []
+	if Net.is_client():
+		return cfg # en coop, c'est la partie de l'hôte (ses technos et augments) qui compte
 	if Save.augment_count("starter_kit") > 0:
 		cfg.start_metal += 150
 		used.append("starter_kit")
@@ -88,9 +105,16 @@ func _build_config() -> Dictionary:
 
 
 func _process(delta: float) -> void:
-	if not paused:
+	if Net.is_client():
+		NetSync.interpolate(world, delta)
+	elif not paused or coop:
 		for i in speed:
 			world.tick(delta)
+		if coop:
+			_snapshot_timer -= delta
+			if _snapshot_timer <= 0.0:
+				_snapshot_timer = 0.1
+				Net.send_snapshot(NetSync.snapshot(world))
 	if focused_site != null and not world.sites.has(focused_site):
 		focus_site(null)
 	if selected.any(func(w: Worker) -> bool: return not world.workers.has(w)):
@@ -118,7 +142,7 @@ func _on_tapped(world_px: Vector2) -> void:
 	var c := Vector2i(p.floor())
 
 	if build_kind == "orbital":
-		if world.cast_orbital(p):
+		if issue({"t": "orbital", "p": p}) == "":
 			set_build_kind("")
 		return
 	if build_kind != "":
@@ -143,16 +167,16 @@ func _on_tapped(world_px: Vector2) -> void:
 
 	if site != null:
 		if not site.built:
-			world.command_build(selected, site)
+			issue({"t": "build", "w": Commands.ids(selected), "s": site.id})
 		elif site.hp < site.max_hp:
-			world.command_repair(selected, site)
+			issue({"t": "repair", "w": Commands.ids(selected), "s": site.id})
 			hud.flash("Réparation en cours", Ui.GREEN)
 		return
 	match world.grid.get_cell(c):
 		GameGrid.Cell.METAL, GameGrid.Cell.ESSENCE:
-			world.command_harvest(selected, c)
+			issue({"t": "harvest", "w": Commands.ids(selected), "c": c})
 		_:
-			world.command_move(selected, c)
+			issue({"t": "move", "w": Commands.ids(selected), "c": c})
 
 
 func focus_site(s: BuildSite) -> void:
@@ -171,29 +195,23 @@ func upgrade_focused() -> void:
 	if reason != "":
 		hud.flash(reason, Ui.RED)
 	else:
-		world.upgrade(s)
-		hud.flash("%s niveau %d" % [s.stats().name, s.level], Ui.GREEN)
+		issue({"t": "upgrade", "s": s.id})
+		hud.flash("%s niveau %d" % [s.stats().name, s.level + (1 if Net.is_client() else 0)], Ui.GREEN)
 
 
 func repair_focused() -> void:
 	var s := focused_site
 	if s == null:
 		return
-	var crew: Array = []
-	for i in 2:
-		var w := world.nearest_available_worker(s.cell)
-		if w == null:
-			break
-		world.command_repair([w], s)
-		crew.append(w)
-	hud.flash("%d ouvrier(s) envoyé(s) en réparation" % crew.size() if not crew.is_empty() else "Aucun ouvrier disponible", Ui.GREEN if not crew.is_empty() else Ui.RED)
+	var reason := issue({"t": "repair_auto", "s": s.id})
+	hud.flash("Ouvriers envoyés en réparation" if reason == "" else reason, Ui.GREEN if reason == "" else Ui.RED)
 
 
 func sell_focused() -> void:
 	if focused_site == null:
 		return
 	var refund := focused_site.sell_value()
-	world.sell(focused_site)
+	issue({"t": "sell", "s": focused_site.id})
 	hud.flash("Vendu : +%d métal" % refund.metal, Ui.GOLD)
 	focus_site(null)
 
@@ -203,13 +221,7 @@ func _try_place(c: Vector2i) -> void:
 	if reason != "":
 		hud.flash(reason, Ui.RED)
 		return
-	var site := world.place(build_kind, c)
-	var builders: Array = selected.duplicate()
-	if builders.is_empty():
-		var nearest := world.nearest_available_worker(c)
-		if nearest != null:
-			builders.append(nearest)
-	world.command_build(builders, site)
+	issue({"t": "place", "k": build_kind, "c": c, "w": Commands.ids(selected)})
 	set_build_kind("")
 
 
@@ -248,10 +260,30 @@ func train_worker() -> void:
 	if reason != "":
 		hud.flash(reason, Ui.RED)
 	else:
-		world.train_worker()
+		issue({"t": "train"})
+
+
+## Envoie un ordre : appliqué tout de suite en solo et chez l'hôte, envoyé à l'hôte côté client.
+func issue(cmd: Dictionary) -> String:
+	if Net.is_client():
+		Net.send_command(cmd)
+		return ""
+	var reason := Commands.apply(world, cmd)
+	if reason != "":
+		hud.flash(reason, Ui.RED)
+	return reason
+
+
+func _on_remote_command(cmd: Dictionary) -> void:
+	var reason := Commands.apply(world, cmd)
+	if reason != "":
+		Net.send_refused(reason)
 
 
 func toggle_speed() -> void:
+	if Net.is_client():
+		hud.flash("En coop, seul l'hôte règle la vitesse", Ui.RED)
+		return
 	speed = 2 if speed == 1 else 1
 
 
@@ -286,7 +318,9 @@ func grant_rewards() -> int:
 	_granted_waves = maxi(_granted_waves, waves_done)
 	_granted_kills = world.kills
 	Save.add("credits", credits)
-	if survival:
+	if coop:
+		pass # en coop : crédits seulement, pas d'étoiles ni de record
+	elif survival:
 		new_record = Save.record_survival(level.id, world.waves.wave)
 	elif won:
 		Save.record_level(level.id, stars(), world.waves.wave)
@@ -294,6 +328,9 @@ func grant_rewards() -> int:
 
 
 func restart() -> void:
+	if coop:
+		Ui.goto("multi")
+		return
 	Ui.play_level(level.id, survival)
 
 

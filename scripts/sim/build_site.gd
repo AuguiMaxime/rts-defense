@@ -3,6 +3,7 @@ extends RefCounted
 ## Un bâtiment posé par le joueur : tourelle ("gun", "cannon", "missile", "laser") ou "house".
 ## D'abord un chantier, puis un bâtiment terminé.
 
+var id := 0
 var kind := "gun"
 var cell := Vector2i.ZERO
 var work_needed := Balance.TOWER_BUILD_WORK

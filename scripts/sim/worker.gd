@@ -6,6 +6,7 @@ enum State { IDLE, MOVING, HARVESTING, BUILDING, REPAIRING }
 enum Job { NONE, HARVEST, BUILD, REPAIR }
 
 var id := 0
+var net_target := Vector2.INF # coop : position reçue de l'hôte (interpolation)
 var pos := Vector2.ZERO
 var facing := Vector2.RIGHT # direction du dernier déplacement
 var state := State.IDLE

@@ -142,7 +142,7 @@ func _build_top_bar() -> void:
 	_next_btn = Ui.button("▶▶", false, Vector2(64, 36))
 	_next_btn.add_theme_font_size_override("font_size", 16)
 	_next_btn.tooltip_text = "Lancer la vague suivante"
-	_next_btn.pressed.connect(func() -> void: game.world.waves.start_next())
+	_next_btn.pressed.connect(func() -> void: game.issue({"t": "next_wave"}))
 	wt.add_child(_next_btn)
 	wv.add_child(wt)
 	_wave_bar = ProgressBar.new()
@@ -413,7 +413,10 @@ func _build_pause() -> void:
 	v.add_child(restart)
 	v.add_child(SettingsForm.create(true))
 	var quit := Ui.button("QUITTER LA PARTIE", false, Vector2(0, 58))
-	quit.pressed.connect(func() -> void: Ui.goto("menu"))
+	quit.pressed.connect(func() -> void:
+		if game.coop:
+			Net.leave()
+		Ui.goto("menu"))
 	v.add_child(quit)
 	_center(_pause_layer, p)
 
@@ -442,7 +445,9 @@ func open_pause() -> void:
 		return
 	game.set_paused(true)
 	var lvl: Dictionary = game.level
-	if game.survival:
+	if game.coop:
+		_pause_sub.text = "Coop %s · la partie continue pendant la pause" % ("(hôte)" if Net.is_host else "")
+	elif game.survival:
 		_pause_sub.text = "%s · Survie · vague %d" % [game.map_script.NAME, game.world.waves.wave]
 	else:
 		_pause_sub.text = "%s · vague %d/%d" % [game.map_script.NAME, game.world.waves.wave, lvl.waves]
@@ -516,18 +521,21 @@ func show_end(won: bool) -> void:
 	var buttons := Ui.hbox(12)
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	var menu := Ui.button("MENU", false, Vector2(150, 62))
-	menu.pressed.connect(func() -> void: Ui.goto("levels"))
+	menu.pressed.connect(func() -> void:
+		if game.coop:
+			Net.leave()
+		Ui.goto("menu" if game.coop else "levels"))
 	buttons.add_child(menu)
-	var again := Ui.button("REJOUER", false, Vector2(170, 62))
+	var again := Ui.button("SALON" if game.coop else "REJOUER", false, Vector2(170, 62))
 	again.pressed.connect(func() -> void: game.restart())
 	buttons.add_child(again)
 	var next_id: int = game.next_level_id()
-	if won and next_id > 0:
+	if won and next_id > 0 and not game.coop:
 		var nxt := Ui.button("SUIVANT", true, Vector2(180, 62))
 		nxt.pressed.connect(func() -> void: Ui.play_level(next_id))
 		buttons.add_child(nxt)
 	v.add_child(buttons)
-	if won:
+	if won and not Net.is_client():
 		var inf := Ui.button("CONTINUER EN MODE INFINI", false, Vector2(0, 54))
 		inf.add_theme_font_size_override("font_size", 16)
 		inf.pressed.connect(func() -> void:

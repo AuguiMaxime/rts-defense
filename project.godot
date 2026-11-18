@@ -19,6 +19,7 @@ config/version="0.5"
 Save="*res://scripts/data/save.gd"
 Ui="*res://scripts/ui/ui.gd"
 Sfx="*res://scripts/ui/sfx.gd"
+Net="*res://scripts/net/net.gd"
 
 [display]
 

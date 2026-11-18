@@ -23,6 +23,7 @@ const SCREENS := {
 	"tech": "res://scenes/tech.tscn",
 	"settings": "res://scenes/settings.tscn",
 	"game": "res://scenes/game.tscn",
+	"multi": "res://scenes/multiplayer.tscn",
 }
 
 var font_title: FontVariation
@@ -314,6 +315,11 @@ func _build_theme() -> Theme:
 	t.set_constant("outline_size", "ProgressBar", 0)
 
 	t.set_stylebox("panel", "TooltipPanel", box(PANEL, CYAN, 1, 6))
+	t.set_stylebox("normal", "LineEdit", box(Color(PANEL_LIGHT), Color(CYAN, 0.4), 2, 6))
+	t.set_stylebox("focus", "LineEdit", box(Color(PANEL_LIGHT), CYAN, 2, 6))
+	t.set_color("font_color", "LineEdit", TEXT)
+	t.set_color("font_placeholder_color", "LineEdit", Color(MUTED, 0.7))
+	t.set_color("caret_color", "LineEdit", CYAN)
 	t.set_constant("separation", "VBoxContainer", 12)
 	t.set_constant("separation", "HBoxContainer", 12)
 	return t

@@ -4,7 +4,9 @@ extends RefCounted
 
 enum Target { NONE, BASE, WORKER, SITE }
 
+var id := 0
 var type := "normal"
+var net_target := Vector2.INF # coop : position reçue de l'hôte (interpolation)
 var pos := Vector2.ZERO
 var facing := Vector2.RIGHT
 var hp := 1
