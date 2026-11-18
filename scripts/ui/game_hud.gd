@@ -37,6 +37,7 @@ var _end_layer: Control
 var _blocks: Array[Control] = [] # zones qui bloquent les gestes sur la map
 var _flash_time := 0.0
 var _column: VBoxContainer
+var _coop_badge: Label
 var _damage_vignette: ColorRect
 var _damage_alpha := 0.0
 
@@ -66,9 +67,16 @@ func setup(g: Node) -> void:
 	_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	m.add_child(_column)
 	_build_top_bar()
+	var info_row := Ui.hbox(10)
+	info_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if game.coop:
+		_coop_badge = Ui.label("", 18, Ui.MAGENTA, true)
+		_coop_badge.add_theme_constant_override("outline_size", 6)
+		info_row.add_child(_coop_badge)
 	_info = Ui.label("", 20, Ui.MUTED)
 	_info.add_theme_constant_override("outline_size", 6)
-	_column.add_child(_info)
+	info_row.add_child(_info)
+	_column.add_child(info_row)
 	_build_boss_bar()
 	var gap := Ui.spacer()
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -641,6 +649,8 @@ func _process(delta: float) -> void:
 			_info.text = "Glisse un doigt pour sélectionner tes ouvriers, puis touche un gisement"
 		else:
 			_info.text = ""
+	if _coop_badge != null:
+		_coop_badge.text = "● COOP %s ·" % ("HÔTE" if Net.is_host else "INVITÉ") if Net.partner_connected else "○ COOP · seul ·"
 	if _damage_alpha > 0.0:
 		_damage_alpha = maxf(0.0, _damage_alpha - delta * 1.2)
 		(_damage_vignette.material as ShaderMaterial).set_shader_parameter("strength", _damage_alpha)

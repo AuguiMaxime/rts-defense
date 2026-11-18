@@ -18,7 +18,8 @@ et tu tiens ta base face aux vagues.
 
 ## Contenu
 - **Écrans** : menu principal, campagne (5 secteurs), boutique, technologies, paramètres, pause, fin de partie.
-- **Modes** : campagne, Survie (vagues infinies, débloquée après chaque secteur, record sauvegardé).
+- **Modes** : campagne, Survie (vagues infinies, débloquée après chaque secteur, record sauvegardé),
+  **Coop à deux** en réseau local (même Wi-Fi) : même base, mêmes ressources.
 - **Tutoriel** guidé à la première partie.
 - **Tourelles** : mitrailleuse (sol + air), canon lourd (zone, sol), anti-air, laser (boutique).
   Chaque tourelle s'améliore jusqu'au niveau 3, se répare et se vend (touche-la).
@@ -36,12 +37,18 @@ scripts/sim/    Simulation pure (aucun affichage) : grille, chemins, flow field,
 scripts/view/   Affichage de la map et des unités, caméra.
 scripts/ui/     Thème, écrans, HUD, sons (autoloads Ui et Sfx).
 scripts/data/   Sauvegarde (autoload Save) et catalogue du contenu (Content).
+scripts/net/    Coop : autoload Net (ENet, découverte LAN) et NetSync (photos d'état hôte -> client).
 maps/           Maps en texte (une lettre par case).
 assets/         Kenney Tower Defense (CC0), polices OFL, sons générés.
 tests/          Tests headless : godot --headless --script res://tests/run_tests.gd
 ```
 
 Tous les chiffres d'équilibrage sont dans `scripts/sim/balance.gd` et `scripts/data/content.gd`.
+
+## Coop
+Menu → COOP. Un joueur crée la partie, l'autre la voit apparaître (ou entre l'adresse IP affichée).
+L'hôte fait tourner la simulation ; l'invité envoie ses ordres et reçoit l'état 10 fois par seconde.
+Pour tester sur un seul PC : lancer deux fois le jeu (Débogage → Exécuter plusieurs instances dans Godot).
 
 ## À brancher avant publication
 - Paiements Google Play (packs d'or : boutons en place, achat non actif).

@@ -73,7 +73,7 @@ func _ready() -> void:
 	_emblem.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	body.add_child(_emblem)
 
-	var version := Ui.label("v0.4 · prototype", 16, Ui.MUTED)
+	var version := Ui.label("v0.6 · prototype", 16, Ui.MUTED)
 	version.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	root.add_child(version)
 
