@@ -24,6 +24,7 @@ const SCREENS := {
 	"settings": "res://scenes/settings.tscn",
 	"game": "res://scenes/game.tscn",
 	"multi": "res://scenes/multiplayer.tscn",
+	"missions": "res://scenes/missions.tscn",
 }
 
 var font_title: FontVariation

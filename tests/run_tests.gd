@@ -28,6 +28,7 @@ func _init() -> void:
 	_test_upgrade_sell()
 	_test_resume_harvest()
 	_test_boss()
+	_test_stats()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -381,3 +382,20 @@ func _test_boss() -> void:
 	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
 	world.spawn_enemy("boss", Vector2i(0, 0), 1.0)
 	_check(world.boss() != null, "boss repéré pour la barre de vie")
+
+
+func _test_stats() -> void:
+	print("Compteurs de partie (missions)")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	var s := _built(world, "gun", Vector2i(2, 2))
+	_built(world, "house", Vector2i(3, 3))
+	world.upgrade(s)
+	world.train_worker()
+	world.spawn_enemy("boss", Vector2i(0, 0), 1.0)
+	world._damage_enemy(world.enemies[0], 99999)
+	world.command_harvest([world.workers[0]], Vector2i(1, 5))
+	_run(world, 15.0)
+	var st := world.stats
+	_check(st.towers_built == 1 and st.houses_built == 1 and st.upgrades == 1, "tourelles, habitats, améliorations comptés")
+	_check(st.workers_trained == 1 and st.boss_kills == 1 and st.metal_harvested > 0, "ouvriers, boss et métal récolté comptés")

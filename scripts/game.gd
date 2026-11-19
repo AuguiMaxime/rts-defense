@@ -19,6 +19,7 @@ var _snapshot_timer := 0.0
 var _ended := false
 var _granted_waves := 0
 var _granted_kills := 0
+var _granted_stats := {}
 var _last_wave := 0
 
 @onready var map_view: MapView = $MapView
@@ -311,6 +312,8 @@ func stars() -> int:
 func grant_rewards() -> int:
 	var won := world.state == GameWorld.State.WON
 	var waves_done := world.waves.wave if won else maxi(0, world.waves.wave - 1)
+	var prev_waves := _granted_waves
+	var credits_kills_delta := world.kills - _granted_kills
 	var credits := (waves_done - _granted_waves) * 12 + (world.kills - _granted_kills)
 	if won and _granted_waves == 0:
 		credits += 80 + stars() * 25
@@ -318,6 +321,14 @@ func grant_rewards() -> int:
 	_granted_waves = maxi(_granted_waves, waves_done)
 	_granted_kills = world.kills
 	Save.add("credits", credits)
+	var st := {}
+	for k in world.stats:
+		st[k] = int(world.stats[k]) - int(_granted_stats.get(k, 0))
+	_granted_stats = world.stats.duplicate()
+	st.kills = credits_kills_delta
+	st.waves = waves_done - prev_waves
+	st.wins = 1 if won and prev_waves == 0 else 0
+	Save.add_mission_progress(st)
 	if coop:
 		pass # en coop : crédits seulement, pas d'étoiles ni de record
 	elif survival:

@@ -27,6 +27,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"e": enemies,
 		"s": sites,
 		"ev": w.take_net_events(),
+		"st": w.stats,
 	}
 
 
@@ -124,6 +125,8 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 
 	for ev in snap.ev:
 		w.events.append(ev)
+	if snap.has("st"):
+		w.stats = snap.st
 
 
 ## Rapproche en douceur les positions affichées des positions reçues (client).

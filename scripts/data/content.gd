@@ -67,6 +67,21 @@ const GOLD_PACKS: Array[Dictionary] = [
 ]
 const AD_REWARD_GOLD := 25
 
+## Missions du jour : 3 tirées au hasard chaque jour. stat = compteur de partie (GameWorld.stats).
+const MISSIONS: Array[Dictionary] = [
+	{"id": "kills", "text": "Détruis %d ennemis", "stat": "kills", "goal": 150, "reward": 40},
+	{"id": "kills_big", "text": "Détruis %d ennemis", "stat": "kills", "goal": 400, "reward": 90},
+	{"id": "towers", "text": "Construis %d tourelles", "stat": "towers_built", "goal": 15, "reward": 40},
+	{"id": "upgrades", "text": "Améliore %d tourelles", "stat": "upgrades", "goal": 5, "reward": 45},
+	{"id": "workers", "text": "Forme %d ouvriers", "stat": "workers_trained", "goal": 10, "reward": 35},
+	{"id": "waves", "text": "Survis à %d vagues", "stat": "waves", "goal": 20, "reward": 50},
+	{"id": "boss", "text": "Détruis %d boss", "stat": "boss_kills", "goal": 2, "reward": 70},
+	{"id": "win", "text": "Gagne %d partie(s)", "stat": "wins", "goal": 1, "reward": 60},
+	{"id": "houses", "text": "Construis %d habitats", "stat": "houses_built", "goal": 4, "reward": 35},
+	{"id": "metal", "text": "Récolte %d métal", "stat": "metal_harvested", "goal": 1500, "reward": 45},
+]
+const DAILY_LOGIN_GOLD := 10
+
 const LEVELS: Array[Dictionary] = [
 	{"id": 1, "map": "res://maps/map_01.gd", "waves": 10, "difficulty": 1.0},
 	{"id": 2, "map": "res://maps/map_02.gd", "waves": 12, "difficulty": 1.15},

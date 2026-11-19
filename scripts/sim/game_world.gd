@@ -13,6 +13,8 @@ var state := State.PLAYING
 var base_hp := Balance.BASE_HP
 var enemies: Array[Enemy] = []
 var kills := 0
+## Compteurs de la partie (missions du jour, statistiques).
+var stats := {"towers_built": 0, "houses_built": 0, "upgrades": 0, "workers_trained": 0, "boss_kills": 0, "metal_harvested": 0}
 ## Événements visuels (tirs, destructions) que l'affichage récupère avec take_events().
 var events: Array[Dictionary] = []
 ## En coop, l'hôte garde aussi une copie des événements pour l'autre joueur.
@@ -221,6 +223,8 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 	e.hp -= maxi(1, amount - e.armor)
 	if e.hp <= 0:
 		kills += 1
+		if e.type == "boss":
+			stats.boss_kills += 1
 		var bounty: int = Balance.KILL_BOUNTY.get(e.type, 1)
 		metal += bounty
 		_emit({"type": "bounty", "pos": e.pos, "amount": bounty})
@@ -397,6 +401,7 @@ func _on_arrived(w: Worker) -> void:
 func _deposit(w: Worker) -> void:
 	if w.carry_type == GameGrid.Cell.METAL:
 		metal += w.carry_amount
+		stats.metal_harvested += w.carry_amount
 	elif w.carry_type == GameGrid.Cell.ESSENCE:
 		essence += w.carry_amount
 	w.carry_amount = 0
@@ -419,6 +424,7 @@ func train_worker() -> bool:
 		return false
 	metal -= Balance.WORKER_COST_METAL
 	train_queue += 1
+	stats.workers_trained += 1
 	return true
 
 
@@ -542,6 +548,7 @@ func upgrade(s: BuildSite) -> bool:
 	s.invested_essence += cost.essence
 	var old_max := s.max_hp
 	s.level += 1
+	stats.upgrades += 1
 	s.max_hp = s.stats().hp
 	s.hp += s.max_hp - old_max
 	_emit({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
@@ -674,6 +681,9 @@ func _finish_site(s: BuildSite) -> void:
 	_emit({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
 	if s.kind == "house":
 		pop_cap += Content.HOUSE.pop
+		stats.houses_built += 1
+	else:
+		stats.towers_built += 1
 	for w in workers:
 		if w.target_site == s:
 			_resume_or_idle(w)

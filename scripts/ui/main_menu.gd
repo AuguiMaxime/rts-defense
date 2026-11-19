@@ -58,13 +58,17 @@ func _ready() -> void:
 	row.add_child(shop)
 	left.add_child(row)
 	var row2 := Ui.hbox(14)
-	var settings := Ui.button("PARAMÈTRES", false, Vector2(240, 60))
+	var n := Save.claimable_count()
+	var missions := Ui.button("MISSIONS" + ("  (%d)" % n if n > 0 else ""), n > 0, Vector2(240, 60))
+	missions.pressed.connect(func() -> void: Ui.goto("missions"))
+	row2.add_child(missions)
+	var settings := Ui.button("PARAMÈTRES", false, Vector2(200, 60))
 	settings.pressed.connect(func() -> void: Ui.goto("settings"))
 	row2.add_child(settings)
 	if not OS.has_feature("mobile"):
-		var quit := Ui.button("QUITTER", false, Vector2(200, 60))
+		var quit := Ui.button("QUITTER", false, Vector2(160, 60))
 		quit.pressed.connect(func() -> void: get_tree().quit())
-		row2.add_child(quit)
+		row.add_child(quit)
 	left.add_child(row2)
 
 	# Colonne droite : emblème animé
