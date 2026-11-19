@@ -1,0 +1,15 @@
+{
+  "name": "rts-defense-relay",
+  "version": "1.0.0",
+  "description": "Serveur relais pour la coop en ligne de RTS Defense (salons à code)",
+  "main": "relay.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node relay.js",
+    "test": "node test.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

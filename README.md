@@ -37,7 +37,8 @@ scripts/sim/    Simulation pure (aucun affichage) : grille, chemins, flow field,
 scripts/view/   Affichage de la map et des unités, caméra.
 scripts/ui/     Thème, écrans, HUD, sons (autoloads Ui et Sfx).
 scripts/data/   Sauvegarde (autoload Save) et catalogue du contenu (Content).
-scripts/net/    Coop : autoload Net (ENet, découverte LAN) et NetSync (photos d'état hôte -> client).
+scripts/net/    Coop : autoload Net (ENet LAN + WebSocket en ligne) et NetSync (photos d'état hôte -> client).
+server/         Serveur relais Node.js pour la coop en ligne (salons à code).
 maps/           Maps en texte (une lettre par case).
 assets/         Kenney Tower Defense (CC0), polices OFL, sons générés.
 tests/          Tests headless : godot --headless --script res://tests/run_tests.gd
@@ -46,7 +47,10 @@ tests/          Tests headless : godot --headless --script res://tests/run_tests
 Tous les chiffres d'équilibrage sont dans `scripts/sim/balance.gd` et `scripts/data/content.gd`.
 
 ## Coop
-Menu → COOP. Un joueur crée la partie, l'autre la voit apparaître (ou entre l'adresse IP affichée).
+Menu → COOP, deux onglets :
+- **En ligne** : l'hôte crée un salon et donne le code de 4 lettres à son ami. Passe par le serveur
+  relais du dossier `server/` (à héberger, voir [server/README.md](server/README.md)).
+- **Même Wi-Fi** : l'autre joueur voit la partie apparaître (ou entre l'adresse IP affichée).
 L'hôte fait tourner la simulation ; l'invité envoie ses ordres et reçoit l'état 10 fois par seconde.
 Pour tester sur un seul PC : lancer deux fois le jeu (Débogage → Exécuter plusieurs instances dans Godot).
 
