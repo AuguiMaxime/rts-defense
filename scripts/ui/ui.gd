@@ -98,6 +98,19 @@ func toast(text: String, color := CYAN) -> void:
 	tw.tween_callback(p.queue_free)
 
 
+## Marges à laisser pour l'encoche et les bords arrondis des téléphones (en unités du jeu).
+## Renvoie [gauche, haut, droite, bas].
+func safe_margins() -> Array[float]:
+	var win := DisplayServer.window_get_size()
+	var safe := DisplayServer.get_display_safe_area()
+	if win.x <= 0 or win.y <= 0 or safe.size.x <= 0 or not OS.has_feature("mobile"):
+		return [0.0, 0.0, 0.0, 0.0]
+	var vp := get_viewport().get_visible_rect().size
+	var k := vp.x / float(win.x)
+	return [maxf(0.0, safe.position.x * k), maxf(0.0, safe.position.y * k),
+			maxf(0.0, (win.x - safe.end.x) * k), maxf(0.0, (win.y - safe.end.y) * k)]
+
+
 # --- Composants ---------------------------------------------------------------------
 
 func box(bg: Color, border := CYAN_DIM, border_w := 2, radius := 8, skew := 0.0) -> StyleBoxFlat:
@@ -215,8 +228,11 @@ func screen_root(owner_node: Control) -> VBoxContainer:
 	owner_node.add_child(bg)
 	var m := MarginContainer.new()
 	m.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["left", "right", "top", "bottom"]:
-		m.add_theme_constant_override("margin_" + side, 32 if side != "top" else 24)
+	var sm := safe_margins()
+	m.add_theme_constant_override("margin_left", 32 + int(sm[0]))
+	m.add_theme_constant_override("margin_top", 24 + int(sm[1]))
+	m.add_theme_constant_override("margin_right", 32 + int(sm[2]))
+	m.add_theme_constant_override("margin_bottom", 32 + int(sm[3]))
 	owner_node.add_child(m)
 	var v := vbox(20)
 	m.add_child(v)

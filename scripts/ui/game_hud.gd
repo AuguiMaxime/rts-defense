@@ -59,8 +59,11 @@ func setup(g: Node) -> void:
 	add_child(_damage_vignette)
 	var m := MarginContainer.new()
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for side in ["left", "right", "top", "bottom"]:
-		m.add_theme_constant_override("margin_" + side, 14)
+	var sm := Ui.safe_margins()
+	m.add_theme_constant_override("margin_left", 14 + int(sm[0]))
+	m.add_theme_constant_override("margin_top", 14 + int(sm[1]))
+	m.add_theme_constant_override("margin_right", 14 + int(sm[2]))
+	m.add_theme_constant_override("margin_bottom", 14 + int(sm[3]))
 	add_child(m)
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_column = Ui.vbox(8)
