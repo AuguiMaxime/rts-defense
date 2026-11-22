@@ -35,6 +35,7 @@ func _init() -> void:
 	_test_buildings_2x2()
 	_test_auto_repair()
 	_test_map_data()
+	_test_idle_assist()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -101,6 +102,7 @@ func _time_to_build(n_workers: int) -> float:
 	world.metal = 1000
 	var site := world.place_tower(Vector2i(6, 1))
 	world.command_build(world.workers.slice(0, n_workers), site)
+	world.command_harvest(world.workers.slice(n_workers), Vector2i(1, 5)) # pas d'aide automatique
 	var t := 0.0
 	while not site.built and t < 60.0:
 		world.tick(0.05)
@@ -156,6 +158,7 @@ func _test_enemy_reaches_base() -> void:
 	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
 	world.waves.timer = 9999
 	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	world.command_harvest(world.workers, Vector2i(1, 5)) # sinon les inactifs réparent la base
 	_run(world, 25.0)
 	_check(world.base_hp < Balance.BASE_HP, "un ennemi au sol atteint la base et l'attaque (%d PV)" % world.base_hp)
 	var world2 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
@@ -524,3 +527,23 @@ func _test_map_data() -> void:
 	DirAccess.remove_absolute(p)
 	var closed := MapLoader.from_layout("#####\n#B.S#\n#####")
 	_check(not MapData.validate(closed).is_empty(), "carte invalide détectée")
+
+
+func _test_idle_assist() -> void:
+	print("Ouvriers inactifs")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.metal = 1000
+	_check(world.idle_workers().size() == world.workers.size(), "au départ, tous les ouvriers sont inactifs")
+	var site := world.place_tower(Vector2i(6, 1))
+	_run(world, 20.0)
+	_check(site.built, "les inactifs construisent seuls le chantier en attente")
+	site.hp = 30
+	_run(world, 20.0)
+	_check(site.hp == site.max_hp, "puis réparent seuls le bâtiment endommagé")
+	world.base_hp = 700
+	_run(world, 30.0)
+	_check(world.base_hp > 700, "et la base aussi")
+	world.command_harvest(world.workers, Vector2i(1, 5))
+	_run(world, 2.0)
+	_check(world.idle_workers().is_empty(), "un ouvrier qui récolte n'est pas inactif")

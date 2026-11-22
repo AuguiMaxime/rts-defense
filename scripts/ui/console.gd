@@ -22,6 +22,8 @@ var _queue_bar: ProgressBar
 var _info_hp: ProgressBar
 var _info_detail: Label
 var _pulse_id := ""
+var _idle_btn: Button
+var _idle_label: Label
 var _t := 0.0
 
 
@@ -36,7 +38,13 @@ func setup(g: Node) -> void:
 	minimap.custom_minimum_size = Vector2(150, 106)
 	mm_panel.add_child(minimap)
 	minimap.setup(g)
-	add_child(mm_panel)
+	var left := Ui.vbox(6)
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left.size_flags_vertical = Control.SIZE_SHRINK_END
+	_idle_btn = _make_idle_button()
+	left.add_child(_idle_btn)
+	left.add_child(mm_panel)
+	add_child(left)
 
 	add_child(Ui.spacer())
 	var info_panel := _panel(Color(Ui.CYAN, 0.4))
@@ -63,10 +71,45 @@ func setup(g: Node) -> void:
 
 
 func blocks() -> Array[Control]:
-	var out: Array[Control] = []
+	var out: Array[Control] = [_idle_btn]
 	for c in get_children():
-		out.append(c)
+		if c is PanelContainer:
+			out.append(c)
+		else:
+			for cc in c.get_children():
+				if cc is Control:
+					out.append(cc)
 	return out
+
+
+## Bouton « ouvriers inactifs » (au-dessus de la minimap) : touche = suivant, double touche = tous.
+func _make_idle_button() -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(150, 44)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var sb := Ui.box(Color(0.12, 0.09, 0.02, 0.92), Ui.GOLD, 2, 4)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sb)
+	b.add_theme_stylebox_override("pressed", Ui.box(Color(Ui.GOLD, 0.35), Ui.GOLD, 2, 4))
+	var h := Ui.hbox(6)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	b.add_child(h)
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var img := TextureRect.new()
+	img.texture = Sprites.WORKER
+	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	img.custom_minimum_size = Vector2(30, 30)
+	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(img)
+	_idle_label = Ui.label("0", 16, Ui.GOLD, true)
+	_idle_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(_idle_label)
+	b.pressed.connect(func() -> void: game.select_idle_worker())
+	b.tooltip_text = "Ouvriers inactifs (double touche : tous)"
+	return b
 
 
 func _panel(border: Color) -> PanelContainer:
@@ -398,6 +441,10 @@ func _process(delta: float) -> void:
 	if game == null:
 		return
 	_t += delta
+	var idle := (game.world as GameWorld).idle_workers().size()
+	_idle_btn.visible = idle > 0
+	_idle_label.text = "INACTIF%s %d" % ["S" if idle > 1 else "", idle]
+	_idle_btn.self_modulate = Color(1, 1, 1).lerp(Color(1.5, 1.3, 0.7), 0.5 + 0.5 * sin(_t * 4.0))
 	var key: String = game.selection_key()
 	if key != _info_key:
 		_info_key = key

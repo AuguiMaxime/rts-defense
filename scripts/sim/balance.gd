@@ -44,6 +44,7 @@ const ENEMIES := {
 const REPAIR_RATE := 12.0 # PV rendus par seconde et par ouvrier
 const HOUSE_BUILD_WORK := 6.0
 const AUTO_REPAIR_RADIUS := 8.0 # cases autour de l'ouvrier
+const IDLE_ASSIST_RADIUS := 14.0 # un ouvrier inactif va construire / réparer dans ce rayon
 
 const BOSS_EVERY := 5 # un boss toutes les 5 vagues
 

@@ -683,10 +683,27 @@ func _deposit(w: Worker) -> void:
 ## Les ouvriers en réparation auto vont réparer le bâtiment abîmé le plus proche (base comprise).
 func _auto_repair_scan() -> void:
 	for w in workers:
-		if not w.auto_repair or w.job == Worker.Job.BUILD or w.job == Worker.Job.REPAIR:
+		if w.job == Worker.Job.BUILD or w.job == Worker.Job.REPAIR:
 			continue
+		var idle := is_idle(w)
+		if not idle and not w.auto_repair:
+			continue
+		# Un ouvrier inactif termine d'abord les chantiers en attente.
+		if idle:
+			var site: BuildSite = null
+			var sd := Balance.IDLE_ASSIST_RADIUS
+			for s in sites:
+				if not s.built:
+					var d := _dist_to_rect(w.pos, s.rect())
+					if d < sd:
+						site = s
+						sd = d
+			if site != null:
+				command_build([w], site)
+				continue
+		var radius := Balance.IDLE_ASSIST_RADIUS if idle else Balance.AUTO_REPAIR_RADIUS
 		var best: BuildSite = null
-		var best_d := Balance.AUTO_REPAIR_RADIUS
+		var best_d := radius
 		for s in sites:
 			if s.built and s.hp < s.max_hp:
 				var d := _dist_to_rect(w.pos, s.rect())
@@ -698,6 +715,19 @@ func _auto_repair_scan() -> void:
 			command_repair_base([w])
 		elif best != null:
 			command_repair([w], best)
+
+
+## Ouvrier sans tâche et à l'arrêt.
+func is_idle(w: Worker) -> bool:
+	return w.alive and w.job == Worker.Job.NONE and w.state == Worker.State.IDLE and w.path.is_empty()
+
+
+func idle_workers() -> Array[Worker]:
+	var out: Array[Worker] = []
+	for w in workers:
+		if is_idle(w):
+			out.append(w)
+	return out
 
 
 # --- Ordres du joueur ---------------------------------------------------------

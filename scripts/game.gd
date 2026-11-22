@@ -211,6 +211,28 @@ func _clear_selection() -> void:
 		set_build_kind("")
 
 
+var _idle_index := 0
+var _idle_last_tap := -10.0
+
+
+## Bouton « ouvriers inactifs » : sélectionne le suivant et centre la caméra ;
+## une double touche rapide sélectionne tous les inactifs.
+func select_idle_worker() -> void:
+	var idle := world.idle_workers()
+	if idle.is_empty():
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _idle_last_tap < 0.4:
+		_set_selection(idle)
+		hud.flash("%d ouvrier(s) inactif(s) sélectionné(s)" % idle.size(), Ui.GOLD)
+	else:
+		_idle_index = (_idle_index + 1) % idle.size()
+		_set_selection([idle[_idle_index]])
+		camera.center_on(idle[_idle_index].pos * TILE)
+	_idle_last_tap = now
+	Sfx.play("click", -6.0)
+
+
 func deselect() -> void:
 	_clear_selection()
 	Sfx.play("click", -8.0)
