@@ -43,7 +43,7 @@ func _ready() -> void:
 
 func _level_card(l: Dictionary) -> PanelContainer:
 	var map := MapData.load_from(l.map)
-	var unlocked := Save.is_level_unlocked(l.id)
+	var unlocked := Save.is_level_unlocked(l.id) or Content.DEV_TOOLS # outils de dev : tout est ouvert
 	var stars := Save.level_stars(l.id)
 	var card := Ui.panel(Vector2(330, 0), unlocked and stars == 0)
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER

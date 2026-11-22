@@ -18,7 +18,11 @@ var enemies: Array[Enemy] = []
 var kills := 0
 ## Compteurs de la partie (missions du jour, statistiques).
 var stats := {"towers_built": 0, "houses_built": 0, "upgrades": 0, "workers_trained": 0, "boss_kills": 0,
-		"metal_harvested": 0, "units_trained": 0}
+		"metal_harvested": 0, "units_trained": 0, "objectives_done": 0}
+## Objectifs bonus de la carte : {type, wave, state ("pending", "active", "done", "failed"), destroyed, total}
+var objectives: Array[Dictionary] = []
+var _routes := {}
+var _objective_queue: Array = [] # [délai, type d'entité, index objectif]
 ## Événements visuels (tirs, destructions) que l'affichage récupère avec take_events().
 var events: Array[Dictionary] = []
 ## En coop, l'hôte garde aussi une copie des événements pour l'autre joueur.
@@ -88,6 +92,10 @@ func _init(g: GameGrid, config := {}) -> void:
 		deposit_left[c] = Balance.METAL_PER_DEPOSIT
 	for c in g.essence_deposits:
 		deposit_left[c] = Balance.ESSENCE_PER_DEPOSIT
+	for o in config.get("objectives", []):
+		if Balance.OBJECTIVES.has(o.get("type", "")):
+			objectives.append({"type": o.type, "wave": int(o.get("wave", 3)), "state": "pending", "destroyed": 0,
+					"total": int(Balance.OBJECTIVES[o.type].count)})
 	for i in config.get("start_workers", Balance.START_WORKERS):
 		_spawn_worker()
 
@@ -98,6 +106,7 @@ func tick(delta: float) -> void:
 	if state != State.PLAYING:
 		return
 	waves.tick(delta, self)
+	_tick_objectives(delta)
 	if orbital_cooldown > 0.0:
 		orbital_cooldown = maxf(0.0, orbital_cooldown - delta)
 	if _flow_dirty:
@@ -126,7 +135,7 @@ func tick(delta: float) -> void:
 	if base_hp <= 0:
 		base_hp = 0
 		state = State.LOST
-	elif waves.finished() and enemies.is_empty():
+	elif waves.finished() and not enemies.any(func(x: Enemy) -> bool: return not x.neutral):
 		state = State.WON
 
 
@@ -162,6 +171,142 @@ func spawn_enemy(type_name: String, cell: Vector2i, hp_scale: float) -> void:
 	_next_enemy_id += 1
 	e.visual_offset = Vector2(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.2, 0.2))
 	enemies.append(e)
+
+
+# --- Objectifs bonus ------------------------------------------------------------
+
+## Trajet d'un objectif : d'un bord de la carte à l'autre, le long de son réseau.
+func objective_route(type_name: String) -> Array[Vector2]:
+	if _routes.has(type_name):
+		return _routes[type_name]
+	var check: Callable
+	match type_name:
+		"train":
+			check = grid.is_rail
+		"convoy":
+			check = grid.is_road
+		_:
+			check = grid.is_water
+	var route := _longest_route(check)
+	_routes[type_name] = route
+	return route
+
+
+func _longest_route(check: Callable) -> Array[Vector2]:
+	var ends: Array[Vector2i] = []
+	for y in grid.height:
+		for x in grid.width:
+			var c := Vector2i(x, y)
+			if not check.call(c):
+				continue
+			var n := 0
+			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				if check.call(c + d):
+					n += 1
+			if x == 0 or y == 0 or x == grid.width - 1 or y == grid.height - 1 or n <= 1:
+				ends.append(c)
+	var best: Array[Vector2i] = []
+	for a in ends:
+		var prev := {a: a}
+		var q: Array[Vector2i] = [a]
+		var last := a
+		while not q.is_empty():
+			var c: Vector2i = q.pop_front()
+			last = c
+			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				var nb: Vector2i = c + d
+				if check.call(nb) and not prev.has(nb):
+					prev[nb] = c
+					q.append(nb)
+		# Extrémité la plus lointaine parmi les bouts du réseau
+		var far := a
+		var far_d := -1
+		for b in ends:
+			if prev.has(b) and b != a:
+				var k := 0
+				var cur := b
+				while cur != a:
+					cur = prev[cur]
+					k += 1
+				if k > far_d:
+					far_d = k
+					far = b
+		if far_d + 1 > best.size():
+			var path: Array[Vector2i] = []
+			var cur := far
+			while cur != a:
+				path.push_front(cur)
+				cur = prev[cur]
+			path.push_front(a)
+			best = path
+	var out: Array[Vector2] = []
+	for c in best:
+		out.append(Vector2(c) + Vector2(0.5, 0.5))
+	return out
+
+
+func _tick_objectives(delta: float) -> void:
+	for i in objectives.size():
+		var o := objectives[i]
+		if o.state == "pending" and waves.wave >= o.wave:
+			var route := objective_route(o.type)
+			if route.size() < 4:
+				o.state = "failed"
+				continue
+			o.state = "active"
+			var def: Dictionary = Balance.OBJECTIVES[o.type]
+			for k in int(def.count):
+				_objective_queue.append([k * 1.4, def.entity, i])
+			_emit({"type": "objective", "state": "active", "index": i})
+	for q in _objective_queue:
+		q[0] -= delta
+	while not _objective_queue.is_empty() and _objective_queue[0][0] <= 0.0:
+		var q: Array = _objective_queue.pop_front()
+		var route := objective_route(objectives[q[2]].type)
+		var e := Enemy.create(q[1], route[0], waves.hp_scale())
+		e.id = _next_enemy_id
+		_next_enemy_id += 1
+		e.route = route
+		e.route_i = 1
+		e.objective = q[2]
+		e.facing = (route[1] - route[0]).normalized()
+		enemies.append(e)
+
+
+## Entité d'objectif : avance le long de son trajet ; si elle sort de la carte, l'objectif échoue.
+func _tick_neutral(e: Enemy, delta: float) -> void:
+	var step := e.speed * (e.slow_mult if e.slow_timer > 0.0 else 1.0) * delta
+	while step > 0.0 and e.route_i < e.route.size():
+		var t: Vector2 = e.route[e.route_i]
+		var d := e.pos.distance_to(t)
+		if d > 0.001:
+			e.facing = e.facing.lerp((t - e.pos) / d, 0.35).normalized()
+		if d <= step:
+			e.pos = t
+			step -= d
+			e.route_i += 1
+		else:
+			e.pos += (t - e.pos) / d * step
+			step = 0.0
+	if e.route_i >= e.route.size():
+		e.hp = 0 # sorti de la carte
+		var o := objectives[e.objective]
+		if o.state == "active":
+			o.state = "failed"
+			_emit({"type": "objective", "state": "failed", "index": e.objective})
+
+
+func _objective_destroyed(e: Enemy) -> void:
+	var o := objectives[e.objective]
+	o.destroyed += 1
+	_emit({"type": "death", "pos": e.pos, "big": true})
+	if o.state == "active" and o.destroyed >= o.total:
+		o.state = "done"
+		var def: Dictionary = Balance.OBJECTIVES[o.type]
+		metal += int(def.metal)
+		essence += int(def.essence)
+		stats.objectives_done += 1
+		_emit({"type": "objective", "state": "done", "index": e.objective, "pos": e.pos})
 
 
 func base_center() -> Vector2:
@@ -341,6 +486,8 @@ func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
 		r = st.range
 	var best: Enemy = null
 	var best_d := r * r
+	var best_n: Enemy = null
+	var best_nd := r * r
 	var b0 := Vector2i(int(maxf(0.0, center.x - r)) / BUCKET, int(maxf(0.0, center.y - r)) / BUCKET)
 	var b1 := Vector2i(int(center.x + r) / BUCKET, int(center.y + r) / BUCKET)
 	for by in range(b0.y, b1.y + 1):
@@ -352,10 +499,15 @@ func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
 				if not _can_hit(st, e):
 					continue
 				var d := center.distance_squared_to(e.pos)
-				if d <= best_d:
+				if e.neutral:
+					# Objectif bonus : seulement s'il n'y a pas d'ennemi hostile à portée.
+					if d <= best_nd:
+						best_n = e
+						best_nd = d
+				elif d <= best_d:
 					best = e
 					best_d = d
-	return best
+	return best if best != null else best_n
 
 
 ## Tir d'une tourelle ou d'une unité : dégâts (de zone si splash) + événement visuel.
@@ -681,6 +833,9 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 	if e.hp <= 0:
 		return
 	e.hp -= maxi(1, amount - e.armor)
+	if e.hp <= 0 and e.neutral:
+		_objective_destroyed(e)
+		return
 	if e.hp <= 0:
 		kills += 1
 		if e.is_boss():
@@ -699,6 +854,9 @@ func _tick_enemy(e: Enemy, delta: float) -> void:
 	if e.stun_timer > 0.0:
 		e.stun_timer -= delta
 		return # étourdi : ni déplacement ni attaque
+	if e.neutral:
+		_tick_neutral(e, delta)
+		return
 	e.attack_timer -= delta
 	e.retarget_timer -= delta
 	if e.retarget_timer <= 0.0:

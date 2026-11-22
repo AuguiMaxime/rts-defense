@@ -94,6 +94,7 @@ func _build_config() -> Dictionary:
 		"carry_bonus": Save.tech_level("logistics"),
 		"orbital": Save.tech_level("orbital") > 0,
 		"laser": Save.owns("tower_laser"),
+		"objectives": [] if survival else map_script.objectives,
 	}
 	var used: Array[String] = []
 	if Net.is_client():
@@ -793,6 +794,8 @@ func grant_rewards() -> int:
 	var credits := (waves_done - _granted_waves) * 12 + (world.kills - _granted_kills)
 	if won and _granted_waves == 0:
 		credits += 80 + stars() * 25
+	var obj_now := int(world.stats.get("objectives_done", 0))
+	credits += (obj_now - int(_granted_stats.get("objectives_done", 0))) * 40
 	credits = maxi(0, credits)
 	_granted_waves = maxi(_granted_waves, waves_done)
 	_granted_kills = world.kills

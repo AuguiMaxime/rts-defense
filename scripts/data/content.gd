@@ -193,6 +193,7 @@ const LEVELS: Array[Dictionary] = [
 	{"id": 3, "map": "res://maps/map_03.gd", "waves": 15, "difficulty": 1.3},
 	{"id": 4, "map": "res://maps/map_04.gd", "waves": 16, "difficulty": 1.35, "interval": 26.0},
 	{"id": 5, "map": "res://maps/map_05.gd", "waves": 16, "difficulty": 1.5, "interval": 22.0},
+	{"id": 6, "map": "res://maps/map_06.gd", "waves": 12, "difficulty": 1.2, "interval": 28.0},
 ]
 
 

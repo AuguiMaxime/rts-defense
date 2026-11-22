@@ -41,6 +41,7 @@ func _init() -> void:
 	_test_attack_move()
 	_test_finite_deposits()
 	_test_group_move()
+	_test_objectives()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -712,3 +713,47 @@ func _test_group_move() -> void:
 	for u: Unit in us:
 		cells[Vector2i(u.guard_pos.floor())] = true
 	_check(cells.size() >= us.size() * 3 / 4, "elles s'étalent en formation (%d cases pour %d unités)" % [cells.size(), us.size()])
+
+
+const OBJ_MAP := """
+S...........
+............
+TTTTTTYTTTTT
+......~.....
+======H=====
+......~.....
+.......BBB..
+.......BBB..
+.M.....BBB..
+"""
+
+
+func _test_objectives() -> void:
+	print("Objectifs bonus")
+	var g := MapLoader.from_layout(OBJ_MAP)
+	_check(g.is_walkable(Vector2i(2, 2)) and g.is_walkable(Vector2i(6, 4)) and not g.is_walkable(Vector2i(6, 3)), "rails, route et pont praticables, eau bloquante")
+	var world := GameWorld.new(g, {"objectives": [{"type": "train", "wave": 1}, {"type": "convoy", "wave": 1}, {"type": "boat", "wave": 1}]})
+	_check(world.objective_route("train").size() == 12, "trajet du train : toute la voie (%d cases)" % world.objective_route("train").size())
+	_check(world.objective_route("convoy").size() == 12, "trajet du convoi : toute la route")
+	_check(world.objective_route("boat").size() == 4, "trajet du bateau : la rivière, ponts compris")
+	_check(world.can_place_tower(Vector2i(3, 2)) != "", "on ne construit pas sur les rails")
+	world.waves.start_next()
+	_run(world, 0.2)
+	_check(world.objectives.all(func(o: Dictionary) -> bool: return o.state == "active"), "les objectifs démarrent à leur vague")
+	var neutrals := world.enemies.filter(func(e: Enemy) -> bool: return e.neutral)
+	_check(neutrals.size() >= 2, "train et bateau apparaissent")
+	# Sans défense, le train traverse et l'objectif échoue
+	_run(world, 15.0)
+	_check(world.objectives[0].state == "failed", "train non détruit = objectif raté")
+	# Avec une tourelle, le convoi est détruit
+	var w2 := GameWorld.new(MapLoader.from_layout(OBJ_MAP), {"objectives": [{"type": "convoy", "wave": 1}]})
+	w2.waves.timer = 9999
+	for c in [Vector2i(3, 3), Vector2i(8, 3), Vector2i(3, 5)]:
+		var s := _built(w2, "cannon", c)
+		s.level = 3
+	w2.damage_mult = 6.0
+	var m0 := w2.metal
+	w2.waves.start_next()
+	_run(w2, 15.0)
+	_check(w2.objectives[0].state == "done", "convoi détruit = objectif réussi (%s)" % w2.objectives[0].state)
+	_check(w2.metal >= m0 + 200 and w2.stats.objectives_done == 1, "récompense versée")

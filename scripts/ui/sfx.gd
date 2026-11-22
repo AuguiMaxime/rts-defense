@@ -41,6 +41,8 @@ func _ready() -> void:
 
 
 func play(name: String, volume_db := 0.0, min_gap := 0.05) -> void:
+	if not SOUNDS.has(name):
+		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(_last_played.get(name, -10.0)) < min_gap:
 		return

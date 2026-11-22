@@ -6,6 +6,8 @@ extends RefCounted
 const SYMBOL_OF := {
 	GameGrid.Cell.EMPTY: ".", GameGrid.Cell.ROCK: "#", GameGrid.Cell.BASE: "B",
 	GameGrid.Cell.METAL: "M", GameGrid.Cell.ESSENCE: "E", GameGrid.Cell.SPAWN: "S",
+	GameGrid.Cell.WATER: "~", GameGrid.Cell.ROAD: "=", GameGrid.Cell.RAIL: "T",
+	GameGrid.Cell.BRIDGE: "H", GameGrid.Cell.RAIL_BRIDGE: "Y",
 }
 ## Dossier des cartes de l'éditeur : dans le projet quand on lance depuis Godot (pour les versionner),
 ## sinon dans les données de l'appli.
@@ -18,6 +20,8 @@ var LAYOUT := ""
 var waves := 10
 var difficulty := 1.0
 var interval := 30.0
+## Objectifs bonus : [{"type": "train" | "convoy" | "boat", "wave": n}]
+var objectives: Array = []
 var path := "" # fichier d'origine
 
 
@@ -33,6 +37,8 @@ static func load_from(p: String) -> MapData:
 		m.NAME = script.NAME
 		m.GROUND = script.GROUND
 		m.LAYOUT = script.LAYOUT
+		if script.get_script_constant_map().has("OBJECTIVES"):
+			m.objectives = script.OBJECTIVES.duplicate(true)
 		return m
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
 	if not parsed is Dictionary:
@@ -45,6 +51,7 @@ static func load_from(p: String) -> MapData:
 	m.waves = int(parsed.get("waves", m.waves))
 	m.difficulty = float(parsed.get("difficulty", m.difficulty))
 	m.interval = float(parsed.get("interval", m.interval))
+	m.objectives = parsed.get("objectives", [])
 	return m
 
 
@@ -63,7 +70,7 @@ func to_dict() -> Dictionary:
 	for line in LAYOUT.split("\n"):
 		if line.strip_edges() != "":
 			rows.append(line.strip_edges())
-	return {"name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "layout": rows}
+	return {"name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives, "layout": rows}
 
 
 func save_to(p: String) -> Error:

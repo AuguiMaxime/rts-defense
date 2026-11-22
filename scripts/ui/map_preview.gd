@@ -29,6 +29,12 @@ func _draw() -> void:
 					col = Ui.ESSENCE
 				GameGrid.Cell.SPAWN:
 					col = Ui.RED
+				GameGrid.Cell.WATER:
+					col = Color("1e6fa8")
+				GameGrid.Cell.ROAD, GameGrid.Cell.BRIDGE:
+					col = Color("2e3238")
+				GameGrid.Cell.RAIL, GameGrid.Cell.RAIL_BRIDGE:
+					col = Color("6b5a48")
 			if col.a > 0:
 				draw_rect(Rect2(origin + Vector2(x, y) * cell, Vector2(cell, cell)), col)
 	draw_rect(Rect2(origin, Vector2(grid.width, grid.height) * cell), Color(Ui.CYAN, 0.5), false, 2.0)

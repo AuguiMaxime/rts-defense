@@ -12,6 +12,12 @@ const COLOR_ESSENCE := Color(1.0, 0.62, 0.18)
 const COLOR_TEAM := Color(0.30, 0.62, 1.0)
 const COLOR_SPAWN := Color(1.0, 0.30, 0.25)
 const COLOR_SELECT := Color(1, 1, 1, 0.9)
+const WATER_TEX := preload("res://assets/gen/terrain/water.png")
+const SHORE_TEX := preload("res://assets/gen/terrain/shore.png")
+const ASPHALT_TEX := preload("res://assets/gen/terrain/asphalt.png")
+const GRAVEL_TEX := preload("res://assets/gen/terrain/gravel.png")
+const RAIL_TEX := preload("res://assets/gen/terrain/rail_straight.png")
+const DIRS := [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
 
 var grid: GameGrid
 var ground := "grass"
@@ -68,6 +74,18 @@ func _draw() -> void:
 				GameGrid.Cell.SPAWN:
 					draw_texture_rect(Sprites.SCORCH, r.grow(24), false, Color(1, 1, 1, 0.9))
 					draw_arc(r.get_center(), TILE * 0.42, 0, TAU, 40, COLOR_SPAWN, 3.0)
+				GameGrid.Cell.WATER:
+					_draw_water(c, r)
+				GameGrid.Cell.ROAD:
+					_draw_road(c, r, false)
+				GameGrid.Cell.BRIDGE:
+					_draw_water(c, r)
+					_draw_road(c, r, true)
+				GameGrid.Cell.RAIL:
+					_draw_rail(c, r, false)
+				GameGrid.Cell.RAIL_BRIDGE:
+					_draw_water(c, r)
+					_draw_rail(c, r, true)
 				GameGrid.Cell.EMPTY:
 					var h := cell_hash(c)
 					if h < 30 and ground == "grass":
@@ -84,6 +102,93 @@ func _draw() -> void:
 
 	if grid.is_inside(selected):
 		draw_rect(cell_rect(selected).grow(-1), COLOR_SELECT, false, 3.0)
+
+
+## Morceau d'une texture de 128 px qui se raccorde d'une case à l'autre.
+func _tiled(tex: Texture2D, c: Vector2i, r: Rect2, mod := Color(1, 1, 1)) -> void:
+	var n := tex.get_width() / 2.0
+	draw_texture_rect_region(tex, r, Rect2((c.x % 2) * n, (c.y % 2) * n, n, n), mod)
+
+
+## Eau + berges (rochers et herbe) du côté des cases de terre.
+func _draw_water(c: Vector2i, r: Rect2) -> void:
+	_tiled(WATER_TEX, c, r)
+	var sw := SHORE_TEX.get_width()
+	for i in 4:
+		var nb: Vector2i = c + DIRS[i]
+		if not grid.is_inside(nb) or grid.is_water(nb):
+			continue
+		# La bande de berge est verticale, terre à gauche : on la tourne vers le côté terre.
+		var ang: float = [PI / 2.0, PI, -PI / 2.0, 0.0][i]
+		draw_set_transform(r.get_center(), ang)
+		var src_h := sw * 2.4
+		var oy := float((cell_hash(c) * 37 + i * 53) % int(SHORE_TEX.get_height() - src_h))
+		draw_texture_rect_region(SHORE_TEX, Rect2(-TILE / 2.0, -TILE / 2.0, TILE * 0.32, TILE), Rect2(0, oy, sw, src_h))
+		draw_set_transform(Vector2.ZERO)
+
+
+func _links(c: Vector2i, check: Callable) -> Array[bool]:
+	var out: Array[bool] = []
+	for d in DIRS:
+		var nb: Vector2i = c + d
+		out.append(check.call(nb) or (not grid.is_inside(nb) and check.call(c)))
+	return out
+
+
+## Route : asphalte, bordures et lignes jaunes côté fermé, pointillés blancs vers chaque liaison.
+func _draw_road(c: Vector2i, r: Rect2, bridge: bool) -> void:
+	var l := _links(c, grid.is_road)
+	_tiled(ASPHALT_TEX, c, r)
+	var ctr := r.get_center()
+	for i in 4:
+		var ang: float = i * PI / 2.0
+		draw_set_transform(ctr, ang)
+		if l[i]:
+			# pointillé du centre vers ce côté
+			draw_line(Vector2(0, -8), Vector2(0, -24), Color(0.95, 0.95, 0.9, 0.85), 3.0)
+		else:
+			if bridge:
+				draw_rect(Rect2(-32, -32, 64, 7), Color(0.16, 0.19, 0.24))
+				draw_rect(Rect2(-32, -32, 64, 2), Color(0.45, 0.5, 0.58))
+				for k in 3:
+					draw_circle(Vector2(-22 + k * 22, -28.5), 2.0, Color(0.3, 0.9, 1.0))
+			else:
+				draw_rect(Rect2(-32, -32, 64, 4), Color(0.55, 0.56, 0.58))
+			draw_line(Vector2(-32 if l[(i + 3) % 4] else -26, -24), Vector2(32 if l[(i + 1) % 4] else 26, -24), Color(0.95, 0.72, 0.15, 0.9), 2.5)
+		draw_set_transform(Vector2.ZERO)
+
+
+## Voie ferrée : ballast + rails. Ligne droite = texture complète ; sinon demi-voies vers chaque liaison.
+func _draw_rail(c: Vector2i, r: Rect2, bridge: bool) -> void:
+	var l := _links(c, grid.is_rail)
+	var ctr := r.get_center()
+	if not bridge:
+		_tiled(GRAVEL_TEX, c, r, Color(0.9, 0.9, 0.9))
+	var tw := RAIL_TEX.get_width()
+	var th := RAIL_TEX.get_height()
+	if l[0] and l[2] and not l[1] and not l[3]:
+		draw_texture_rect(RAIL_TEX, r, false)
+	elif l[1] and l[3] and not l[0] and not l[2]:
+		draw_set_transform(ctr, PI / 2.0)
+		draw_texture_rect(RAIL_TEX, Rect2(-32, -32, 64, 64), false)
+		draw_set_transform(Vector2.ZERO)
+	else:
+		for i in 4:
+			if l[i]:
+				draw_set_transform(ctr, i * PI / 2.0)
+				draw_texture_rect_region(RAIL_TEX, Rect2(-32, -32, 64, 34), Rect2(0, 0, tw, th * 34.0 / 64.0))
+				draw_set_transform(Vector2.ZERO)
+		draw_circle(ctr, 9, Color(0.35, 0.3, 0.26))
+		draw_circle(ctr, 5, Color(0.6, 0.62, 0.66))
+	if bridge:
+		for i in 4:
+			if not l[i]:
+				draw_set_transform(ctr, i * PI / 2.0)
+				draw_rect(Rect2(-32, -32, 64, 7), Color(0.16, 0.19, 0.24))
+				draw_rect(Rect2(-32, -32, 64, 2), Color(0.45, 0.5, 0.58))
+				for k in 3:
+					draw_circle(Vector2(-22 + k * 22, -28.5), 2.0, Color(0.3, 0.9, 1.0))
+				draw_set_transform(Vector2.ZERO)
 
 
 func _draw_deposit(r: Rect2, color: Color, tex: Texture2D) -> void:

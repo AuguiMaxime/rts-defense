@@ -11,7 +11,11 @@ const TOOLS := [
 	{"id": "E", "name": "ESSENCE", "color": Color("ffa63d")},
 	{"id": "B", "name": "BASE 3x3", "color": Color("22d3ee")},
 	{"id": "S", "name": "APPARITION", "color": Color("f87171")},
+	{"id": "~", "name": "EAU", "color": Color("1e90d6")},
+	{"id": "=", "name": "ROUTE", "color": Color("3b3f46")},
+	{"id": "T", "name": "RAILS", "color": Color("8a6a4a")},
 ]
+const OBJECTIVE_DEFAULT_WAVE := {"train": 3, "convoy": 6, "boat": 9}
 
 var data: MapData
 var rows: Array[String] = []
@@ -29,6 +33,7 @@ var _ui: Control
 var _tool_buttons := {}
 var _brush_buttons := {}
 var _ground_buttons := {}
+var _obj_buttons := {}
 var _name_edit: LineEdit
 var _w_spin: SpinBox
 var _h_spin: SpinBox
@@ -134,9 +139,19 @@ func _refresh(full_check := false) -> void:
 
 func _validate() -> void:
 	_issues = MapData.validate(grid)
+	var warn := ""
+	for o in data.objectives:
+		var need: Callable = {"train": grid.is_rail, "convoy": grid.is_road, "boat": grid.is_water}[o.type]
+		var any := false
+		for y in grid.height:
+			for x in grid.width:
+				if need.call(Vector2i(x, y)):
+					any = true
+		if not any:
+			warn += "\n⚠ %s sans %s" % [Balance.OBJECTIVES[o.type].name, {"train": "rails", "convoy": "route", "boat": "eau"}[o.type]]
 	if _issues.is_empty():
 		_status.text = "✔ Carte valide · %d x %d · %d apparition(s) · %d métal · %d essence" % [
-				grid.width, grid.height, grid.spawn_points.size(), grid.metal_deposits.size(), grid.essence_deposits.size()]
+				grid.width, grid.height, grid.spawn_points.size(), grid.metal_deposits.size(), grid.essence_deposits.size()] + warn
 		_status.add_theme_color_override("font_color", Ui.GREEN)
 	else:
 		_status.text = "✖ " + "\n✖ ".join(_issues)
@@ -196,9 +211,20 @@ func _paint(c: Vector2i, refresh := true) -> void:
 				var cc := c + Vector2i(dx, dy)
 				if cc.y < 0 or cc.y >= rows.size() or cc.x < 0 or cc.x >= rows[0].length():
 					continue
-				if rows[cc.y][cc.x] == "B" and tool != ".":
+				var cur := rows[cc.y][cc.x]
+				if cur == "B" and tool != ".":
 					continue # on ne peint pas par-dessus la base (gomme exceptée)
-				_set_char(rows, cc, tool)
+				var ch := tool
+				# Ponts automatiques : route ou rails sur l'eau (et l'inverse)
+				if tool == "=" and cur in ["~", "Y"]:
+					ch = "H"
+				elif tool == "T" and cur in ["~", "H"]:
+					ch = "Y"
+				elif tool == "~" and cur in ["=", "H"]:
+					ch = "H"
+				elif tool == "~" and cur in ["T", "Y"]:
+					ch = "Y"
+				_set_char(rows, cc, ch)
 	if refresh:
 		_refresh()
 
@@ -321,13 +347,20 @@ func _build_ui() -> void:
 	left.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	var lv := Ui.vbox(5)
 	lv.add_child(Ui.label("PINCEAU", 16, Ui.MUTED, true))
+	var tg := GridContainer.new()
+	tg.columns = 2
+	tg.add_theme_constant_override("h_separation", 4)
+	tg.add_theme_constant_override("v_separation", 4)
+	lv.add_child(tg)
 	for t in TOOLS:
-		var b := _small_button(t.name, 150)
-		b.custom_minimum_size.y = 40
+		var b := _small_button(t.name, 73)
+		b.custom_minimum_size.y = 38
+		b.add_theme_font_size_override("font_size", 11)
 		var sw := ColorRect.new()
 		sw.color = t.color
-		sw.custom_minimum_size = Vector2(14, 14)
-		sw.position = Vector2(10, 16)
+		sw.custom_minimum_size = Vector2(8, 8)
+		sw.size = Vector2(8, 8)
+		sw.position = Vector2(5, 5)
 		sw.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(sw)
 		var id: String = t.id
@@ -335,7 +368,7 @@ func _build_ui() -> void:
 			tool = id
 			_highlight())
 		_tool_buttons[id] = b
-		lv.add_child(b)
+		tg.add_child(b)
 	lv.add_child(Ui.label("TAILLE", 16, Ui.MUTED, true))
 	var bh := Ui.hbox(4)
 	for n in [1, 2, 3]:
@@ -394,6 +427,18 @@ func _build_ui() -> void:
 	_interval_spin = _spin(12, 60, 1, 30)
 	g.add_child(_interval_spin)
 	rv.add_child(g)
+	rv.add_child(Ui.label("OBJECTIFS BONUS", 14, Ui.GOLD, true))
+	var oh := Ui.hbox(4)
+	for pair in [["train", "TRAIN"], ["convoy", "CONVOI"], ["boat", "BATEAU"]]:
+		var b := _small_button(pair[1], 0)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size.y = 38
+		b.add_theme_font_size_override("font_size", 12)
+		var typ: String = pair[0]
+		b.pressed.connect(func() -> void: _toggle_objective(typ))
+		_obj_buttons[typ] = b
+		oh.add_child(b)
+	rv.add_child(oh)
 	var files := Ui.hbox(6)
 	var new_b := _small_button("NOUVELLE", 0)
 	new_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -428,7 +473,23 @@ func _build_ui() -> void:
 	_open_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
+func _toggle_objective(typ: String) -> void:
+	var found := -1
+	for i in data.objectives.size():
+		if data.objectives[i].type == typ:
+			found = i
+	if found >= 0:
+		data.objectives.remove_at(found)
+	else:
+		data.objectives.append({"type": typ, "wave": OBJECTIVE_DEFAULT_WAVE[typ]})
+	_highlight()
+	_validate()
+
+
 func _highlight() -> void:
+	for typ in _obj_buttons:
+		var on := data != null and data.objectives.any(func(o: Dictionary) -> bool: return o.type == typ)
+		(_obj_buttons[typ] as Button).theme_type_variation = "PrimaryButton" if on else ""
 	for id in _tool_buttons:
 		(_tool_buttons[id] as Button).theme_type_variation = "PrimaryButton" if id == tool else ""
 	for n in _brush_buttons:
@@ -480,6 +541,7 @@ func _test() -> void:
 	copy.waves = data.waves
 	copy.difficulty = data.difficulty
 	copy.interval = data.interval
+	copy.objectives = data.objectives.duplicate(true)
 	Ui.play_custom(copy)
 
 

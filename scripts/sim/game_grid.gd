@@ -4,7 +4,7 @@ extends RefCounted
 ## Simulation pure : aucune dépendance à l'affichage, pour pouvoir tourner
 ## plus tard côté serveur en multijoueur.
 
-enum Cell { EMPTY, ROCK, BASE, METAL, ESSENCE, SPAWN }
+enum Cell { EMPTY, ROCK, BASE, METAL, ESSENCE, SPAWN, WATER, ROAD, RAIL, BRIDGE, RAIL_BRIDGE }
 
 const CELL_NAMES := {
 	Cell.EMPTY: "Terrain libre",
@@ -13,6 +13,11 @@ const CELL_NAMES := {
 	Cell.METAL: "Gisement de métal",
 	Cell.ESSENCE: "Gisement d'essence",
 	Cell.SPAWN: "Point d'apparition ennemi",
+	Cell.WATER: "Eau",
+	Cell.ROAD: "Route",
+	Cell.RAIL: "Voie ferrée",
+	Cell.BRIDGE: "Pont routier",
+	Cell.RAIL_BRIDGE: "Pont ferroviaire",
 }
 
 var width := 0
@@ -59,7 +64,23 @@ func set_cell(c: Vector2i, type: int) -> void:
 ## Une case où les unités au sol peuvent marcher.
 func is_walkable(c: Vector2i) -> bool:
 	var t := get_cell(c)
-	return t == Cell.EMPTY or t == Cell.SPAWN
+	return t == Cell.EMPTY or t == Cell.SPAWN or t == Cell.ROAD or t == Cell.RAIL or t == Cell.BRIDGE or t == Cell.RAIL_BRIDGE
+
+
+## Réseaux utilisés par les objectifs bonus (train, convoi, bateau).
+func is_road(c: Vector2i) -> bool:
+	var t := get_cell(c)
+	return t == Cell.ROAD or t == Cell.BRIDGE
+
+
+func is_rail(c: Vector2i) -> bool:
+	var t := get_cell(c)
+	return t == Cell.RAIL or t == Cell.RAIL_BRIDGE
+
+
+func is_water(c: Vector2i) -> bool:
+	var t := get_cell(c)
+	return t == Cell.WATER or t == Cell.BRIDGE or t == Cell.RAIL_BRIDGE
 
 
 ## Centre de la base, en coordonnées de cases (fractionnaires).

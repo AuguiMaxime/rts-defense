@@ -200,6 +200,13 @@ func _build_top_bar() -> void:
 	wave.add_child(wv)
 	wave.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	right.add_child(wave)
+	_obj_panel = Ui.panel(Vector2(0, 0))
+	_obj_panel.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.85), Color(Ui.GOLD, 0.5), 2, 6, 0.12))
+	_obj_box = Ui.vbox(2)
+	_obj_panel.add_child(_obj_box)
+	_obj_panel.visible = false
+	_obj_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right.add_child(_obj_panel)
 	_blocks.append(wave)
 
 
@@ -411,10 +418,65 @@ func pulse_card(id: String, _t: float = 0.0) -> void:
 	console.pulse(id)
 
 
+var _obj_panel: PanelContainer
+var _obj_box: VBoxContainer
+var _obj_key := ""
+
+
+## Objectifs bonus de la mission (sous le panneau des vagues).
+func _update_objectives(w: GameWorld) -> void:
+	if w.objectives.is_empty():
+		return
+	_obj_panel.visible = true
+	var key := ""
+	for o in w.objectives:
+		key += "%s%d|" % [o.state, o.destroyed]
+	if key == _obj_key:
+		return
+	# Annonce des changements d'état
+	if _obj_key != "":
+		var old := _obj_key.split("|")
+		for i in w.objectives.size():
+			var o: Dictionary = w.objectives[i]
+			var def: Dictionary = Balance.OBJECTIVES[o.type]
+			if i < old.size() and not old[i].begins_with(o.state):
+				match o.state:
+					"active":
+						flash("★ OBJECTIF BONUS : %s !" % def.name, Ui.GOLD)
+						Sfx.play("wave", -6.0)
+					"done":
+						flash("★ Objectif réussi : +%d métal  +%d essence" % [def.metal, def.essence], Ui.GREEN)
+						Sfx.play("victory", -6.0)
+					"failed":
+						flash("Objectif raté : la cible s'est échappée", Ui.RED)
+	_obj_key = key
+	for c in _obj_box.get_children():
+		c.queue_free()
+	_obj_box.add_child(Ui.label("★ OBJECTIFS BONUS", 13, Ui.GOLD, true))
+	for o in w.objectives:
+		var def: Dictionary = Balance.OBJECTIVES[o.type]
+		var txt: String = def.name
+		var col := Ui.MUTED
+		match o.state:
+			"pending":
+				txt += "  ·  vague %d" % o.wave
+			"active":
+				txt += "  ·  %d/%d" % [o.destroyed, o.total] if o.total > 1 else "  ·  EN COURS"
+				col = Ui.GOLD
+			"done":
+				txt = "✔ " + txt
+				col = Ui.GREEN
+			"failed":
+				txt = "✖ " + txt
+				col = Ui.RED
+		_obj_box.add_child(Ui.label(txt, 13, col))
+
+
 func _process(delta: float) -> void:
 	if game == null:
 		return
 	var w: GameWorld = game.world
+	_update_objectives(w)
 	_metal.text = str(w.metal)
 	_essence.text = str(w.essence)
 	var used := w.pop_used()

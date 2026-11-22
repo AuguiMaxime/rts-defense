@@ -9,6 +9,11 @@ const SYMBOLS := {
 	"M": GameGrid.Cell.METAL,
 	"E": GameGrid.Cell.ESSENCE,
 	"S": GameGrid.Cell.SPAWN,
+	"~": GameGrid.Cell.WATER,
+	"=": GameGrid.Cell.ROAD,
+	"T": GameGrid.Cell.RAIL,
+	"H": GameGrid.Cell.BRIDGE,
+	"Y": GameGrid.Cell.RAIL_BRIDGE,
 }
 
 

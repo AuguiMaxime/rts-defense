@@ -289,7 +289,90 @@ func _draw_house(r: Rect2) -> void:
 	draw_arc(c, 23, 0, TAU, 24, Color(0.85, 1.0, 0.95, 0.9), 2.0)
 
 
+var _trails := {} # id d'entité d'objectif -> positions passées (pour les wagons)
+
+
+## Train, camions, bateau : dessinés en vectoriel en attendant des sprites dédiés.
+func _draw_neutral(e: Enemy) -> void:
+	var p := e.pos * TILE
+	var trail: Array = _trails.get(e.id, [])
+	if trail.is_empty() or (trail[-1] as Vector2).distance_to(p) > 3.0:
+		trail.append(p)
+		if trail.size() > 160:
+			trail.pop_front()
+		_trails[e.id] = trail
+	var ang := e.facing.angle()
+	var pulse := 0.5 + 0.5 * sin(_anim * 4.0)
+	match e.type:
+		"train":
+			for k in range(3, 0, -1):
+				var wp := _trail_point(trail, p, k * 58.0)
+				var wa := (_trail_point(trail, p, k * 58.0 - 6.0) - wp).angle()
+				_draw_box(wp, wa, Vector2(54, 30), [Color(0.55, 0.28, 0.16), Color(0.15, 0.4, 0.45), Color(0.4, 0.42, 0.18)][k % 3], true)
+			_draw_box(p, ang, Vector2(60, 34), Color(0.22, 0.24, 0.28), false)
+			draw_set_transform(p, ang)
+			draw_rect(Rect2(-30, -5, 60, 10), Color(0.85, 0.18, 0.2))
+			draw_circle(Vector2(28, -10), 4, Color(1, 0.95, 0.6))
+			draw_circle(Vector2(28, 10), 4, Color(1, 0.95, 0.6))
+			draw_rect(Rect2(-18, -12, 22, 24), Color(0.3, 0.85, 1.0, 0.7))
+			draw_set_transform(Vector2.ZERO)
+		"truck":
+			_draw_box(p - e.facing * 8, ang, Vector2(34, 26), Color(0.5, 0.47, 0.38), true)
+			draw_set_transform(p, ang)
+			draw_rect(Rect2(10, -12, 16, 24), Color(0.25, 0.27, 0.3))
+			draw_rect(Rect2(20, -10, 5, 20), Color(0.35, 0.85, 1.0, 0.8))
+			draw_circle(Vector2(26, -9), 2.5, Color(1, 0.95, 0.6))
+			draw_circle(Vector2(26, 9), 2.5, Color(1, 0.95, 0.6))
+			draw_set_transform(Vector2.ZERO)
+		"boat":
+			for k in 4:
+				var wp := _trail_point(trail, p, 20.0 + k * 14.0)
+				var spread := 8.0 + k * 6.0
+				var n := e.facing.orthogonal()
+				draw_circle(wp + n * spread, 3.5 - k * 0.6, Color(1, 1, 1, 0.5 - k * 0.1))
+				draw_circle(wp - n * spread, 3.5 - k * 0.6, Color(1, 1, 1, 0.5 - k * 0.1))
+			draw_set_transform(p, ang)
+			var hull := PackedVector2Array([Vector2(40, 0), Vector2(18, -18), Vector2(-34, -18), Vector2(-38, 0), Vector2(-34, 18), Vector2(18, 18)])
+			draw_colored_polygon(hull, Color(0.28, 0.3, 0.34))
+			draw_polyline(hull + PackedVector2Array([hull[0]]), Color(0.1, 0.11, 0.13), 3.0)
+			draw_rect(Rect2(-22, -10, 26, 20), Color(0.82, 0.2, 0.22))
+			draw_rect(Rect2(-14, -6, 12, 12), Color(0.35, 0.85, 1.0, 0.8))
+			draw_set_transform(Vector2.ZERO)
+	# Repère d'objectif bonus : anneau doré + barre de PV
+	draw_arc(p, 34 + pulse * 4, 0, TAU, 32, Color(1.0, 0.8, 0.2, 0.55 + 0.35 * pulse), 2.5)
+	_draw_bar(Rect2(p - Vector2(30, 34), Vector2(60, 0)), float(e.hp) / e.max_hp, Color(1.0, 0.8, 0.2), 7.0)
+
+
+func _trail_point(trail: Array, head: Vector2, dist: float) -> Vector2:
+	var left := dist
+	var prev := head
+	for i in range(trail.size() - 1, -1, -1):
+		var q: Vector2 = trail[i]
+		var d := prev.distance_to(q)
+		if d >= left and d > 0.0:
+			return prev.lerp(q, left / d)
+		left -= d
+		prev = q
+	return prev
+
+
+func _draw_box(at: Vector2, ang: float, sz: Vector2, col: Color, ridges: bool) -> void:
+	draw_set_transform(at + Vector2(3, 5), ang)
+	draw_rect(Rect2(-sz / 2, sz), Color(0, 0, 0, 0.3))
+	draw_set_transform(at, ang)
+	draw_rect(Rect2(-sz / 2, sz), col)
+	draw_rect(Rect2(-sz / 2, sz), Color(0.08, 0.09, 0.1), false, 2.0)
+	if ridges:
+		for k in int(sz.x / 9):
+			var x := -sz.x / 2 + 5 + k * 9
+			draw_line(Vector2(x, -sz.y / 2 + 3), Vector2(x, sz.y / 2 - 3), Color(0, 0, 0, 0.25), 2.0)
+	draw_set_transform(Vector2.ZERO)
+
+
 func _draw_enemy(e: Enemy) -> void:
+	if e.neutral:
+		_draw_neutral(e)
+		return
 	var look: Dictionary = Sprites.ENEMY_LOOK[e.type]
 	var p := (e.pos + e.visual_offset) * TILE
 	var size: float = look.size

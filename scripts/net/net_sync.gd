@@ -4,7 +4,7 @@ extends RefCounted
 ## Formats compacts (tableaux) pour limiter la taille des paquets.
 
 const ENEMY_TYPES: Array[String] = ["normal", "fast", "armored", "flying", "boss",
-		"swarmer", "spitter", "brute", "shell", "siege", "mothership"]
+		"swarmer", "spitter", "brute", "shell", "siege", "mothership", "train", "truck", "boat"]
 
 static func _prod(p: Producer) -> Array:
 	if p == null:
@@ -41,6 +41,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"w": workers,
 		"u": units,
 		"dl": w.deposit_left,
+		"ob": w.objectives.map(func(o: Dictionary) -> Array: return [o.state, o.destroyed]),
 		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
 		"e": enemies,
@@ -93,6 +94,11 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 			old.alive = false
 	w.workers = workers
 
+	if snap.has("ob"):
+		var ob: Array = snap.ob
+		for i in mini(ob.size(), w.objectives.size()):
+			w.objectives[i].state = ob[i][0]
+			w.objectives[i].destroyed = ob[i][1]
 	if snap.has("dl"):
 		w.deposit_left = snap.dl
 		var dp: Array = snap.dp

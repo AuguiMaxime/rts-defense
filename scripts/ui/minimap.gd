@@ -28,6 +28,12 @@ func setup(g: Node) -> void:
 					col = Ui.RED
 				GameGrid.Cell.BASE:
 					col = Ui.CYAN
+				GameGrid.Cell.WATER:
+					col = Color("1e6fa8")
+				GameGrid.Cell.ROAD, GameGrid.Cell.BRIDGE:
+					col = Color("3b3f46")
+				GameGrid.Cell.RAIL, GameGrid.Cell.RAIL_BRIDGE:
+					col = Color("6b5a48")
 			img.set_pixel(x, y, col)
 	_terrain = ImageTexture.create_from_image(img)
 
@@ -57,8 +63,8 @@ func _draw() -> void:
 	for u in w.units:
 		draw_rect(Rect2(r.position + u.pos * k - Vector2(2, 2), Vector2(4, 4)), Ui.GREEN)
 	for e in w.enemies:
-		var sz := 5.0 if e.is_boss() else 3.0
-		draw_rect(Rect2(r.position + e.pos * k - Vector2(sz, sz) / 2, Vector2(sz, sz)), Ui.RED)
+		var sz := 5.0 if e.is_boss() or e.neutral else 3.0
+		draw_rect(Rect2(r.position + e.pos * k - Vector2(sz, sz) / 2, Vector2(sz, sz)), Ui.GOLD if e.neutral else Ui.RED)
 	# Cadre de la caméra
 	var cam: Camera2D = game.camera
 	var vp := get_viewport_rect().size / cam.zoom.x / MapView.TILE

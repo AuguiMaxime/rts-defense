@@ -49,6 +49,17 @@ const ENEMIES := {
 	"siege": {"hp": 170, "speed": 0.6, "damage": 18, "range": 2.6, "cooldown": 2.8, "armor": 4, "flying": false},
 	"mothership": {"hp": 900, "speed": 0.45, "damage": 30, "range": 3.0, "cooldown": 1.4, "armor": 3, "flying": true},
 }
+## Objectifs bonus (neutres : ne combattent pas, suivent la voie ferrée / la route / l'eau).
+const OBJECTIVE_ENTITIES := {
+	"train": {"hp": 700, "speed": 1.7, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 3, "flying": false},
+	"truck": {"hp": 180, "speed": 1.5, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 2, "flying": false},
+	"boat": {"hp": 450, "speed": 1.1, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 2, "flying": false},
+}
+const OBJECTIVES := {
+	"train": {"name": "Détruire le train", "entity": "train", "count": 1, "metal": 250, "essence": 80, "credits": 40},
+	"convoy": {"name": "Détruire le convoi", "entity": "truck", "count": 3, "metal": 200, "essence": 60, "credits": 40},
+	"boat": {"name": "Couler le bateau", "entity": "boat", "count": 1, "metal": 220, "essence": 100, "credits": 40},
+}
 ## Ennemis considérés comme boss (barre de PV, bandeau, étourdissement réduit…).
 const BOSSES: Array[String] = ["boss", "mothership"]
 
