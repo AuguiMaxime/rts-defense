@@ -45,23 +45,23 @@ const FLAME := preload("res://assets/gen/fx_flame.png")
 ## Unités (sprites générés). upright = dessin de face, non tourné (retourné gauche/droite) ;
 ## sinon le sprite pointe vers le haut et tourne avec l'unité (rot = décalage d'angle).
 const UNIT_LOOK := {
-	"soldier": {"tex": preload("res://assets/gen/u_soldier.png"), "size": 58, "tint": Color(1, 1, 1), "upright": true},
-	"warrior": {"tex": preload("res://assets/gen/u_warrior.png"), "size": 60, "tint": Color(1, 1, 1), "upright": true},
-	"grenadier": {"tex": preload("res://assets/gen/u_grenadier.png"), "size": 70, "tint": Color(1, 1, 1), "upright": true},
-	"sniper": {"tex": preload("res://assets/gen/u_sniper.png"), "size": 60, "tint": Color(1, 1, 1), "upright": true},
-	"medic": {"tex": preload("res://assets/gen/u_medic.png"), "size": 58, "tint": Color(1, 1, 1), "upright": true},
-	"tank": {"tex": preload("res://assets/gen/tank_hull.png"), "size": 80, "tint": Color(1, 1, 1), "rot": PI / 2.0,
-			"turret": preload("res://assets/gen/tank_turret.png"), "turret_size": 84},
-	"aa_mech": {"tex": preload("res://assets/gen/mech_turret.png"), "size": 76, "tint": Color(1, 1, 1), "upright": true},
+	"soldier": {"tex": preload("res://assets/gen/u_soldier.png"), "size": 56, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"warrior": {"tex": preload("res://assets/gen/u_warrior.png"), "size": 56, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"grenadier": {"tex": preload("res://assets/gen/u_grenadier.png"), "size": 64, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"sniper": {"tex": preload("res://assets/gen/u_sniper.png"), "size": 62, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"medic": {"tex": preload("res://assets/gen/u_medic.png"), "size": 54, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"tank": {"tex": preload("res://assets/gen/tank_hull.png"), "size": 76, "tint": Color(1, 1, 1), "rot": PI / 2.0,
+			"turret": preload("res://assets/gen/tank_turret.png"), "turret_size": 88},
+	"aa_mech": {"tex": preload("res://assets/gen/mech_turret.png"), "size": 70, "tint": Color(1, 1, 1), "rot": PI / 2.0},
 }
 
 ## Apparence de chaque type d'ennemi : texture, taille en pixels, teinte.
 const ENEMY_LOOK := {
 	"normal": {"tex": preload("res://assets/gen/e_normal_hull.png"), "size": 62, "tint": Color(1, 1, 1), "rot": PI / 2.0,
-			"turret": preload("res://assets/gen/e_normal_turret.png")},
+			"turret": preload("res://assets/gen/e_normal_turret.png"), "turret_size": 44},
 	"fast": {"tex": preload("res://assets/gen/e_fast.png"), "size": 54, "tint": Color(1, 1, 1), "rot": PI / 2.0},
-	"armored": {"tex": preload("res://assets/gen/e_armored.png"), "size": 80, "tint": Color(1, 1, 1), "rot": -PI / 2.0},
-	"flying": {"tex": preload("res://assets/gen/e_flying.png"), "size": 76, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"armored": {"tex": preload("res://assets/gen/e_armored.png"), "size": 80, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"flying": {"tex": preload("res://assets/gen/e_flying.png"), "size": 80, "tint": Color(1, 1, 1), "rot": PI / 2.0},
 	"boss": {"tex": preload("res://assets/gen/e_boss.png"), "size": 140, "tint": Color(1, 1, 1), "rot": PI / 2.0},
 }
 

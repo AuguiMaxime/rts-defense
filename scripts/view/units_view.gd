@@ -133,11 +133,10 @@ func _draw_worker(w: Worker) -> void:
 	if selected.has(w):
 		draw_circle(p, 22, Color(COLOR_SELECTED, 0.18))
 		draw_arc(p, 22, 0, TAU, 32, COLOR_SELECTED, 3.0)
-	var wflip := -1.0 if w.facing.x < -0.05 else 1.0
-	var wbob := sin(_anim * 9.0 + w.id) * 1.5 if w.state == Worker.State.MOVING else 0.0
-	draw_circle(p + Vector2(0, 18), 12, Color(0, 0, 0, 0.28))
-	draw_set_transform(p + Vector2(0, wbob - 4), 0.0, Vector2(wflip, 1.0))
-	draw_texture_rect(Sprites.WORKER, Rect2(-26, -26, 52, 52), false)
+	draw_set_transform(p + Vector2(3, 5), w.facing.angle() + PI / 2.0)
+	draw_texture_rect(Sprites.WORKER, Rect2(-22, -22, 44, 44), false, Color(0, 0, 0, 0.3))
+	draw_set_transform(p, w.facing.angle() + PI / 2.0)
+	draw_texture_rect(Sprites.WORKER, Rect2(-22, -22, 44, 44), false)
 	draw_set_transform(Vector2.ZERO)
 	if w.carry_amount > 0:
 		var c := MapView.COLOR_METAL if w.carry_type == GameGrid.Cell.METAL else MapView.COLOR_ESSENCE
@@ -259,9 +258,6 @@ func _draw_unit(u: Unit) -> void:
 			draw_set_transform(p, (u.aim_angle if u.target != null else u.facing.angle()) + rot)
 			draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint * skin_tint)
 	draw_set_transform(Vector2.ZERO)
-	if u.type == "medic":
-		draw_rect(Rect2(p + Vector2(-3, -9), Vector2(6, 18)), Color(0.95, 0.2, 0.25))
-		draw_rect(Rect2(p + Vector2(-9, -3), Vector2(18, 6)), Color(0.95, 0.2, 0.25))
 	if u.buff_time > 0.0:
 		var glow := 0.5 + 0.5 * sin(_anim * 10.0)
 		draw_arc(p, ring + 3, 0, TAU, 32, Color(1.0, 0.7, 0.2, 0.5 + 0.4 * glow), 3.0)
@@ -308,7 +304,8 @@ func _draw_enemy(e: Enemy) -> void:
 	draw_set_transform(p, e.facing.angle() + look.get("rot", 0.0))
 	draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
 	if look.has("turret"):
-		draw_texture_rect(look.turret, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
+		var ts: float = look.get("turret_size", size)
+		draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint)
 	draw_set_transform(Vector2.ZERO)
 	if e.slow_timer > 0.0:
 		draw_circle(p, size * 0.38, Color(0.5, 0.85, 1.0, 0.35))
