@@ -645,7 +645,7 @@ func _test_new_towers() -> void:
 
 
 func _test_attack_move() -> void:
-	print("Déplacement offensif")
+	print("Déplacement (repli)")
 	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
 	world.waves.timer = 9999
 	world.workers.clear()
@@ -654,12 +654,13 @@ func _test_attack_move() -> void:
 	var e := world.enemies[0]
 	e.speed = 0.0
 	world.command_units_move([u], Vector2i(4, 2))
-	_check(u.order == Unit.Order.AMOVE, "l'ordre de déplacement est offensif")
+	_check(u.order == Unit.Order.MOVE, "un déplacement est un ordre simple")
 	_run(world, 1.0)
-	_check(u.target == e, "l'unité engage l'ennemi croisé en chemin")
-	_run(world, 25.0)
-	_check(world.enemies.is_empty(), "l'ennemi est détruit")
-	_check(u.pos.distance_to(Vector2(4.5, 2.5)) < 0.8 and u.order == Unit.Order.GUARD, "puis l'unité reprend la route jusqu'au point")
+	_check(u.target == null, "l'unité ignore l'ennemi croisé (repli possible)")
+	_run(world, 6.0)
+	_check(u.pos.distance_to(Vector2(4.5, 2.5)) < 0.8 and u.order == Unit.Order.GUARD, "elle arrive au point puis monte la garde")
+	_run(world, 10.0)
+	_check(world.enemies.is_empty() or e.hp < e.max_hp, "une fois arrivée, elle se défend")
 
 
 func _test_finite_deposits() -> void:

@@ -36,7 +36,7 @@ var _move_marker := Vector2.INF
 var _move_marker_t := 0.0
 
 
-## Repère d'ordre de déplacement offensif (cercle rouge qui se resserre).
+## Repère d'ordre de déplacement (cercle vert qui se resserre).
 func move_marker(p: Vector2) -> void:
 	_move_marker = p * TILE
 	_move_marker_t = 0.5
@@ -111,9 +111,9 @@ func _draw() -> void:
 	_draw_effects()
 	if _move_marker_t > 0.0:
 		var k := _move_marker_t / 0.5
-		draw_arc(_move_marker, 10 + 22 * k, 0, TAU, 28, Color(1.0, 0.35, 0.3, k), 3.0)
-		draw_line(_move_marker + Vector2(-7, -7), _move_marker + Vector2(7, 7), Color(1.0, 0.35, 0.3, k), 3.0)
-		draw_line(_move_marker + Vector2(7, -7), _move_marker + Vector2(-7, 7), Color(1.0, 0.35, 0.3, k), 3.0)
+		draw_arc(_move_marker, 10 + 22 * k, 0, TAU, 28, Color(0.4, 1.0, 0.45, k), 3.0)
+		draw_line(_move_marker + Vector2(-7, -7), _move_marker + Vector2(7, 7), Color(0.4, 1.0, 0.45, k), 3.0)
+		draw_line(_move_marker + Vector2(7, -7), _move_marker + Vector2(-7, 7), Color(0.4, 1.0, 0.45, k), 3.0)
 	_draw_base_hp()
 	if tutorial_marker != Vector2.INF:
 		var c := tutorial_marker * TILE

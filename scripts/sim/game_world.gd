@@ -464,10 +464,18 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			u.guard_pos = u.pos
 	match u.order:
 		Unit.Order.MOVE:
-			# Déplacement forcé : on ignore les ennemis jusqu'à l'arrivée (comme un clic de déplacement).
-			if _follow_path(u, st.speed, delta):
+			# Déplacement forcé : on ignore les ennemis jusqu'à l'arrivée (permet de battre en retraite).
+			u.target = null
+			var md := u.pos.distance_to(u.dest)
+			var mstuck := md > 0.6 and _unit_stuck(u, delta)
+			if mstuck and md > 3.0 and u.stuck_tries < 3:
+				u.stuck_tries += 1
+				u.path = _path_toward(u.cell(), Vector2i(u.dest.floor()))
+				mstuck = false
+			if mstuck or _follow_path(u, st.speed, delta):
 				u.order = Unit.Order.GUARD
 				u.guard_pos = u.pos
+				u.path.clear()
 			return
 		Unit.Order.AMOVE:
 			# Déplacement offensif : on engage tout ennemi croisé, puis on reprend la route.
@@ -1099,7 +1107,7 @@ func command_stop(us: Array, ws: Array) -> void:
 func _unit_go(u: Unit, c: Vector2i) -> void:
 	if u.sieged:
 		return # un char en mode siège ne bouge pas
-	u.order = Unit.Order.AMOVE
+	u.order = Unit.Order.MOVE # déplacement simple : on ignore les ennemis (repli possible)
 	u.dest = Vector2(c) + Vector2(0.5, 0.5)
 	u.stuck_t = 0.0
 	u.stuck_pos = Vector2.INF
