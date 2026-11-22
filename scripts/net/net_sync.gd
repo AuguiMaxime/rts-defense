@@ -4,13 +4,27 @@ extends RefCounted
 ## Formats compacts (tableaux) pour limiter la taille des paquets.
 
 const ENEMY_TYPES: Array[String] = ["normal", "fast", "armored", "flying", "boss"]
-const TOWER_KINDS: Array[String] = ["gun", "cannon", "missile", "laser", "house"]
+
+static func _prod(p: Producer) -> Array:
+	if p == null:
+		return []
+	return [p.queue.duplicate(), p.progress, p.rally.x, p.rally.y]
+
+
+static func _apply_prod(p: Producer, a: Array) -> void:
+	p.queue.assign(a[0])
+	p.progress = a[1]
+	p.rally = Vector2i(a[2], a[3])
 
 
 static func snapshot(w: GameWorld) -> Dictionary:
 	var workers := []
 	for x in w.workers:
-		workers.append([x.id, x.pos.x, x.pos.y, x.facing.x, x.facing.y, x.state, x.job, x.carry_type, x.carry_amount, x.hp])
+		workers.append([x.id, x.pos.x, x.pos.y, x.facing.x, x.facing.y, x.state, x.job, x.carry_type, x.carry_amount, x.hp, x.auto_repair])
+	var units := []
+	for u in w.units:
+		if u.alive:
+			units.append([u.id, u.type, u.pos.x, u.pos.y, u.facing.x, u.facing.y, u.aim_angle, u.hp, u.max_hp, u.order])
 	var enemies := []
 	for e in w.enemies:
 		if e.hp > 0:
@@ -18,12 +32,14 @@ static func snapshot(w: GameWorld) -> Dictionary:
 					e.visual_offset.x, e.visual_offset.y])
 	var sites := []
 	for s in w.sites:
-		sites.append([s.id, TOWER_KINDS.find(s.kind), s.cell.x, s.cell.y, s.built, s.work_done, s.work_needed,
-				s.hp, s.max_hp, s.level, s.aim_angle, s.beam_target.id if s.beam_target != null else -1])
+		sites.append([s.id, s.kind, s.cell.x, s.cell.y, s.built, s.work_done, s.work_needed,
+				s.hp, s.max_hp, s.level, s.aim_angle, s.beam_target.id if s.beam_target != null else -1, _prod(s.producer)])
 	return {
-		"r": [w.metal, w.essence, w.base_hp, w.max_base_hp, w.pop_cap, w.train_queue, w.kills, w.state, w.orbital_cooldown],
+		"r": [w.metal, w.essence, w.base_hp, w.max_base_hp, w.pop_cap, 0, w.kills, w.state, w.orbital_cooldown],
 		"v": [w.waves.wave, w.waves.total, w.waves.infinite, w.waves.timer, w.waves.interval],
 		"w": workers,
+		"u": units,
+		"bp": _prod(w.base_producer),
 		"e": enemies,
 		"s": sites,
 		"ev": w.take_net_events(),
@@ -38,7 +54,6 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 	w.base_hp = r[2]
 	w.max_base_hp = r[3]
 	w.pop_cap = r[4]
-	w.train_queue = r[5]
 	w.kills = r[6]
 	w.state = r[7]
 	w.orbital_cooldown = r[8]
@@ -68,11 +83,38 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		x.carry_type = a[7]
 		x.carry_amount = a[8]
 		x.hp = a[9]
+		x.auto_repair = a[10]
 		workers.append(x)
 	for old in w.workers:
 		if not workers.has(old):
 			old.alive = false
 	w.workers = workers
+
+	if snap.has("bp"):
+		_apply_prod(w.base_producer, snap.bp)
+
+	# Unités de combat
+	by_id.clear()
+	for u in w.units:
+		by_id[u.id] = u
+	var units: Array[Unit] = []
+	for a in snap.get("u", []):
+		var u: Unit = by_id.get(int(a[0]))
+		var target := Vector2(a[2], a[3])
+		if u == null:
+			u = Unit.create(a[1], target)
+			u.id = a[0]
+		u.net_target = target
+		u.facing = Vector2(a[4], a[5])
+		u.aim_angle = a[6]
+		u.hp = a[7]
+		u.max_hp = a[8]
+		u.order = a[9]
+		units.append(u)
+	for old in w.units:
+		if not units.has(old):
+			old.alive = false
+	w.units = units
 
 	# Ennemis
 	by_id.clear()
@@ -104,10 +146,11 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 	for a in snap.s:
 		var s: BuildSite = site_by_id.get(int(a[0]))
 		if s == null:
-			s = BuildSite.new(TOWER_KINDS[a[1]])
+			s = BuildSite.new(a[1])
 			s.id = a[0]
 			s.cell = Vector2i(a[2], a[3])
-			w.pathfinder.set_solid(s.cell, true)
+			for c in s.cells():
+				w.pathfinder.set_solid(c, true)
 		s.built = a[4]
 		s.work_done = a[5]
 		s.work_needed = a[6]
@@ -116,11 +159,17 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		s.level = a[9]
 		s.aim_angle = a[10]
 		s.beam_target = enemy_by_id.get(int(a[11]))
+		var pa: Array = a[12]
+		if not pa.is_empty():
+			if s.producer == null:
+				s.producer = Producer.new()
+			_apply_prod(s.producer, pa)
 		sites.append(s)
 	for old in w.sites:
 		if not sites.has(old):
 			old.alive = false
-			w.pathfinder.set_solid(old.cell, false)
+			for c in old.cells():
+				w.pathfinder.set_solid(c, false)
 	w.sites = sites
 
 	for ev in snap.ev:
@@ -138,3 +187,6 @@ static func interpolate(w: GameWorld, delta: float) -> void:
 	for e in w.enemies:
 		if e.net_target != Vector2.INF:
 			e.pos = e.pos.lerp(e.net_target, k)
+	for u in w.units:
+		if u.net_target != Vector2.INF:
+			u.pos = u.pos.lerp(u.net_target, k)
