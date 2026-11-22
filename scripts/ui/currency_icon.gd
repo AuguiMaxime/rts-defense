@@ -12,7 +12,19 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
+const TEX := {
+	"metal": preload("res://assets/gen/icon_metal.png"),
+	"essence": preload("res://assets/gen/icon_essence.png"),
+	"pop": preload("res://assets/gen/icon_pop.png"),
+	"wave": preload("res://assets/gen/icon_wave.png"),
+	"base": preload("res://assets/gen/icon_base.png"),
+}
+
+
 func _draw() -> void:
+	if TEX.has(kind):
+		draw_texture_rect(TEX[kind], Rect2(Vector2.ZERO, size), false)
+		return
 	var c := size / 2.0
 	var r := minf(size.x, size.y) / 2.0 - 1.0
 	match kind:

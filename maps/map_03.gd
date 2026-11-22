@@ -2,7 +2,7 @@ extends RefCounted
 ## Légende : . libre  # rocher  B base 3x3  S apparition  M métal  E essence
 
 const NAME := "Station Delta"
-const GROUND := "dirt"
+const GROUND := "metal"
 
 const LAYOUT := """
 ........................................................

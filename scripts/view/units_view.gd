@@ -133,8 +133,11 @@ func _draw_worker(w: Worker) -> void:
 	if selected.has(w):
 		draw_circle(p, 22, Color(COLOR_SELECTED, 0.18))
 		draw_arc(p, 22, 0, TAU, 32, COLOR_SELECTED, 3.0)
-	draw_set_transform(p, w.facing.angle())
-	draw_texture_rect(Sprites.WORKER, Rect2(-42, -42, 84, 84), false)
+	var wflip := -1.0 if w.facing.x < -0.05 else 1.0
+	var wbob := sin(_anim * 9.0 + w.id) * 1.5 if w.state == Worker.State.MOVING else 0.0
+	draw_circle(p + Vector2(0, 18), 12, Color(0, 0, 0, 0.28))
+	draw_set_transform(p + Vector2(0, wbob - 4), 0.0, Vector2(wflip, 1.0))
+	draw_texture_rect(Sprites.WORKER, Rect2(-26, -26, 52, 52), false)
 	draw_set_transform(Vector2.ZERO)
 	if w.carry_amount > 0:
 		var c := MapView.COLOR_METAL if w.carry_type == GameGrid.Cell.METAL else MapView.COLOR_ESSENCE
@@ -150,12 +153,8 @@ func _draw_site(s: BuildSite) -> void:
 	var r := Rect2(Vector2(s.cell) * TILE, Vector2.ONE * s.size * TILE)
 	if not s.built:
 		var base_tex: Texture2D = Sprites.TOWER_LOOK[s.kind].base if s.is_tower() else Sprites.TOWER_BASE3
-		if s.is_producer():
-			_draw_plate(r, Color(1, 1, 1, 0.25 + 0.5 * s.progress()))
-		else:
-			draw_texture_rect(base_tex, r, false, Color(1, 1, 1, 0.25 + 0.5 * s.progress()))
-		var icon_r := Rect2(r.get_center() - Vector2(24, 24), Vector2(48, 48))
-		draw_texture_rect(Sprites.SITE, icon_r, false, Color(1, 1, 1, 0.9))
+		draw_texture_rect(base_tex, r, false, Color(1, 1, 1, 0.2 + 0.4 * s.progress()))
+		draw_texture_rect(Sprites.GEN_SITE, r.grow(-2), false, Color(1, 1, 1, 0.9))
 		var a := r.grow(-3).position
 		var b := r.grow(-3).end
 		for seg in [[a, Vector2(b.x, a.y)], [Vector2(b.x, a.y), b], [b, Vector2(a.x, b.y)], [Vector2(a.x, b.y), a]]:
@@ -182,9 +181,10 @@ func _draw_site(s: BuildSite) -> void:
 		var tex: Texture2D = look.turret
 		var pivot: Vector2 = look.pivot
 		# ombre portée puis tourelle, pivot sur la « tête »
-		draw_set_transform(r.get_center() + Vector2(4, 6), s.aim_angle + Sprites.W_ANGLE_OFFSET, Vector2(sc, sc))
+		var rot: float = look.get("rot", Sprites.W_ANGLE_OFFSET)
+		draw_set_transform(r.get_center() + Vector2(4, 6), s.aim_angle + rot, Vector2(sc, sc))
 		draw_texture(tex, -pivot, Color(0, 0, 0, 0.35))
-		draw_set_transform(r.get_center(), s.aim_angle + Sprites.W_ANGLE_OFFSET, Vector2(sc, sc))
+		draw_set_transform(r.get_center(), s.aim_angle + rot, Vector2(sc, sc))
 		draw_texture(tex, -pivot, look.tint * skin_tint)
 		draw_set_transform(Vector2.ZERO)
 		for i in s.level - 1:
@@ -240,15 +240,24 @@ func _draw_unit(u: Unit) -> void:
 		draw_arc(p, ring, 0, TAU, 32, COLOR_SELECTED, 3.0)
 	else:
 		draw_arc(p, ring - 2, 0, TAU, 24, Color(0.4, 1.0, 0.45, 0.35), 2.0)
-	draw_set_transform(p + Vector2(4, 7), u.facing.angle())
-	draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, Color(0, 0, 0, 0.25))
-	draw_set_transform(p, u.facing.angle())
-	draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
-	if look.has("turret"):
-		var ts: float = look.turret_size
-		var off := 0.0 if look.turret == Sprites.TANK_TURRET_GREEN else Sprites.TURRET_ANGLE_OFFSET
-		draw_set_transform(p, (u.aim_angle if u.target != null else u.facing.angle()) + off)
-		draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint * skin_tint)
+	if look.get("upright", false):
+		# Sprite vu de face : pas de rotation, retourné quand l'unité va (ou vise) vers la gauche.
+		var dir_x := (u.target.pos.x - u.pos.x) if u.target != null else u.facing.x
+		var flip := -1.0 if dir_x < -0.05 else 1.0
+		var bob := sin(_anim * 9.0 + u.id) * 1.5 if not u.path.is_empty() else 0.0
+		draw_circle(p + Vector2(0, size * 0.36), size * 0.24, Color(0, 0, 0, 0.28))
+		draw_set_transform(p + Vector2(0, bob - size * 0.08), 0.0, Vector2(flip, 1.0))
+		draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
+	else:
+		var rot: float = look.get("rot", 0.0)
+		draw_set_transform(p + Vector2(4, 7), u.facing.angle() + rot)
+		draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, Color(0, 0, 0, 0.25))
+		draw_set_transform(p, u.facing.angle() + rot)
+		draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
+		if look.has("turret"):
+			var ts: float = look.turret_size
+			draw_set_transform(p, (u.aim_angle if u.target != null else u.facing.angle()) + rot)
+			draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint * skin_tint)
 	draw_set_transform(Vector2.ZERO)
 	if u.type == "medic":
 		draw_rect(Rect2(p + Vector2(-3, -9), Vector2(6, 18)), Color(0.95, 0.2, 0.25))
@@ -294,9 +303,9 @@ func _draw_enemy(e: Enemy) -> void:
 		draw_arc(p, size * 0.55, 0, TAU, 40, Color(1.0, 0.3, 0.35, 0.8), 3.0)
 	elif not e.flying:
 		draw_circle(p, size * 0.42, Color(0.9, 0.1, 0.1, 0.28))
-		draw_set_transform(p + Vector2(10, 18), e.facing.angle())
+		draw_set_transform(p + Vector2(6, 10), e.facing.angle() + look.get("rot", 0.0))
 		draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, Color(0, 0, 0, 0.3))
-	draw_set_transform(p, e.facing.angle())
+	draw_set_transform(p, e.facing.angle() + look.get("rot", 0.0))
 	draw_texture_rect(look.tex, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
 	if look.has("turret"):
 		draw_texture_rect(look.turret, Rect2(-size / 2, -size / 2, size, size), false, look.tint)

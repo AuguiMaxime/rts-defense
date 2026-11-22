@@ -352,7 +352,7 @@ func _build_ui() -> void:
 	gg.columns = 2
 	gg.add_theme_constant_override("h_separation", 4)
 	gg.add_theme_constant_override("v_separation", 4)
-	for pair in [["grass", "HERBE"], ["sand", "SABLE"], ["dirt", "TERRE"], ["mars", "MARS"]]:
+	for pair in [["grass", "HERBE"], ["sand", "SABLE"], ["dirt", "TERRE"], ["mars", "MARS"], ["metal", "MÉTAL"]]:
 		var b := _small_button(pair[1], 73)
 		b.custom_minimum_size.y = 38
 		b.add_theme_font_size_override("font_size", 12)
