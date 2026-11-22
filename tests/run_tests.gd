@@ -34,6 +34,7 @@ func _init() -> void:
 	_test_units_combat()
 	_test_buildings_2x2()
 	_test_auto_repair()
+	_test_map_data()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -327,7 +328,7 @@ func _test_orbital() -> void:
 func _test_all_maps() -> void:
 	print("Toutes les maps")
 	for l in Content.LEVELS:
-		var map: Variant = load(l.map)
+		var map := MapData.load_from(l.map)
 		var world := GameWorld.new(MapLoader.from_layout(map.LAYOUT), {"waves": l.waves})
 		_check(world.grid.base_cells.size() == 9 and world.enemies_can_reach_base() and world.workers.size() == 3,
 				"map %d « %s » valide (%d spawns)" % [l.id, map.NAME, world.grid.spawn_points.size()])
@@ -503,3 +504,23 @@ func _test_auto_repair() -> void:
 	world.base_hp = 500
 	_run(world, 60.0)
 	_check(world.base_hp > 900, "il répare aussi la base (%d PV)" % world.base_hp)
+
+
+func _test_map_data() -> void:
+	print("Cartes de l'éditeur")
+	for l in Content.LEVELS:
+		var md := MapData.load_from(l.map)
+		_check(MapData.validate(MapLoader.from_layout(md.LAYOUT)).is_empty(), "carte intégrée « %s » valide" % md.NAME)
+	var m := MapData.new()
+	m.NAME = "Test éditeur"
+	m.LAYOUT = TEST_MAP
+	m.waves = 7
+	m.difficulty = 1.3
+	var p := "user://_test_map.json"
+	_check(m.save_to(p) == OK, "enregistrement JSON")
+	var back := MapData.load_from(p)
+	_check(back.NAME == "Test éditeur" and back.waves == 7 and is_equal_approx(back.difficulty, 1.3), "relecture des réglages")
+	_check(MapData.from_grid(MapLoader.from_layout(back.LAYOUT)) == MapData.from_grid(MapLoader.from_layout(TEST_MAP)), "plan identique")
+	DirAccess.remove_absolute(p)
+	var closed := MapLoader.from_layout("#####\n#B.S#\n#####")
+	_check(not MapData.validate(closed).is_empty(), "carte invalide détectée")

@@ -245,7 +245,7 @@ func _build_pause() -> void:
 	quit.pressed.connect(func() -> void:
 		if game.coop:
 			Net.leave()
-		Ui.goto("menu"))
+		Ui.goto("editor" if game.level.id == 0 else "menu"))
 	v.add_child(quit)
 	_center(_pause_layer, p)
 
@@ -349,11 +349,11 @@ func show_end(won: bool) -> void:
 
 	var buttons := Ui.hbox(12)
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	var menu := Ui.button("MENU", false, Vector2(150, 62))
+	var menu := Ui.button("ÉDITEUR" if game.level.id == 0 else "MENU", false, Vector2(150, 62))
 	menu.pressed.connect(func() -> void:
 		if game.coop:
 			Net.leave()
-		Ui.goto("menu" if game.coop else "levels"))
+		Ui.goto("editor" if game.level.id == 0 else ("menu" if game.coop else "levels")))
 	buttons.add_child(menu)
 	var again := Ui.button("SALON" if game.coop else "REJOUER", false, Vector2(170, 62))
 	again.pressed.connect(func() -> void: game.restart())

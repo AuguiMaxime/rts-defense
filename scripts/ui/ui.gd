@@ -25,6 +25,7 @@ const SCREENS := {
 	"game": "res://scenes/game.tscn",
 	"multi": "res://scenes/multiplayer.tscn",
 	"missions": "res://scenes/missions.tscn",
+	"editor": "res://scenes/map_editor.tscn",
 }
 
 var font_title: FontVariation
@@ -36,6 +37,10 @@ var theme: Theme
 var current_level := 1
 ## true = mode Survie (vagues infinies) sur la map choisie.
 var survival := false
+## Carte de l'éditeur à jouer (MapData) ; null = campagne.
+var custom_map: MapData = null
+## Carte ouverte dans l'éditeur (pour y revenir après un test).
+var editor_map: MapData = null
 
 var _fade: ColorRect
 var _toast_layer: CanvasLayer
@@ -78,6 +83,13 @@ func goto(screen: String) -> void:
 func play_level(id: int, survival_mode := false) -> void:
 	current_level = id
 	survival = survival_mode
+	custom_map = null
+	goto("game")
+
+
+func play_custom(m: MapData) -> void:
+	custom_map = m
+	survival = false
 	goto("game")
 
 

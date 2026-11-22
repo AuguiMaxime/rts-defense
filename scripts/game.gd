@@ -31,8 +31,12 @@ var _last_wave := 0
 
 
 func _ready() -> void:
-	level = Content.level(Ui.current_level)
-	map_script = load(level.map)
+	if Ui.custom_map != null:
+		map_script = Ui.custom_map
+		level = {"id": 0, "waves": map_script.waves, "difficulty": map_script.difficulty, "interval": map_script.interval}
+	else:
+		level = Content.level(Ui.current_level)
+		map_script = MapData.load_from(level.map)
 	survival = Ui.survival
 	coop = Net.online
 	world = GameWorld.new(MapLoader.from_layout(map_script.LAYOUT), _build_config())
@@ -535,8 +539,8 @@ func grant_rewards() -> int:
 	st.waves = waves_done - prev_waves
 	st.wins = 1 if won and prev_waves == 0 else 0
 	Save.add_mission_progress(st)
-	if coop:
-		pass # en coop : crédits seulement, pas d'étoiles ni de record
+	if coop or level.id == 0:
+		pass # coop ou carte perso : crédits seulement, pas d'étoiles ni de record
 	elif survival:
 		new_record = Save.record_survival(level.id, world.waves.wave)
 	elif won:
@@ -545,6 +549,9 @@ func grant_rewards() -> int:
 
 
 func restart() -> void:
+	if level.id == 0:
+		Ui.play_custom(map_script)
+		return
 	if coop:
 		Ui.goto("multi")
 		return
@@ -552,6 +559,8 @@ func restart() -> void:
 
 
 func next_level_id() -> int:
+	if level.id == 0:
+		return -1
 	for l in Content.LEVELS:
 		if l.id == level.id + 1:
 			return l.id

@@ -3,6 +3,9 @@ extends RefCounted
 ## Catalogue du jeu : tourelles, bâtiments, technos, augments, skins, niveaux.
 ## Tout ce qui se règle sans toucher aux mécaniques est ici ou dans Balance.
 
+## Outils de développement (éditeur de cartes). À passer à false pour la mise en ligne.
+const DEV_TOOLS := true
+
 ## targets : "ground", "air" ou "both". splash : rayon de dégâts de zone en cases.
 ## unlock : "default" ou "gold" (à acheter dans la boutique).
 const TOWERS := {

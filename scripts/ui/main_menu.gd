@@ -65,6 +65,11 @@ func _ready() -> void:
 	var settings := Ui.button("PARAMÈTRES", false, Vector2(200, 60))
 	settings.pressed.connect(func() -> void: Ui.goto("settings"))
 	row2.add_child(settings)
+	if Content.DEV_TOOLS:
+		var ed := Ui.button("ÉDITEUR", false, Vector2(170, 60))
+		ed.add_theme_color_override("font_color", Ui.GOLD)
+		ed.pressed.connect(func() -> void: Ui.goto("editor"))
+		row2.add_child(ed)
 	if not OS.has_feature("mobile"):
 		var quit := Ui.button("QUITTER", false, Vector2(160, 60))
 		quit.pressed.connect(func() -> void: get_tree().quit())
