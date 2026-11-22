@@ -73,6 +73,17 @@ func _process(delta: float) -> void:
 		_clamp()
 
 
+## Un doigt posé sur la carte reste suivi même s'il glisse ou se lève au-dessus de l'interface
+## (sinon le cadre de sélection restait bloqué quand on relâchait sur un panneau).
+func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and not event.pressed and _touches.has(event.index):
+		_on_touch(event)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag and _touches.has(event.index):
+		_on_drag(event)
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		_on_touch(event)

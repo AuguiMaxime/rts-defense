@@ -65,7 +65,7 @@ func _ready() -> void:
 	camera.center_on(world.base_center() * TILE)
 	camera.is_over_ui = func(p: Vector2) -> bool: return hud.is_over_ui(p)
 	camera.tapped.connect(_on_tapped)
-	camera.selection_updated.connect(func(a: Vector2, b: Vector2) -> void: units_view.selection_rect = Rect2(a, b - a).abs())
+	camera.selection_updated.connect(_on_selection_updated)
 	camera.selection_ended.connect(_on_selection_ended)
 	camera.selection_cancelled.connect(func() -> void: units_view.selection_rect = Rect2())
 
@@ -472,6 +472,14 @@ func _try_place(c: Vector2i) -> void:
 	set_build_kind("")
 
 
+## Cadre de sélection : dès qu'il est vraiment tracé, l'ancienne sélection disparaît.
+func _on_selection_updated(a: Vector2, b: Vector2) -> void:
+	units_view.selection_rect = Rect2(a, b - a).abs()
+	var r := Rect2(a / TILE, (b - a) / TILE).abs()
+	if (r.size.x >= 0.9 or r.size.y >= 0.9) and selection_kind() != "none":
+		_clear_selection()
+
+
 func _on_selection_ended(a: Vector2, b: Vector2) -> void:
 	units_view.selection_rect = Rect2()
 	var r := Rect2(a / TILE, (b - a) / TILE).abs()
@@ -482,7 +490,8 @@ func _on_selection_ended(a: Vector2, b: Vector2) -> void:
 	var us := world.units_in_rect(r)
 	var ws := world.workers_in_rect(r)
 	if us.is_empty() and ws.is_empty():
-		return # cadre vide : on garde la sélection actuelle
+		_clear_selection() # cadre vide : plus rien de sélectionné
+		return
 	# Comme dans StarCraft : s'il y a des unités de combat dans le cadre, on ne prend qu'elles.
 	if not us.is_empty():
 		_set_selection([], us)
