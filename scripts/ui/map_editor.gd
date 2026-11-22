@@ -275,7 +275,7 @@ func _build_ui() -> void:
 	_name_edit.add_theme_font_size_override("font_size", 20)
 	_name_edit.placeholder_text = "Nom de la carte"
 	th.add_child(_name_edit)
-	for pair in [["grass", "HERBE"], ["sand", "SABLE"], ["dirt", "TERRE"]]:
+	for pair in [["grass", "HERBE"], ["sand", "SABLE"], ["dirt", "TERRE"], ["mars", "MARS"]]:
 		var b := _small_button(pair[1], 78)
 		b.pressed.connect(func() -> void:
 			data.GROUND = pair[0]

@@ -479,7 +479,7 @@ func card_actions() -> Array:
 		"mobile":
 			if not selected.is_empty():
 				if build_menu == "":
-					out.append({"id": "towers", "icon": Sprites.TURRET_GUN, "label": "TOURELLES", "cost": "%d" % _tower_list().size(),
+					out.append({"id": "towers", "icon": Sprites.TOWER_LOOK.gun.turret, "label": "TOURELLES", "cost": "%d" % _tower_list().size(),
 							"cost_color": Ui.CYAN, "call": func() -> void: build_menu = "towers"})
 					out.append({"id": "buildings", "icon": "pop", "label": "BÂTIMENTS", "cost": "%d" % Content.BUILDING_ORDER.size(),
 							"cost_color": Ui.CYAN, "call": func() -> void: build_menu = "buildings"})

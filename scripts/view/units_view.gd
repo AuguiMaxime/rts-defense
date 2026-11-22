@@ -141,7 +141,8 @@ func _draw_site(s: BuildSite) -> void:
 			_draw_bar(Rect2(r.position + Vector2(6, 64), Vector2(52, 0)), float(s.hp) / Balance.SITE_HP)
 		return
 	if s.kind == "house":
-		_draw_house(r)
+		draw_texture_rect(Sprites.W_HOUSE, r.grow(-2), false, Color(0, 0, 0, 0.3))
+		draw_texture_rect(Sprites.W_HOUSE, r.grow(-4), false)
 	elif s.is_producer():
 		_draw_producer(s, r)
 	else:
@@ -153,9 +154,14 @@ func _draw_site(s: BuildSite) -> void:
 			draw_line(from, to, Color(0.4, 0.95, 1.0, 0.35), 9.0)
 			draw_line(from, to, Color(0.85, 1.0, 1.0, 0.95), 3.0)
 			draw_circle(to, 7, Color(0.85, 1.0, 1.0, 0.8))
-		draw_set_transform(r.get_center(), s.aim_angle + Sprites.TURRET_ANGLE_OFFSET)
-		var ts := 60.0 + 4.0 * (s.level - 1)
-		draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint * skin_tint)
+		var sc: float = look.scale * (1.0 + 0.07 * (s.level - 1))
+		var tex: Texture2D = look.turret
+		var pivot: Vector2 = look.pivot
+		# ombre portée puis tourelle, pivot sur la « tête »
+		draw_set_transform(r.get_center() + Vector2(4, 6), s.aim_angle + Sprites.W_ANGLE_OFFSET, Vector2(sc, sc))
+		draw_texture(tex, -pivot, Color(0, 0, 0, 0.35))
+		draw_set_transform(r.get_center(), s.aim_angle + Sprites.W_ANGLE_OFFSET, Vector2(sc, sc))
+		draw_texture(tex, -pivot, look.tint * skin_tint)
 		draw_set_transform(Vector2.ZERO)
 		for i in s.level - 1:
 			draw_rect(Rect2(r.position + Vector2(6 + i * 10, r.size.y - 12), Vector2(7, 7)), Color(0.98, 0.75, 0.15))
@@ -182,30 +188,18 @@ func _draw_plate(r: Rect2, mod := Color(1, 1, 1)) -> void:
 
 ## Caserne et usine : plateforme, emblème, lumière de production.
 func _draw_producer(s: BuildSite, r: Rect2) -> void:
-	_draw_plate(r)
 	var c := r.get_center()
 	var busy := s.producer != null and s.producer.busy()
-	if s.kind == "barracks":
-		for i in 3:
-			draw_rect(Rect2(r.position + Vector2(18, 20 + i * 10), Vector2(r.size.x - 36, 5)), Color(0.10, 0.13, 0.17))
-		draw_circle(c + Vector2(0, 10), 30, Color(0.10, 0.13, 0.17))
-		draw_set_transform(c + Vector2(0, 10), -PI / 2)
-		draw_texture_rect(Sprites.SOLDIER_GREEN, Rect2(-30, -30, 60, 60), false)
-		draw_set_transform(Vector2.ZERO)
-	else:
-		for i in 6:
-			var x := r.position.x + 14 + i * 18
-			draw_line(Vector2(x, r.end.y - 16), Vector2(x + 10, r.end.y - 26), Color(0.98, 0.75, 0.15, 0.9), 5.0)
+	var tex: Texture2D = Sprites.W_BARRACKS if s.kind == "barracks" else Sprites.W_FACTORY
+	draw_texture_rect(tex, Rect2(r.position + Vector2(5, 7), r.size), false, Color(0, 0, 0, 0.35))
+	draw_texture_rect(tex, r, false)
+	if busy and s.kind == "factory":
 		for k in 2:
-			var ch := r.position + Vector2(26 + k * 22, 26)
-			draw_circle(ch, 10, Color(0.10, 0.13, 0.17))
-			if busy:
-				var puff := fmod(_anim * 0.8 + k * 0.5, 1.0)
-				draw_circle(ch + Vector2(6, -puff * 22), 6 + puff * 8, Color(0.7, 0.75, 0.8, 0.45 * (1.0 - puff)))
-		draw_set_transform(c + Vector2(14, 6), -PI / 2)
-		draw_texture_rect(Sprites.TANK_GREEN, Rect2(-28, -28, 56, 56), false)
-		draw_texture_rect(Sprites.TANK_TURRET_GREEN, Rect2(-28, -28, 56, 56), false)
-		draw_set_transform(Vector2.ZERO)
+			var ch := r.position + Vector2(30 + k * 68, 22)
+			var puff := fmod(_anim * 0.8 + k * 0.5, 1.0)
+			draw_circle(ch + Vector2(6, -puff * 22), 6 + puff * 8, Color(0.7, 0.75, 0.8, 0.45 * (1.0 - puff)))
+	if busy:
+		draw_arc(c, r.size.x * 0.2, _anim * 2.0, _anim * 2.0 + 1.2, 16, Color(0.4, 1.0, 0.45, 0.6), 3.0)
 	var lamp := Color(0.4, 1.0, 0.45) if busy else Color(0.3, 0.35, 0.4)
 	draw_circle(r.position + Vector2(r.size.x - 18, 18), 6, lamp)
 	if busy:

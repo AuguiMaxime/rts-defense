@@ -64,21 +64,61 @@ const ENEMY_LOOK := {
 const TURRET_ANGLE_OFFSET := PI / 2.0
 
 ## Apparence de chaque tourelle : plateforme, canon, teinte du canon.
-const TOWER_LOOK := {
-	"gun": {"base": TOWER_BASE, "turret": TURRET_GUN, "tint": Color(1, 1, 1)},
-	"cannon": {"base": TOWER_BASE2, "turret": TURRET_DOUBLE, "tint": Color(1, 1, 1)},
-	"missile": {"base": TOWER_BASE3, "turret": TURRET_MISSILE, "tint": Color(1, 1, 1)},
-	"laser": {"base": TOWER_BASE2, "turret": TURRET_LIGHT, "tint": Color(0.55, 0.95, 1.0)},
-	"flame": {"base": TOWER_BASE, "turret": TURRET_FLAME, "tint": Color(1.0, 0.62, 0.4)},
-	"sniper_tower": {"base": TOWER_BASE3, "turret": TURRET_HEAVY, "tint": Color(0.75, 0.85, 1.0)},
-	"tesla": {"base": TOWER_BASE2, "turret": TURRET_LIGHT, "tint": Color(0.8, 0.6, 1.0)},
-	"cryo": {"base": TOWER_BASE, "turret": TURRET_BLOCK, "tint": Color(0.6, 0.92, 1.0)},
-	"stun": {"base": TOWER_BASE3, "turret": TURRET_SHIELD, "tint": Color(1.0, 0.88, 0.4)},
+static var TOWER_LOOK := {
+	"gun": _w(4, 1, 0.66),
+	"cannon": _w(1, 2, 0.62),
+	"missile": _w(6, 3, 0.58),
+	"laser": _w(5, 4, 0.62, Color(0.8, 0.95, 1.1)),
+	"flame": _w(8, 5, 0.64, Color(1.15, 0.9, 0.75)),
+	"sniper_tower": _w(3, 6, 0.66),
+	"tesla": _w(2, 7, 0.62, Color(0.95, 0.85, 1.2)),
+	"cryo": _w(7, 8, 0.6, Color(0.75, 1.0, 1.3)),
+	"stun": _w(9, 5, 0.62),
 }
 
 ## Sol de chaque map : texture et teinte.
+# --- Wenrexa (CC0) : tourelles vue de dessus, plateformes, bâtiments ---------------
+const W_TURRETS := [
+	preload("res://assets/wenrexa/turret_01.png"), preload("res://assets/wenrexa/turret_02.png"),
+	preload("res://assets/wenrexa/turret_03.png"), preload("res://assets/wenrexa/turret_04.png"),
+	preload("res://assets/wenrexa/turret_05.png"), preload("res://assets/wenrexa/turret_06.png"),
+	preload("res://assets/wenrexa/turret_07.png"), preload("res://assets/wenrexa/turret_08.png"),
+	preload("res://assets/wenrexa/turret_09.png"), preload("res://assets/wenrexa/turret_10.png"),
+]
+## Centre de rotation (la « tête ») de chaque tourelle Wenrexa, en pixels de la texture.
+const W_PIVOT_Y := [40, 40, 33, 34, 36, 42, 44, 34, 34, 34]
+const W_PLATFORMS := [
+	preload("res://assets/wenrexa/platform_1.png"), preload("res://assets/wenrexa/platform_2.png"),
+	preload("res://assets/wenrexa/platform_3.png"), preload("res://assets/wenrexa/platform_4.png"),
+	preload("res://assets/wenrexa/platform_5.png"), preload("res://assets/wenrexa/platform_6.png"),
+	preload("res://assets/wenrexa/platform_7.png"), preload("res://assets/wenrexa/platform_8.png"),
+]
+const W_BASE := preload("res://assets/wenrexa/building_b12.png")
+const W_BARRACKS := preload("res://assets/wenrexa/building_b02.png")
+const W_FACTORY := preload("res://assets/wenrexa/building_b09.png")
+const W_HOUSE := preload("res://assets/wenrexa/building_b26.png")
+## Les tourelles Wenrexa pointent vers le bas : décalage de rotation.
+const W_ANGLE_OFFSET := -PI / 2.0
+
+# --- Kenney Sci-fi RTS (CC0) : minerais, sol martien, décor -----------------------
+const ORE_METAL := preload("res://assets/kenney_scifi/ore_metal.png")
+const ORE_ESSENCE := preload("res://assets/kenney_scifi/ore_essence.png")
+const ROCK_MARS := preload("res://assets/kenney_scifi/rock_mars.png")
+const ROCK_MARS2 := preload("res://assets/kenney_scifi/rock_mars2.png")
+const GROUND_MARS := preload("res://assets/kenney_scifi/ground_mars.png")
+const GROUND_MARS2 := preload("res://assets/kenney_scifi/ground_mars2.png")
+const PLANT_GREEN := preload("res://assets/kenney_scifi/plant_green.png")
+const PLANT_PURPLE := preload("res://assets/kenney_scifi/plant_purple.png")
+
+
+static func _w(turret: int, platform: int, scale := 0.66, tint := Color(1, 1, 1)) -> Dictionary:
+	var tex: Texture2D = W_TURRETS[turret - 1]
+	return {"base": W_PLATFORMS[platform - 1], "turret": tex, "tint": tint, "scale": scale,
+			"pivot": Vector2(tex.get_width() / 2.0, W_PIVOT_Y[turret - 1])}
+
 const GROUND_LOOK := {
 	"grass": {"tex": GRASS, "tint": Color(0.34, 0.46, 0.38)},
 	"sand": {"tex": SAND, "tint": Color(0.70, 0.58, 0.48)},
 	"dirt": {"tex": DIRT, "tint": Color(0.55, 0.50, 0.50)},
+	"mars": {"tex": GROUND_MARS, "tint": Color(0.82, 0.78, 0.78)},
 }

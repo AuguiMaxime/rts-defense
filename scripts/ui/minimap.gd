@@ -13,7 +13,7 @@ func setup(g: Node) -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var grid: GameGrid = g.world.grid
 	var img := Image.create(grid.width, grid.height, false, Image.FORMAT_RGBA8)
-	var ground := Color("1b3324") if g.map_script.GROUND == "grass" else (Color("4a3a2a") if g.map_script.GROUND == "sand" else Color("3a3030"))
+	var ground: Color = {"grass": Color("1b3324"), "sand": Color("4a3a2a"), "mars": Color("5a2e22")}.get(g.map_script.GROUND, Color("3a3030"))
 	for y in grid.height:
 		for x in grid.width:
 			var col := ground

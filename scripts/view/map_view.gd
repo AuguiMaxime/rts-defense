@@ -46,20 +46,25 @@ func _draw() -> void:
 			var c := Vector2i(x, y)
 			var r := cell_rect(c)
 			var t := grid.get_cell(c)
-			if t == GameGrid.Cell.BASE:
-				draw_texture_rect(Sprites.STONE, r, false)
-			else:
+			if true:
 				var look: Dictionary = Sprites.GROUND_LOOK[ground]
 				var shade := 1.0 - (cell_hash(c) % 5) * 0.007
-				draw_texture_rect(look.tex, r, false, look.tint * Color(shade, shade, shade))
+				var gtex: Texture2D = look.tex
+				if ground == "mars" and cell_hash(c) % 4 == 0:
+					gtex = Sprites.GROUND_MARS2
+				draw_texture_rect(gtex, r, false, look.tint * Color(shade, shade, shade))
 			match t:
 				GameGrid.Cell.ROCK:
-					var tex := Sprites.ROCK_BIG if cell_hash(c) % 3 != 0 else Sprites.ROCK_SMALL
-					draw_texture_rect(tex, r.grow(6), false)
+					if ground == "mars":
+						var mtex := Sprites.ROCK_MARS if cell_hash(c) % 2 == 0 else Sprites.ROCK_MARS2
+						draw_texture_rect(mtex, r.grow(4), false)
+					else:
+						var tex := Sprites.ROCK_BIG if cell_hash(c) % 3 != 0 else Sprites.ROCK_SMALL
+						draw_texture_rect(tex, r.grow(6), false)
 				GameGrid.Cell.METAL:
-					_draw_deposit(r, COLOR_METAL)
+					_draw_deposit(r, COLOR_METAL, Sprites.ORE_METAL)
 				GameGrid.Cell.ESSENCE:
-					_draw_deposit(r, COLOR_ESSENCE)
+					_draw_deposit(r, COLOR_ESSENCE, Sprites.ORE_ESSENCE)
 				GameGrid.Cell.SPAWN:
 					draw_texture_rect(Sprites.SCORCH, r.grow(24), false, Color(1, 1, 1, 0.9))
 					draw_arc(r.get_center(), TILE * 0.42, 0, TAU, 40, COLOR_SPAWN, 3.0)
@@ -67,6 +72,8 @@ func _draw() -> void:
 					var h := cell_hash(c)
 					if h < 30 and ground == "grass":
 						draw_texture_rect(Sprites.BUSH_SMALL, r.grow(-10), false, Color(0.75, 0.85, 0.72, 0.8))
+					elif h < 18 and ground == "mars":
+						draw_texture_rect(Sprites.PLANT_PURPLE if h % 2 == 0 else Sprites.PLANT_GREEN, r.grow(-14), false, Color(1, 1, 1, 0.85))
 
 	for x in grid.width + 1:
 		draw_line(Vector2(x * TILE, 0), Vector2(x * TILE, grid.height * TILE), COLOR_GRID)
@@ -79,11 +86,12 @@ func _draw() -> void:
 		draw_rect(cell_rect(selected).grow(-1), COLOR_SELECT, false, 3.0)
 
 
-func _draw_deposit(r: Rect2, color: Color) -> void:
+func _draw_deposit(r: Rect2, color: Color, tex: Texture2D) -> void:
 	var c := r.get_center()
-	draw_circle(c, TILE * 0.46, Color(color, 0.30))
-	draw_texture_rect(Sprites.ORE, r.grow(4), false, color.lightened(0.2))
-	draw_circle(c + Vector2(14, -14), 5, color.lightened(0.5))
+	draw_circle(c, TILE * 0.48, Color(color, 0.28))
+	draw_arc(c, TILE * 0.48, 0, TAU, 28, Color(color, 0.6), 2.0)
+	draw_texture_rect(tex, r.grow(2), false)
+	draw_circle(c + Vector2(16, -16), 4, color.lightened(0.6))
 
 
 func _draw_base() -> void:
@@ -93,8 +101,7 @@ func _draw_base() -> void:
 	for c in grid.base_cells:
 		area = area.merge(cell_rect(c))
 	var center := area.get_center()
-	draw_arc(center, area.size.x * 0.52, 0, TAU, 64, COLOR_TEAM, 5.0)
-	var plate := Rect2(center - area.size * 0.45, area.size * 0.9)
-	draw_texture_rect(Sprites.TOWER_BASE, plate, false)
-	var core := Rect2(center - area.size * 0.32, area.size * 0.64)
-	draw_texture_rect(Sprites.BASE_CORE, core, false, Color(0.75, 0.88, 1.0))
+	draw_arc(center, area.size.x * 0.54, 0, TAU, 64, COLOR_TEAM, 5.0)
+	var body := Rect2(center - area.size * 0.52, area.size * 1.04)
+	draw_texture_rect(Sprites.W_BASE, Rect2(body.position + Vector2(6, 9), body.size), false, Color(0, 0, 0, 0.35))
+	draw_texture_rect(Sprites.W_BASE, body, false)

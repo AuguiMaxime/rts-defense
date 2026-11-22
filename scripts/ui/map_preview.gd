@@ -2,7 +2,7 @@ class_name MapPreview
 extends Control
 ## Miniature d'une map (pour l'écran de campagne).
 
-const GROUND_COLORS := {"grass": Color("1f4d2b"), "sand": Color("6b5236"), "dirt": Color("4a3a34")}
+const GROUND_COLORS := {"grass": Color("1f4d2b"), "sand": Color("6b5236"), "dirt": Color("4a3a34"), "mars": Color("9a5238")}
 
 var grid: GameGrid
 var ground := "grass"

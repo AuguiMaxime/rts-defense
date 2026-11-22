@@ -2,7 +2,7 @@ extends RefCounted
 ## Légende : . libre  # rocher  B base 3x3  S apparition  M métal  E essence
 
 const NAME := "Nexus"
-const GROUND := "dirt"
+const GROUND := "mars"
 
 const LAYOUT := """
 #####################......S.......#####################
