@@ -457,6 +457,30 @@ func _tick_unit(u: Unit, delta: float) -> void:
 				u.order = Unit.Order.GUARD
 				u.guard_pos = u.pos
 			return
+		Unit.Order.AMOVE:
+			# Déplacement offensif : on engage tout ennemi croisé, puis on reprend la route.
+			if u.target == null and u.retarget_timer <= 0.0:
+				u.retarget_timer = 0.3
+				u.target = _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA)
+			if u.target != null and u.pos.distance_to(u.target.pos) > rng + Unit.AGGRO_EXTRA + 2.0:
+				u.target = null
+			if u.target == null:
+				if u.pos.distance_to(u.dest) <= 0.6:
+					u.order = Unit.Order.GUARD
+					u.guard_pos = u.pos
+					u.path.clear()
+					return
+				if u.path.is_empty() and u.repath_timer <= 0.0:
+					u.repath_timer = 0.5
+					u.path = _path_toward(u.cell(), Vector2i(u.dest.floor()))
+					if u.path.is_empty():
+						u.order = Unit.Order.GUARD
+						u.guard_pos = u.pos
+						return
+				if _follow_path(u, st.speed, delta):
+					u.order = Unit.Order.GUARD
+					u.guard_pos = u.pos
+				return
 		Unit.Order.GUARD:
 			if u.target == null and u.retarget_timer <= 0.0:
 				u.retarget_timer = 0.3
@@ -521,7 +545,7 @@ func _tick_sieged(u: Unit, st: Dictionary) -> void:
 
 ## Médic : se déplace sur ordre, soigne en continu l'unité blessée la plus proche à portée.
 func _tick_medic(u: Unit, st: Dictionary, delta: float) -> void:
-	if u.order == Unit.Order.MOVE:
+	if u.order == Unit.Order.MOVE or u.order == Unit.Order.AMOVE:
 		if _follow_path(u, st.speed, delta):
 			u.order = Unit.Order.GUARD
 			u.guard_pos = u.pos
@@ -1004,7 +1028,8 @@ func command_stop(us: Array, ws: Array) -> void:
 func _unit_go(u: Unit, c: Vector2i) -> void:
 	if u.sieged:
 		return # un char en mode siège ne bouge pas
-	u.order = Unit.Order.MOVE
+	u.order = Unit.Order.AMOVE
+	u.dest = Vector2(c) + Vector2(0.5, 0.5)
 	u.target = null
 	u.path = _path_toward(u.cell(), c)
 	if u.path.is_empty():
@@ -1061,7 +1086,7 @@ func place(kind: String, c: Vector2i) -> BuildSite:
 	for u in units:
 		if not u.path.is_empty():
 			u.repath_timer = 0.0
-			if u.order == Unit.Order.MOVE:
+			if u.order == Unit.Order.MOVE or u.order == Unit.Order.AMOVE:
 				u.path = _path_toward(u.cell(), u.path.back())
 	return s
 

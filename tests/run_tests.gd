@@ -38,6 +38,7 @@ func _init() -> void:
 	_test_idle_assist()
 	_test_abilities()
 	_test_new_towers()
+	_test_attack_move()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -639,3 +640,21 @@ func _test_new_towers() -> void:
 			"stun":
 				_check(world.enemies.any(func(x: Enemy) -> bool: return x.stun_timer > 0.0) or hurt > 0, "impulsion étourdit")
 		_check(hurt >= 1, "%s inflige des dégâts" % kind)
+
+
+func _test_attack_move() -> void:
+	print("Déplacement offensif")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.workers.clear()
+	var u := _add_unit(world, "soldier", Vector2(0.5, 2.5))
+	world.spawn_enemy("normal", Vector2i(3, 0), 1.0)
+	var e := world.enemies[0]
+	e.speed = 0.0
+	world.command_units_move([u], Vector2i(4, 2))
+	_check(u.order == Unit.Order.AMOVE, "l'ordre de déplacement est offensif")
+	_run(world, 1.0)
+	_check(u.target == e, "l'unité engage l'ennemi croisé en chemin")
+	_run(world, 25.0)
+	_check(world.enemies.is_empty(), "l'ennemi est détruit")
+	_check(u.pos.distance_to(Vector2(4.5, 2.5)) < 0.8 and u.order == Unit.Order.GUARD, "puis l'unité reprend la route jusqu'au point")

@@ -24,6 +24,8 @@ var _info_hp: ProgressBar
 var _info_detail: Label
 var _pulse_id := ""
 var _idle_btn: Button
+var _army_btn: Button
+var _army_label: Label
 var _idle_label: Label
 var _t := 0.0
 
@@ -42,8 +44,13 @@ func setup(g: Node) -> void:
 	var left := Ui.vbox(6)
 	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left.size_flags_vertical = Control.SIZE_SHRINK_END
+	var quick := Ui.hbox(6)
+	quick.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_army_btn = _make_army_button()
+	quick.add_child(_army_btn)
 	_idle_btn = _make_idle_button()
-	left.add_child(_idle_btn)
+	quick.add_child(_idle_btn)
+	left.add_child(quick)
 	left.add_child(mm_panel)
 	add_child(left)
 
@@ -72,7 +79,7 @@ func setup(g: Node) -> void:
 
 
 func blocks() -> Array[Control]:
-	var out: Array[Control] = [_idle_btn]
+	var out: Array[Control] = [_idle_btn, _army_btn]
 	for c in get_children():
 		if c is PanelContainer:
 			out.append(c)
@@ -81,6 +88,34 @@ func blocks() -> Array[Control]:
 				if cc is Control:
 					out.append(cc)
 	return out
+
+
+## Bouton « ARMÉE » : sélectionne toutes les unités de combat.
+func _make_army_button() -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(118, 44)
+	var sb := Ui.box(Color(0.12, 0.03, 0.04, 0.92), Ui.RED, 2, 4)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sb)
+	b.add_theme_stylebox_override("pressed", Ui.box(Color(Ui.RED, 0.35), Ui.RED, 2, 4))
+	var h := Ui.hbox(6)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	b.add_child(h)
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var img := TextureRect.new()
+	img.texture = Sprites.SOLDIER_GREEN
+	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	img.custom_minimum_size = Vector2(30, 30)
+	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(img)
+	_army_label = Ui.label("ARMÉE 0", 16, Ui.RED, true)
+	_army_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(_army_label)
+	b.pressed.connect(func() -> void: game.select_army())
+	return b
 
 
 ## Bouton « ouvriers inactifs » (au-dessus de la minimap) : touche = suivant, double touche = tous.
@@ -449,6 +484,9 @@ func _process(delta: float) -> void:
 	if game == null:
 		return
 	_t += delta
+	var army := (game.world as GameWorld).units.size()
+	_army_btn.visible = army > 0
+	_army_label.text = "ARMÉE %d" % army
 	var idle := (game.world as GameWorld).idle_workers().size()
 	_idle_btn.visible = idle > 0
 	_idle_label.text = "INACTIF%s %d" % ["S" if idle > 1 else "", idle]

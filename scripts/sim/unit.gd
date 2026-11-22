@@ -2,7 +2,7 @@ class_name Unit
 extends RefCounted
 ## Unité de combat du joueur (soldat, grenadier, sniper, char, mécha AA). Position en cases.
 
-enum Order { GUARD, MOVE, ATTACK }
+enum Order { GUARD, MOVE, ATTACK, AMOVE } # AMOVE = déplacement offensif (attaque en chemin)
 
 const AGGRO_EXTRA := 3.0 # repère les ennemis un peu au-delà de sa portée
 const LEASH := 7.0 # ne s'éloigne pas plus de son poste en mode garde
@@ -29,6 +29,7 @@ var sieged := false # char en mode siège
 var crit_ready := true # sniper : prochain tir critique
 var last_target_id := -1
 var heal_acc := 0.0
+var dest := Vector2.ZERO # destination d'un déplacement offensif
 
 
 static func create(type_name: String, at: Vector2) -> Unit:

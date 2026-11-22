@@ -31,12 +31,21 @@ var rally_from := Vector2.INF
 var rally_to := Vector2.INF
 ## Bâtiment à poser (mode construction) : fantôme sur la dernière case touchée.
 var ghost_kind := ""
+var _move_marker := Vector2.INF
+var _move_marker_t := 0.0
+
+
+## Repère d'ordre de déplacement offensif (cercle rouge qui se resserre).
+func move_marker(p: Vector2) -> void:
+	_move_marker = p * TILE
+	_move_marker_t = 0.5
 var selection_rect := Rect2() # en pixels monde, vide = pas de sélection en cours
 var _effects: Array[Dictionary] = []
 var _anim := 0.0
 
 
 func _process(delta: float) -> void:
+	_move_marker_t -= delta
 	_anim += delta
 	if world != null:
 		for ev in world.take_events():
@@ -90,6 +99,11 @@ func _draw() -> void:
 		if e.flying:
 			_draw_enemy(e)
 	_draw_effects()
+	if _move_marker_t > 0.0:
+		var k := _move_marker_t / 0.5
+		draw_arc(_move_marker, 10 + 22 * k, 0, TAU, 28, Color(1.0, 0.35, 0.3, k), 3.0)
+		draw_line(_move_marker + Vector2(-7, -7), _move_marker + Vector2(7, 7), Color(1.0, 0.35, 0.3, k), 3.0)
+		draw_line(_move_marker + Vector2(7, -7), _move_marker + Vector2(-7, 7), Color(1.0, 0.35, 0.3, k), 3.0)
 	_draw_base_hp()
 	if tutorial_marker != Vector2.INF:
 		var c := tutorial_marker * TILE

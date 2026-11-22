@@ -215,6 +215,20 @@ func _clear_selection() -> void:
 	build_menu = ""
 
 
+## Bouton « ARMÉE » : sélectionne toutes les unités de combat.
+func select_army() -> void:
+	var army: Array = world.units.filter(func(x: Unit) -> bool: return x.alive)
+	if army.is_empty():
+		hud.flash("Aucune unité de combat : forme-en à la base ou à la caserne", Ui.MUTED)
+		return
+	_set_selection([], army)
+	var c := Vector2.ZERO
+	for x: Unit in army:
+		c += x.pos
+	camera.center_on(c / army.size() * TILE)
+	Sfx.play("click", -6.0)
+
+
 var _idle_index := 0
 var _idle_last_tap := -10.0
 
@@ -291,12 +305,9 @@ func _on_tapped(world_px: Vector2) -> void:
 		_try_place(c)
 		return
 
-	# 1. Toucher un de mes ouvriers ou une de mes unités : on le sélectionne.
+	# 1. Toucher un de mes ouvriers ou une de mes unités : il remplace la sélection.
 	#    Toucher à nouveau ce qui est déjà sélectionné seul : on désélectionne.
 	var u := world.unit_at(p, 0.4)
-	if u != null and sel_units.size() > 1 and sel_units.has(u):
-		_order_selection(p, c, null, false)
-		return
 	if u != null:
 		if sel_units.size() == 1 and sel_units[0] == u and selected.is_empty():
 			deselect()
@@ -328,7 +339,14 @@ func _on_tapped(world_px: Vector2) -> void:
 		return
 
 	# 3. Ouvriers / unités sélectionnés : donner un ordre.
+	#    Des unités de combat (sans ouvrier) qui touchent un bâtiment ou la base : on sélectionne ce bâtiment.
 	if kind == "mobile":
+		if selected.is_empty() and (site != null or on_base):
+			if on_base:
+				select_base()
+			else:
+				focus_site(site)
+			return
 		_order_selection(p, c, site, on_base)
 		return
 
@@ -361,6 +379,7 @@ func _order_selection(p: Vector2, c: Vector2i, site: BuildSite, on_base: bool) -
 		return
 	if not uids.is_empty():
 		issue({"t": "unit_move", "u": uids, "c": c})
+		units_view.move_marker(p)
 	if wids.is_empty():
 		return
 	if site != null:
