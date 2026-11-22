@@ -477,7 +477,15 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			if u.target != null and u.pos.distance_to(u.target.pos) > rng + Unit.AGGRO_EXTRA + 2.0:
 				u.target = null
 			if u.target == null:
-				if u.pos.distance_to(u.dest) <= 0.6:
+				var dd := u.pos.distance_to(u.dest)
+				var stuck := dd > 0.6 and _unit_stuck(u, delta)
+				if stuck and dd > 3.0 and u.stuck_tries < 3:
+					# Bloqué loin du but : on recalcule le chemin.
+					u.stuck_tries += 1
+					u.path.clear()
+					u.repath_timer = 0.0
+					stuck = false
+				if dd <= 0.6 or stuck:
 					u.order = Unit.Order.GUARD
 					u.guard_pos = u.pos
 					u.path.clear()
@@ -502,6 +510,8 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			if u.target != null and u.target.pos.distance_to(u.guard_pos) > Unit.LEASH + rng:
 				u.target = null # trop loin de son poste : on lâche
 	if u.target != null:
+		u.stuck_pos = Vector2.INF # en combat : la détection de blocage repart de zéro
+		u.stuck_t = 0.0
 		var d := u.pos.distance_to(u.target.pos)
 		if d <= rng:
 			u.path.clear()
@@ -516,12 +526,31 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			u.path = _path_toward(u.cell(), Vector2i(u.target.pos.floor()))
 		_follow_path(u, st.speed, delta)
 		return
-	# Garde sans cible : retour au poste.
-	if u.pos.distance_to(u.guard_pos) > 0.7:
+	# Garde sans cible : retour au poste (s'il est bloqué par un voisin, son poste devient sa position).
+	var gd := u.pos.distance_to(u.guard_pos)
+	if gd > 0.7:
+		if _unit_stuck(u, delta):
+			u.guard_pos = u.pos
+			u.path.clear()
+			return
 		if u.path.is_empty() and u.repath_timer <= 0.0:
 			u.repath_timer = 0.5
 			u.path = _path_toward(u.cell(), Vector2i(u.guard_pos.floor()))
 		_follow_path(u, st.speed, delta)
+
+
+## Détection de blocage : l'unité n'a pas bougé de plus de 0,25 case depuis 1,2 s.
+func _unit_stuck(u: Unit, delta: float) -> bool:
+	if u.stuck_pos == Vector2.INF or u.pos.distance_to(u.stuck_pos) > 0.25:
+		u.stuck_pos = u.pos
+		u.stuck_t = 0.0
+		return false
+	u.stuck_t += delta
+	if u.stuck_t >= 1.2:
+		u.stuck_t = 0.0
+		u.stuck_pos = Vector2.INF
+		return true
+	return false
 
 
 ## Tir d'une unité (passif critique du sniper).
@@ -634,8 +663,10 @@ func _separate_units() -> void:
 			var l := d.length()
 			if l < 0.6 and l > 0.0001:
 				var push := d / l * (0.6 - l) * 0.5
-				a.pos += push
-				b.pos -= push
+				if pathfinder.is_free(Vector2i((a.pos + push).floor())):
+					a.pos += push
+				if pathfinder.is_free(Vector2i((b.pos - push).floor())):
+					b.pos -= push
 
 
 func _damage_enemy(e: Enemy, amount: int) -> void:
@@ -836,11 +867,15 @@ func _tick_worker(w: Worker, delta: float) -> void:
 ## Avance le long du chemin (ouvrier ou unité). Renvoie true une fois arrivé.
 func _follow_path(m: Variant, speed: float, delta: float) -> bool:
 	var step := speed * delta
+	var loose: bool = m is Unit # les unités de combat coupent les virages (évite les bouchons)
 	while step > 0.0 and not m.path.is_empty():
 		var target := Vector2(m.path[0]) + Vector2(0.5, 0.5)
 		var d: float = m.pos.distance_to(target)
 		if d > 0.001:
 			m.facing = (target - m.pos) / d
+		if loose and d < (0.55 if m.path.size() > 1 else 0.35):
+			m.path.remove_at(0) # point de passage atteint « à peu près » : on enchaîne
+			continue
 		if d <= step:
 			m.pos = target
 			step -= d
@@ -1003,7 +1038,7 @@ func set_auto_repair(ws: Array, on: bool) -> void:
 
 ## Déplace un groupe en formation : chaque unité vise une case libre autour du point touché.
 func command_units_move(us: Array, c: Vector2i) -> void:
-	var spots := _formation_cells(c, us.size())
+	var spots := _formation_cells(c, us.size(), us)
 	var i := 0
 	for u: Unit in us:
 		if u != null:
@@ -1011,18 +1046,23 @@ func command_units_move(us: Array, c: Vector2i) -> void:
 			i += 1
 
 
-func _formation_cells(c: Vector2i, n: int) -> Array[Vector2i]:
+func _formation_cells(c: Vector2i, n: int, movers: Array = []) -> Array[Vector2i]:
+	# Cases déjà tenues par des unités qui ne font pas partie du groupe : on les évite.
+	var held := {}
+	for u in units:
+		if u.alive and not movers.has(u) and u.order == Unit.Order.GUARD:
+			held[Vector2i(u.guard_pos.floor())] = true
 	var out: Array[Vector2i] = []
-	if pathfinder.is_free(c):
+	if pathfinder.is_free(c) and not held.has(c):
 		out.append(c)
 	var r := 1
-	while out.size() < n and r <= 4:
+	while out.size() < n and r <= 10:
 		for dy in range(-r, r + 1):
 			for dx in range(-r, r + 1):
 				if maxi(absi(dx), absi(dy)) != r:
 					continue
 				var cc := c + Vector2i(dx, dy)
-				if pathfinder.is_free(cc) and out.size() < n:
+				if pathfinder.is_free(cc) and not held.has(cc) and out.size() < n:
 					out.append(cc)
 		r += 1
 	if out.is_empty():
@@ -1061,6 +1101,9 @@ func _unit_go(u: Unit, c: Vector2i) -> void:
 		return # un char en mode siège ne bouge pas
 	u.order = Unit.Order.AMOVE
 	u.dest = Vector2(c) + Vector2(0.5, 0.5)
+	u.stuck_t = 0.0
+	u.stuck_pos = Vector2.INF
+	u.stuck_tries = 0
 	u.target = null
 	u.path = _path_toward(u.cell(), c)
 	if u.path.is_empty():

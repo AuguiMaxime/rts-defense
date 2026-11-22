@@ -372,6 +372,8 @@ func _build_info() -> void:
 			if s.is_tower() and s.built:
 				name += "  ·  NIV. %d" % s.level
 			var tex: Variant = Sprites.TOWER_LOOK[s.kind].turret if s.is_tower() else null
+			if game.sel_sites.size() > 1:
+				name = "%d × %s" % [game.sel_sites.size(), st.name.to_upper()]
 			_title_row(name, tex)
 			_hp_bar()
 			if s.built and s.is_producer():

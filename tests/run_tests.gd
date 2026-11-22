@@ -40,6 +40,7 @@ func _init() -> void:
 	_test_new_towers()
 	_test_attack_move()
 	_test_finite_deposits()
+	_test_group_move()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -680,3 +681,33 @@ func _test_finite_deposits() -> void:
 	world.deposit_left[second] = 1
 	_run(world, 30.0)
 	_check(world.workers.all(func(w: Worker) -> bool: return world.is_idle(w)), "plus aucun gisement : les ouvriers deviennent inactifs")
+
+
+func _test_group_move() -> void:
+	print("Déplacement de groupe")
+	var world := GameWorld.new(MapLoader.from_layout(preload("res://maps/map_01.gd").LAYOUT))
+	world.waves.timer = 9999
+	world.workers.clear()
+	var us: Array = []
+	for i in 24:
+		us.append(_add_unit(world, ["soldier", "tank", "sniper", "warrior"][i % 4], Vector2(12.5 + i % 6 * 0.3, 10.5 + i / 6 * 0.3)))
+	var ok := true
+	for target in [Vector2i(25, 14), Vector2i(14, 20), Vector2i(30, 8), Vector2i(25, 14)]:
+		world.command_units_move(us, target)
+		_run(world, 25.0)
+		var moving := us.filter(func(u: Unit) -> bool: return u.order != Unit.Order.GUARD)
+		var far := us.filter(func(u: Unit) -> bool: return u.pos.distance_to(Vector2(target)) > 6.0)
+		if not moving.is_empty() or not far.is_empty():
+			ok = false
+			print("    bloquées : %d en mouvement, %d loin de %s" % [moving.size(), far.size(), target])
+	_check(ok, "24 unités arrivent et s'arrêtent à chaque ordre")
+	var before := us.map(func(u: Unit) -> Vector2: return u.pos)
+	_run(world, 5.0)
+	var jitter := 0.0
+	for i in us.size():
+		jitter = maxf(jitter, (us[i] as Unit).pos.distance_to(before[i]))
+	_check(jitter < 0.3, "puis restent immobiles (déplacement max %.2f)" % jitter)
+	var cells := {}
+	for u: Unit in us:
+		cells[Vector2i(u.guard_pos.floor())] = true
+	_check(cells.size() >= us.size() * 3 / 4, "elles s'étalent en formation (%d cases pour %d unités)" % [cells.size(), us.size()])

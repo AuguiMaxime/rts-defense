@@ -8,7 +8,10 @@ var level: Dictionary
 var map_script: Variant
 var selected: Array[Worker] = [] # ouvriers sélectionnés
 var sel_units: Array[Unit] = [] # unités de combat sélectionnées
-var focused_site: BuildSite = null # bâtiment sélectionné
+var focused_site: BuildSite = null # bâtiment sélectionné (le premier du groupe)
+var sel_sites: Array[BuildSite] = [] # bâtiments sélectionnés (double touche = tous ceux du même type)
+var _last_tap_ms := -1000
+var _last_tap_key := ""
 var sel_base := false # base sélectionnée
 var build_kind := "" # "" = pas en mode construction ; "orbital" = ciblage du pouvoir
 var speed := 1
@@ -127,8 +130,12 @@ func _process(delta: float) -> void:
 			if _snapshot_timer <= 0.0:
 				_snapshot_timer = 0.1
 				Net.send_snapshot(NetSync.snapshot(world))
-	if focused_site != null and not focused_site.alive:
-		_clear_selection()
+	if focused_site != null and sel_sites.any(func(x: BuildSite) -> bool: return not x.alive):
+		var alive := sel_sites.filter(func(x: BuildSite) -> bool: return x.alive)
+		if alive.is_empty():
+			_clear_selection()
+		else:
+			select_sites(alive)
 	if selected.any(func(w: Worker) -> bool: return not w.alive) or sel_units.any(func(u: Unit) -> bool: return not u.alive):
 		_set_selection(selected.filter(func(w: Worker) -> bool: return w.alive), sel_units.filter(func(u: Unit) -> bool: return u.alive))
 	_update_rally_display()
@@ -166,7 +173,7 @@ func selection_key() -> String:
 		"base":
 			return "base"
 		"site":
-			return "site%d-%s-%d" % [focused_site.id, focused_site.built, focused_site.level]
+			return "site%d-%s-%d-%d" % [focused_site.id, focused_site.built, focused_site.level, sel_sites.size()]
 		"mobile":
 			return "mob" + ",".join(selected.map(func(w: Worker) -> String: return "w%d" % w.id)) \
 					+ ",".join(sel_units.map(func(u: Unit) -> String: return "u%d" % u.id))
@@ -189,9 +196,43 @@ func select_base() -> void:
 
 
 func focus_site(s: BuildSite) -> void:
+	select_sites([s])
+
+
+func select_sites(list: Array) -> void:
 	_clear_selection()
-	focused_site = s
-	units_view.focused_site = s
+	sel_sites.assign(list)
+	focused_site = sel_sites[0]
+	units_view.focused_site = focused_site
+	units_view.sel_sites = sel_sites
+
+
+## Double touche : tout ce qui est du même type que l'objet touché.
+func _select_same_type(key: String) -> void:
+	var parts := key.split(":")
+	match parts[0]:
+		"u":
+			_set_selection([], world.units.filter(func(x: Unit) -> bool: return x.alive and x.type == parts[1]))
+		"w":
+			_set_selection(world.workers.filter(func(x: Worker) -> bool: return x.alive))
+		"s":
+			var same := world.sites.filter(func(x: BuildSite) -> bool: return x.alive and x.built and x.kind == parts[1])
+			if not same.is_empty():
+				select_sites(same)
+	var n := selected.size() + sel_units.size() + sel_sites.size()
+	if n > 1:
+		hud.flash("%d sélectionnés" % n, Ui.CYAN)
+
+
+## Renvoie true si ce toucher est le second d'une double touche sur le même type.
+func _double_tap(key: String) -> bool:
+	var now := Time.get_ticks_msec()
+	var dbl := key == _last_tap_key and now - _last_tap_ms < 350
+	_last_tap_key = "" if dbl else key
+	_last_tap_ms = now
+	if dbl:
+		_select_same_type(key)
+	return dbl
 
 
 func _set_selection(ws: Array, us: Array = []) -> void:
@@ -207,8 +248,10 @@ func _clear_selection() -> void:
 	selected.clear()
 	sel_units.clear()
 	focused_site = null
+	sel_sites.clear()
 	sel_base = false
 	units_view.focused_site = null
+	units_view.sel_sites = sel_sites
 	units_view.sel_base = false
 	units_view.selected = selected
 	units_view.sel_units = sel_units
@@ -314,6 +357,8 @@ func _on_tapped(world_px: Vector2) -> void:
 	# 1. Toucher un de mes ouvriers ou une de mes unités : il remplace la sélection.
 	#    Toucher à nouveau ce qui est déjà sélectionné seul : on désélectionne.
 	var u := world.unit_at(p, 0.4)
+	if u != null and _double_tap("u:" + u.type):
+		return
 	if u != null:
 		if sel_units.size() == 1 and sel_units[0] == u and selected.is_empty():
 			deselect()
@@ -321,6 +366,8 @@ func _on_tapped(world_px: Vector2) -> void:
 			_set_selection([], [u])
 		return
 	var w := world.worker_at(p)
+	if w != null and _double_tap("w:"):
+		return
 	if w != null:
 		if selected.size() == 1 and selected[0] == w and sel_units.is_empty():
 			deselect()
@@ -331,12 +378,17 @@ func _on_tapped(world_px: Vector2) -> void:
 	var site := world.site_at(c)
 	var on_base := world.is_base_cell(c)
 	var kind := selection_kind()
+	if site != null and site.built and not rally_mode and _double_tap("s:" + site.kind):
+		return
+	if site == null:
+		_last_tap_key = ""
 
 	# 2. Producteur sélectionné : toucher la carte place le point de ralliement.
 	var pid := selected_producer_id()
 	if rally_mode and pid != 0:
 		if site == null and not on_base and world.grid.is_inside(c):
-			issue({"t": "rally", "p": pid, "c": c})
+			for x in ([pid] if sel_base else sel_sites.filter(func(y: BuildSite) -> bool: return y.is_producer()).map(func(y: BuildSite) -> int: return y.id)):
+				issue({"t": "rally", "p": x, "c": c})
 			Sfx.play("click", -4.0)
 			hud.flash("Point de ralliement placé", Ui.GREEN)
 			rally_mode = false
@@ -363,7 +415,7 @@ func _on_tapped(world_px: Vector2) -> void:
 		else:
 			select_base()
 	elif site != null:
-		if site == focused_site:
+		if site == focused_site and sel_sites.size() == 1:
 			deselect()
 		else:
 			focus_site(site)
@@ -487,19 +539,24 @@ func card_actions() -> Array:
 			else:
 				if s.is_producer():
 					for t in Content.PRODUCTION[s.kind].produces:
-						out.append(_unit_action(s.id, t))
+						out.append(_unit_action(_best_producer(t), t))
 				if s.is_tower() and s.level < BuildSite.MAX_LEVEL:
 					var uc := s.upgrade_cost()
-					out.append({"id": "upgrade", "icon": "#▲", "label": "AMÉLIORER", "cost": _cost_text(uc.metal, uc.essence),
-							"enabled": world.can_upgrade(s) == "", "call": upgrade_focused})
+					out.append({"id": "upgrade", "icon": "#▲", "label": "AMÉLIORER" if sel_sites.size() == 1 else "AMÉL. ×%d" % sel_sites.size(),
+							"cost": _cost_text(uc.metal, uc.essence),
+							"enabled": sel_sites.any(func(x: BuildSite) -> bool: return world.can_upgrade(x) == ""), "call": upgrade_focused})
 				elif s.is_tower():
 					out.append({"id": "upgrade", "icon": "#★", "label": "NIVEAU", "cost": "MAX", "cost_color": Ui.GOLD,
 							"call": func() -> void: hud.flash("Tourelle déjà au niveau maximum", Ui.GOLD)})
-				if s.hp < s.max_hp:
+				if sel_sites.any(func(x: BuildSite) -> bool: return x.hp < x.max_hp):
 					out.append({"id": "repair", "icon": Sprites.SITE, "label": "RÉPARER", "call": repair_focused})
 				var armed := _sell_armed == s.id and Time.get_ticks_msec() < _sell_armed_until
-				out.append({"id": "sell", "icon": "#?" if armed else "#$", "label": "CONFIRMER" if armed else "VENDRE",
-						"cost": "+%dM" % s.sell_value().metal, "cost_color": Ui.GOLD, "active": armed,
+				var refund := 0
+				for x: BuildSite in sel_sites:
+					refund += int(x.sell_value().metal)
+				out.append({"id": "sell", "icon": "#?" if armed else "#$",
+						"label": ("CONFIRMER" if armed else "VENDRE") + ("" if sel_sites.size() == 1 else " ×%d" % sel_sites.size()),
+						"cost": "+%dM" % refund, "cost_color": Ui.GOLD, "active": armed,
 						"call": func() -> void: _ask_sell(s)})
 		"mobile":
 			if not selected.is_empty():
@@ -612,32 +669,50 @@ func cancel_queue(producer_id: int, index: int) -> void:
 		issue({"t": "cancel", "p": producer_id, "i": index})
 
 
+## Producteur du groupe sélectionné le moins chargé (pour répartir la production).
+func _best_producer(t: String) -> int:
+	var best := focused_site
+	for x: BuildSite in sel_sites:
+		if x.built and x.producer != null and world.can_queue(x.id, t) == "" \
+				and (best.producer == null or x.producer.queue.size() < best.producer.queue.size() or world.can_queue(best.id, t) != ""):
+			best = x
+	return best.id
+
+
 func upgrade_focused() -> void:
-	var s := focused_site
-	if s == null:
-		return
-	var reason := world.can_upgrade(s)
-	if reason != "":
+	var done := 0
+	var reason := ""
+	for s: BuildSite in sel_sites:
+		var r := world.can_upgrade(s)
+		if r == "":
+			issue({"t": "upgrade", "s": s.id})
+			done += 1
+		elif reason == "":
+			reason = r
+	if done == 0:
 		hud.flash(reason, Ui.RED)
+	elif sel_sites.size() == 1:
+		hud.flash("%s niveau %d" % [focused_site.stats().name, focused_site.level + (1 if Net.is_client() else 0)], Ui.GREEN)
 	else:
-		issue({"t": "upgrade", "s": s.id})
-		hud.flash("%s niveau %d" % [s.stats().name, s.level + (1 if Net.is_client() else 0)], Ui.GREEN)
+		hud.flash("%d tourelle(s) améliorée(s)" % done, Ui.GREEN)
 
 
 func repair_focused() -> void:
-	var s := focused_site
-	if s == null:
-		return
-	var reason := issue({"t": "repair_auto", "s": s.id})
+	var reason := "Rien à réparer"
+	for s: BuildSite in sel_sites:
+		if s.hp < s.max_hp:
+			reason = issue({"t": "repair_auto", "s": s.id})
 	hud.flash("Ouvriers envoyés en réparation" if reason == "" else reason, Ui.GREEN if reason == "" else Ui.RED)
 
 
 func sell_focused() -> void:
 	if focused_site == null:
 		return
-	var refund := focused_site.sell_value()
-	issue({"t": "sell", "s": focused_site.id})
-	hud.flash("Vendu : +%d métal" % refund.metal, Ui.GOLD)
+	var refund := 0
+	for s: BuildSite in sel_sites:
+		refund += int(s.sell_value().metal)
+		issue({"t": "sell", "s": s.id})
+	hud.flash("Vendu : +%d métal" % refund, Ui.GOLD)
 	_clear_selection()
 
 

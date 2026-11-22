@@ -18,6 +18,7 @@ const COLOR_SELECT_FILL := Color(0.40, 1.0, 0.45, 0.12)
 var world: GameWorld
 var skin_tint := Color(1, 1, 1)
 var focused_site: BuildSite = null
+var sel_sites: Array[BuildSite] = []
 var show_ranges := false
 signal shake(strength: float)
 signal base_hit
@@ -79,6 +80,9 @@ func _draw() -> void:
 		var wave_k := sin(_anim * 6.0) * 3.0
 		draw_colored_polygon(PackedVector2Array([b + Vector2(0, -34), b + Vector2(22, -28 + wave_k), b + Vector2(0, -20)]), COLOR_SELECTED)
 		draw_circle(b, 5, COLOR_SELECTED)
+	for other in sel_sites:
+		if other != focused_site and world.sites.has(other):
+			_draw_corners(Rect2(Vector2(other.cell) * TILE, Vector2.ONE * other.size * TILE).grow(4), COLOR_SELECTED)
 	if focused_site != null and world.sites.has(focused_site):
 		var fc := focused_site.center() * TILE
 		_draw_corners(Rect2(Vector2(focused_site.cell) * TILE, Vector2.ONE * focused_site.size * TILE).grow(4), COLOR_SELECTED)

@@ -29,7 +29,10 @@ var sieged := false # char en mode siège
 var crit_ready := true # sniper : prochain tir critique
 var last_target_id := -1
 var heal_acc := 0.0
-var dest := Vector2.ZERO # destination d'un déplacement offensif
+var dest := Vector2.ZERO
+var stuck_t := 0.0 # temps sans progrès vers la destination
+var stuck_pos := Vector2.INF # position de référence (détection de blocage)
+var stuck_tries := 0 # destination d'un déplacement offensif
 
 
 static func create(type_name: String, at: Vector2) -> Unit:
