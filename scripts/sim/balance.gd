@@ -11,6 +11,8 @@ const WORKER_TRAIN_TIME := 4.0 # secondes
 const WORKER_SPEED := 2.5 # cases par seconde
 const CARRY_CAPACITY := 8 # minerai rapporté par voyage
 const HARVEST_TIME := 2.0 # secondes au gisement
+const METAL_PER_DEPOSIT := 750 # quantité d'un gisement de métal (≈ 95 voyages)
+const ESSENCE_PER_DEPOSIT := 450 # quantité d'un gisement d'essence
 
 const TOWER_COST_METAL := 75
 const TOWER_BUILD_WORK := 10.0 # secondes pour 1 ouvrier, divisé par le nombre d'ouvriers

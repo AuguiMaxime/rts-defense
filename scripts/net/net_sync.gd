@@ -39,6 +39,8 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"v": [w.waves.wave, w.waves.total, w.waves.infinite, w.waves.timer, w.waves.interval],
 		"w": workers,
 		"u": units,
+		"dl": w.deposit_left,
+		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
 		"e": enemies,
 		"s": sites,
@@ -90,6 +92,11 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 			old.alive = false
 	w.workers = workers
 
+	if snap.has("dl"):
+		w.deposit_left = snap.dl
+		var dp: Array = snap.dp
+		for i in range(w.depleted.size(), dp.size()):
+			w._deplete(dp[i])
 	if snap.has("bp"):
 		_apply_prod(w.base_producer, snap.bp)
 

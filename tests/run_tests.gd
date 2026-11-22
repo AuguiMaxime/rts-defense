@@ -39,6 +39,7 @@ func _init() -> void:
 	_test_abilities()
 	_test_new_towers()
 	_test_attack_move()
+	_test_finite_deposits()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -658,3 +659,24 @@ func _test_attack_move() -> void:
 	_run(world, 25.0)
 	_check(world.enemies.is_empty(), "l'ennemi est détruit")
 	_check(u.pos.distance_to(Vector2(4.5, 2.5)) < 0.8 and u.order == Unit.Order.GUARD, "puis l'unité reprend la route jusqu'au point")
+
+
+func _test_finite_deposits() -> void:
+	print("Gisements limités")
+	var world := GameWorld.new(MapLoader.from_layout("S.........\n..........\n.......BBB\n.M.....BBB\n.......BBB\n.....M...."))
+	world.waves.timer = 9999
+	var first := Vector2i(1, 3)
+	var second := Vector2i(5, 5)
+	_check(world.deposit_left[first] == Balance.METAL_PER_DEPOSIT, "un gisement démarre plein")
+	world.deposit_left[first] = 20 # presque vide
+	world.command_harvest(world.workers, first)
+	_run(world, 40.0)
+	_check(world.grid.get_cell(first) == GameGrid.Cell.EMPTY and world.depleted.has(first), "le gisement épuisé disparaît")
+	_check(world.pathfinder.is_free(first), "sa case redevient praticable")
+	_check(world.workers.all(func(w: Worker) -> bool: return w.target_deposit == second), "les ouvriers partent vers le gisement le plus proche")
+	var before: int = world.deposit_left[second]
+	_run(world, 20.0)
+	_check(world.deposit_left[second] < before, "et le récoltent")
+	world.deposit_left[second] = 1
+	_run(world, 30.0)
+	_check(world.workers.all(func(w: Worker) -> bool: return world.is_idle(w)), "plus aucun gisement : les ouvriers deviennent inactifs")

@@ -50,7 +50,7 @@ func _process(delta: float) -> void:
 	if world != null:
 		for ev in world.take_events():
 			_sound(ev)
-			ev["ttl"] = {"death": 0.45, "orbital": 0.9, "bounty": 0.9, "spawned": 0.5, "chain": 0.22, "wave_fx": 0.4, "crit": 0.8, "ability": 0.6, "heal": 0.35}.get(ev.type,
+			ev["ttl"] = {"death": 0.45, "depleted": 0.8, "orbital": 0.9, "bounty": 0.9, "spawned": 0.5, "chain": 0.22, "wave_fx": 0.4, "crit": 0.8, "ability": 0.6, "heal": 0.35}.get(ev.type,
 					0.08 if ev.get("kind", "") in ["gun", "soldier", "warrior", "grenadier"] else (0.3 if ev.get("kind", "") in ["sniper", "sniper_tower"] else (0.2 if ev.get("kind", "") == "flame" else 0.18)))
 			ev["life"] = ev.ttl
 			_effects.append(ev)
@@ -86,6 +86,12 @@ func _draw() -> void:
 			var rad: float = focused_site.stats().range * TILE
 			draw_circle(fc, rad, Color(0.13, 0.83, 0.93, 0.10))
 			draw_arc(fc, rad, 0, TAU, 72, Color(0.13, 0.83, 0.93, 0.7), 2.5)
+	for c: Vector2i in world.deposit_left:
+		var left: int = world.deposit_left[c]
+		var mx := world.deposit_max(c)
+		if left > 0 and left < mx:
+			var r := Rect2(Vector2(c) * TILE + Vector2(8, TILE + 4), Vector2(TILE - 16, 0))
+			_draw_bar(r, float(left) / mx, MapView.COLOR_METAL if world.grid.get_cell(c) == GameGrid.Cell.METAL else MapView.COLOR_ESSENCE, 5.0)
 	for s in world.sites:
 		_draw_site(s)
 	for w in world.workers:
@@ -382,6 +388,11 @@ func _draw_effects() -> void:
 				var font := ThemeDB.fallback_font
 				draw_string_outline(font, ev.pos * TILE + Vector2(-12, -20 - 40 * t), "+%d" % ev.amount, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, 4, Color(0, 0, 0, 1.0 - t))
 				draw_string(font, ev.pos * TILE + Vector2(-12, -20 - 40 * t), "+%d" % ev.amount, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.62, 0.77, 1.0, 1.0 - t))
+			"depleted":
+				var t: float = 1.0 - ev.ttl / ev.life
+				var col := MapView.COLOR_METAL if ev.metal else MapView.COLOR_ESSENCE
+				draw_circle(ev.pos * TILE, 10 + 40 * t, Color(col, 0.4 * (1.0 - t)))
+				draw_arc(ev.pos * TILE, 10 + 40 * t, 0, TAU, 32, Color(col, 1.0 - t), 3.0)
 			"spawned":
 				var t: float = 1.0 - ev.ttl / ev.life
 				draw_arc(ev.pos * TILE, 14 + 30 * t, 0, TAU, 32, Color(0.4, 1.0, 0.45, 1.0 - t), 3.0)

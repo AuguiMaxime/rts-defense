@@ -13,6 +13,7 @@ var state := State.IDLE
 var job := Job.NONE
 var path: Array[Vector2i] = []
 var target_deposit := Vector2i(-1, -1)
+var deposit_type := -1 # type de minerai récolté (pour en retrouver un autre)
 var target_site: BuildSite = null
 var carry_type := -1 # GameGrid.Cell.METAL ou ESSENCE
 var carry_amount := 0

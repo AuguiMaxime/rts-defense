@@ -24,6 +24,9 @@ var events: Array[Dictionary] = []
 ## En coop, l'hôte garde aussi une copie des événements pour l'autre joueur.
 var record_net_events := false
 var net_events: Array[Dictionary] = []
+## Gisements : quantité restante par case ; cases épuisées (dans l'ordre).
+var deposit_left := {}
+var depleted: Array[Vector2i] = []
 var metal := Balance.START_METAL
 var essence := Balance.START_ESSENCE
 var max_base_hp := Balance.BASE_HP
@@ -81,6 +84,10 @@ func _init(g: GameGrid, config := {}) -> void:
 	waves.total = config.get("waves", Balance.WAVE_COUNT)
 	waves.difficulty = config.get("difficulty", 1.0)
 	waves.interval = config.get("wave_interval", Balance.WAVE_INTERVAL)
+	for c in g.metal_deposits:
+		deposit_left[c] = Balance.METAL_PER_DEPOSIT
+	for c in g.essence_deposits:
+		deposit_left[c] = Balance.ESSENCE_PER_DEPOSIT
 	for i in config.get("start_workers", Balance.START_WORKERS):
 		_spawn_worker()
 
@@ -302,6 +309,11 @@ func _send_to_rally_worker(w: Worker, p: Producer) -> void:
 	var t := grid.get_cell(p.rally)
 	if t == GameGrid.Cell.METAL or t == GameGrid.Cell.ESSENCE:
 		command_harvest([w], p.rally)
+	elif depleted.has(p.rally):
+		# Le ralliement était sur un gisement épuisé : on récolte le plus proche.
+		w.deposit_type = GameGrid.Cell.METAL
+		w.target_deposit = p.rally
+		_retarget_deposit(w)
 	else:
 		command_move([w], p.rally)
 
@@ -785,8 +797,17 @@ func _tick_worker(w: Worker, delta: float) -> void:
 		Worker.State.HARVESTING:
 			w.timer -= delta
 			if w.timer <= 0.0:
-				w.carry_type = grid.get_cell(w.target_deposit)
-				w.carry_amount = Balance.CARRY_CAPACITY + carry_bonus
+				var c := w.target_deposit
+				var left: int = deposit_left.get(c, 0)
+				if left <= 0 or not is_deposit(c):
+					_retarget_deposit(w)
+					return
+				var take := mini(Balance.CARRY_CAPACITY + carry_bonus, left)
+				deposit_left[c] = left - take
+				w.carry_type = grid.get_cell(c)
+				w.carry_amount = take
+				if left - take <= 0:
+					_deplete(c)
 				_move_to_adjacent(w, grid.base_cells)
 		Worker.State.BUILDING:
 			var s := w.target_site
@@ -835,7 +856,12 @@ func _on_arrived(w: Worker) -> void:
 		Worker.Job.HARVEST:
 			if w.carry_amount > 0:
 				_deposit(w)
-				_move_to_adjacent(w, [w.target_deposit] as Array[Vector2i])
+				if is_deposit(w.target_deposit):
+					_move_to_adjacent(w, [w.target_deposit] as Array[Vector2i])
+				else:
+					_retarget_deposit(w)
+			elif not is_deposit(w.target_deposit):
+				_retarget_deposit(w)
 			else:
 				w.state = Worker.State.HARVESTING
 				w.timer = Balance.HARVEST_TIME
@@ -928,6 +954,11 @@ func command_harvest(ws: Array, deposit: Vector2i) -> void:
 		w.target_site = null
 		w.repair_base = false
 		w.target_deposit = deposit
+		if is_deposit(deposit):
+			w.deposit_type = grid.get_cell(deposit)
+		elif w.carry_amount <= 0:
+			_retarget_deposit(w)
+			continue
 		if w.carry_amount > 0:
 			_move_to_adjacent(w, grid.base_cells)
 		else:
@@ -1299,9 +1330,60 @@ func _finish_site(s: BuildSite) -> void:
 
 
 ## Après un chantier ou une réparation, l'ouvrier retourne à son gisement s'il en avait un.
+## Gisement encore exploitable ?
+func is_deposit(c: Vector2i) -> bool:
+	var t := grid.get_cell(c)
+	return (t == GameGrid.Cell.METAL or t == GameGrid.Cell.ESSENCE) and int(deposit_left.get(c, 0)) > 0
+
+
+func deposit_max(c: Vector2i) -> int:
+	return Balance.METAL_PER_DEPOSIT if grid.get_cell(c) == GameGrid.Cell.METAL else Balance.ESSENCE_PER_DEPOSIT
+
+
+## Gisement épuisé : il disparaît, la case devient praticable.
+func _deplete(c: Vector2i) -> void:
+	if depleted.has(c):
+		return
+	var t := grid.get_cell(c)
+	grid.metal_deposits.erase(c)
+	grid.essence_deposits.erase(c)
+	grid.set_cell(c, GameGrid.Cell.EMPTY)
+	deposit_left[c] = 0
+	pathfinder.set_solid(c, false)
+	_flow_dirty = true
+	depleted.append(c)
+	_emit({"type": "depleted", "pos": Vector2(c) + Vector2(0.5, 0.5), "metal": t == GameGrid.Cell.METAL})
+	# Les ouvriers qui allaient vers ce gisement les mains vides en cherchent un autre tout de suite.
+	for w in workers:
+		if w.job == Worker.Job.HARVEST and w.target_deposit == c and w.carry_amount <= 0 and w.state != Worker.State.HARVESTING:
+			_retarget_deposit(w)
+
+
+## Envoie l'ouvrier vers le gisement du même type le plus proche ; inactif s'il n'y en a plus.
+func _retarget_deposit(w: Worker) -> bool:
+	var list: Array[Vector2i] = grid.metal_deposits if w.deposit_type != GameGrid.Cell.ESSENCE else grid.essence_deposits
+	var from := Vector2(w.target_deposit) if grid.is_inside(w.target_deposit) else w.pos
+	var best := Vector2i(-1, -1)
+	var bd := INF
+	for c in list:
+		if is_deposit(c):
+			var d := from.distance_squared_to(Vector2(c))
+			if d < bd:
+				bd = d
+				best = c
+	if best.x < 0:
+		w.target_deposit = Vector2i(-1, -1)
+		_set_idle(w)
+		return false
+	w.target_deposit = best
+	w.job = Worker.Job.HARVEST
+	_move_to_adjacent(w, [best] as Array[Vector2i])
+	return true
+
+
 func _resume_or_idle(w: Worker) -> void:
 	w.repair_base = false
-	if grid.is_inside(w.target_deposit):
+	if is_deposit(w.target_deposit):
 		command_harvest([w], w.target_deposit)
 	else:
 		_set_idle(w)

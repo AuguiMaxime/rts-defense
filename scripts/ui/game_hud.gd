@@ -127,36 +127,15 @@ func _build_top_bar() -> void:
 
 	row.add_child(Ui.spacer())
 
-	# Vague
-	var wave := Ui.panel(Vector2(310, 0))
-	wave.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.88), Color(Ui.RED, 0.45), 2, 8, 0.12))
-	var wv := Ui.vbox(4)
-	var wt := Ui.hbox(10)
-	var wicon := CurrencyIcon.new()
-	wicon.kind = "wave"
-	wt.add_child(wicon)
-	_wave_title = Ui.title("VAGUE 0/10", 20)
-	_wave_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	wt.add_child(_wave_title)
-	_next_btn = Ui.button("▶▶", false, Vector2(64, 36))
-	_next_btn.add_theme_font_size_override("font_size", 16)
-	_next_btn.tooltip_text = "Lancer la vague suivante"
-	_next_btn.pressed.connect(func() -> void: game.issue({"t": "next_wave"}))
-	wt.add_child(_next_btn)
-	wv.add_child(wt)
-	_wave_bar = ProgressBar.new()
-	_wave_bar.show_percentage = false
-	_wave_bar.custom_minimum_size = Vector2(0, 10)
-	_wave_bar.add_theme_stylebox_override("fill", Ui.box(Ui.RED, Ui.RED, 0, 4))
-	wv.add_child(_wave_bar)
-	_wave_detail = Ui.label("", 18, Ui.MUTED)
-	wv.add_child(_wave_detail)
-	wave.add_child(wv)
-	wave.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	row.add_child(wave)
-	_blocks.append(wave)
-
-	row.add_child(Ui.spacer())
+	# Colonne de droite : (base + vitesse + pause) puis la vague en dessous
+	var right := Ui.vbox(8)
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(right)
+	var right_top := Ui.hbox(12)
+	right_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right.add_child(right_top)
+	row = right_top
 
 	# Base + pause + vitesse
 	var base := Ui.panel(Vector2(210, 0))
@@ -193,6 +172,36 @@ func _build_top_bar() -> void:
 	pause.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(pause)
 	_blocks.append(pause)
+
+	# Vague
+	var wave := Ui.panel(Vector2(0, 0))
+	wave.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.88), Color(Ui.RED, 0.45), 2, 8, 0.12))
+	var wv := Ui.vbox(4)
+	var wt := Ui.hbox(10)
+	var wicon := CurrencyIcon.new()
+	wicon.kind = "wave"
+	wt.add_child(wicon)
+	_wave_title = Ui.title("VAGUE 0/10", 17)
+	_wave_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wt.add_child(_wave_title)
+	_next_btn = Ui.button("▶▶", false, Vector2(56, 32))
+	_next_btn.add_theme_font_size_override("font_size", 16)
+	_next_btn.tooltip_text = "Lancer la vague suivante"
+	_next_btn.pressed.connect(func() -> void: game.issue({"t": "next_wave"}))
+	wt.add_child(_next_btn)
+	wv.add_child(wt)
+	_wave_bar = ProgressBar.new()
+	_wave_bar.show_percentage = false
+	_wave_bar.custom_minimum_size = Vector2(0, 8)
+	_wave_bar.add_theme_stylebox_override("fill", Ui.box(Ui.RED, Ui.RED, 0, 4))
+	wv.add_child(_wave_bar)
+	_wave_detail = Ui.label("", 15, Ui.MUTED)
+	wv.add_child(_wave_detail)
+	wave.add_child(wv)
+	wave.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	right.add_child(wave)
+	_blocks.append(wave)
+
 
 
 func _build_boss_bar() -> void:

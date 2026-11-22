@@ -112,6 +112,11 @@ func _build_config() -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	if world.depleted.size() != _depleted_seen:
+		_depleted_seen = world.depleted.size()
+		map_view.queue_redraw()
+		hud.console.minimap.setup(self)
+		hud.flash("Un gisement est épuisé", Ui.GOLD)
 	if Net.is_client():
 		NetSync.interpolate(world, delta)
 	elif not paused or coop:
@@ -229,6 +234,7 @@ func select_army() -> void:
 	Sfx.play("click", -6.0)
 
 
+var _depleted_seen := 0
 var _idle_index := 0
 var _idle_last_tap := -10.0
 
