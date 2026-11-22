@@ -18,7 +18,8 @@ var _speed_btn: Button
 var console: Console
 var _fps: Label
 var _boss_panel: PanelContainer
-var _boss_bar: ProgressBar
+var _boss_seen := -1
+var _boss_banner := 0.0
 var _pause_layer: Control
 var _pause_sub: Label
 var _end_layer: Control
@@ -197,19 +198,18 @@ func _build_top_bar() -> void:
 func _build_boss_bar() -> void:
 	var c := CenterContainer.new()
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_boss_panel = Ui.panel(Vector2(520, 0))
-	_boss_panel.add_theme_stylebox_override("panel", Ui.box(Color(0.15, 0.03, 0.06, 0.9), Ui.RED, 2, 6, 0.12))
+	_boss_panel = PanelContainer.new()
+	var sb := Ui.box(Color(0.15, 0.03, 0.06, 0.85), Ui.RED, 1, 4, 0.12)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	_boss_panel.add_theme_stylebox_override("panel", sb)
+	_boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_boss_panel.visible = false
-	var v := Ui.vbox(4)
-	var t := Ui.title("☠  CUIRASSÉ — BOSS", 18, Ui.RED)
+	var t := Ui.title("☠  LE BOSS EST APPARU", 14, Ui.RED)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(t)
-	_boss_bar = ProgressBar.new()
-	_boss_bar.show_percentage = false
-	_boss_bar.custom_minimum_size = Vector2(0, 14)
-	_boss_bar.add_theme_stylebox_override("fill", Ui.box(Ui.RED, Ui.RED, 0, 3))
-	v.add_child(_boss_bar)
-	_boss_panel.add_child(v)
+	_boss_panel.add_child(t)
 	c.add_child(_boss_panel)
 	_column.add_child(c)
 
@@ -431,11 +431,14 @@ func _process(delta: float) -> void:
 	_base_bar.add_theme_stylebox_override("fill", Ui.box(Ui.RED if low else Ui.CYAN, Ui.RED if low else Ui.CYAN, 0, 4))
 	_base_label.text = str(w.base_hp)
 
+	# Bandeau boss : affiché 3 s à l'apparition, puis la barre de PV suit le boss sur la carte.
 	var boss := w.boss()
-	_boss_panel.visible = boss != null
-	if boss != null:
-		_boss_bar.max_value = boss.max_hp
-		_boss_bar.value = boss.hp
+	if boss != null and boss.id != _boss_seen:
+		_boss_seen = boss.id
+		_boss_banner = 3.0
+	_boss_banner -= delta
+	_boss_panel.visible = _boss_banner > 0.0
+	_boss_panel.modulate.a = clampf(_boss_banner / 0.5, 0.0, 1.0)
 
 	if _flash_time > 0.0:
 		_flash_time -= delta

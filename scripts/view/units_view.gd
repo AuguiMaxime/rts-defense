@@ -270,7 +270,10 @@ func _draw_enemy(e: Enemy) -> void:
 	if look.has("turret"):
 		draw_texture_rect(look.turret, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
 	draw_set_transform(Vector2.ZERO)
-	if e.hp < e.max_hp:
+	if e.type == "boss":
+		var half := 46.0
+		_draw_bar(Rect2(p - Vector2(half, size * 0.55 + 4), Vector2(half * 2, 0)), float(e.hp) / e.max_hp, COLOR_ENEMY_BAR, 10.0)
+	elif e.hp < e.max_hp:
 		_draw_bar(Rect2(p - Vector2(20, 22), Vector2(40, 0)), float(e.hp) / e.max_hp, COLOR_ENEMY_BAR)
 
 

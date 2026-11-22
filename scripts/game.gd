@@ -209,6 +209,8 @@ func _clear_selection() -> void:
 	map_view.set_selected(Vector2i(-1, -1))
 	if build_kind != "" and build_kind != "orbital":
 		set_build_kind("")
+	rally_mode = false
+	_sell_armed = -1
 
 
 var _idle_index := 0
@@ -231,6 +233,30 @@ func select_idle_worker() -> void:
 		camera.center_on(idle[_idle_index].pos * TILE)
 	_idle_last_tap = now
 	Sfx.play("click", -6.0)
+
+
+var _sell_armed := -1
+var _sell_armed_until := 0
+var rally_mode := false
+
+
+## Vente en deux temps : 1re touche = demande de confirmation (3 s), 2e touche = vente.
+func _ask_sell(s: BuildSite) -> void:
+	if _sell_armed == s.id and Time.get_ticks_msec() < _sell_armed_until:
+		_sell_armed = -1
+		sell_focused()
+	else:
+		_sell_armed = s.id
+		_sell_armed_until = Time.get_ticks_msec() + 3000
+		hud.flash("Touche CONFIRMER pour vendre (+%d métal)" % s.sell_value().metal, Ui.GOLD)
+		Sfx.play("click", -6.0)
+
+
+## Bouton ⚑ sous la file de production : la prochaine touche sur la carte place le ralliement.
+func toggle_rally_mode() -> void:
+	rally_mode = not rally_mode
+	if rally_mode:
+		hud.flash("Touche la carte ou un minerai pour placer le ralliement", Ui.GREEN)
 
 
 func deselect() -> void:
@@ -265,7 +291,10 @@ func _on_tapped(world_px: Vector2) -> void:
 
 	# 1. Toucher un de mes ouvriers ou une de mes unités : on le sélectionne.
 	#    Toucher à nouveau ce qui est déjà sélectionné seul : on désélectionne.
-	var u := world.unit_at(p)
+	var u := world.unit_at(p, 0.4)
+	if u != null and sel_units.size() > 1 and sel_units.has(u):
+		_order_selection(p, c, null, false)
+		return
 	if u != null:
 		if sel_units.size() == 1 and sel_units[0] == u and selected.is_empty():
 			deselect()
@@ -286,12 +315,15 @@ func _on_tapped(world_px: Vector2) -> void:
 
 	# 2. Producteur sélectionné : toucher la carte place le point de ralliement.
 	var pid := selected_producer_id()
-	if pid != 0 and not (on_base and pid == GameWorld.BASE_ID) and not (site != null and site == focused_site):
+	if rally_mode and pid != 0:
 		if site == null and not on_base and world.grid.is_inside(c):
 			issue({"t": "rally", "p": pid, "c": c})
 			Sfx.play("click", -4.0)
 			hud.flash("Point de ralliement placé", Ui.GREEN)
-			return
+			rally_mode = false
+		else:
+			hud.flash("Choisis une case libre ou un minerai", Ui.RED)
+		return
 
 	# 3. Ouvriers / unités sélectionnés : donner un ordre.
 	if kind == "mobile":
@@ -364,12 +396,19 @@ func _try_place(c: Vector2i) -> void:
 func _on_selection_ended(a: Vector2, b: Vector2) -> void:
 	units_view.selection_rect = Rect2()
 	var r := Rect2(a / TILE, (b - a) / TILE).abs()
+	# Petit glissé du doigt : c'est un toucher, pas un cadre (sinon on perd la sélection).
+	if r.size.x < 0.9 and r.size.y < 0.9:
+		_on_tapped(b)
+		return
 	var us := world.units_in_rect(r)
+	var ws := world.workers_in_rect(r)
+	if us.is_empty() and ws.is_empty():
+		return # cadre vide : on garde la sélection actuelle
 	# Comme dans StarCraft : s'il y a des unités de combat dans le cadre, on ne prend qu'elles.
 	if not us.is_empty():
 		_set_selection([], us)
 	else:
-		_set_selection(world.workers_in_rect(r))
+		_set_selection(ws)
 
 
 func set_build_kind(kind: String) -> void:
@@ -426,10 +465,15 @@ func card_actions() -> Array:
 					var uc := s.upgrade_cost()
 					out.append({"id": "upgrade", "icon": "#▲", "label": "AMÉLIORER", "cost": _cost_text(uc.metal, uc.essence),
 							"enabled": world.can_upgrade(s) == "", "call": upgrade_focused})
+				elif s.is_tower():
+					out.append({"id": "upgrade", "icon": "#★", "label": "NIVEAU", "cost": "MAX", "cost_color": Ui.GOLD,
+							"call": func() -> void: hud.flash("Tourelle déjà au niveau maximum", Ui.GOLD)})
 				if s.hp < s.max_hp:
 					out.append({"id": "repair", "icon": Sprites.SITE, "label": "RÉPARER", "call": repair_focused})
-				out.append({"id": "sell", "icon": "#$", "label": "VENDRE", "cost": "+%dM" % s.sell_value().metal,
-						"cost_color": Ui.GOLD, "call": sell_focused})
+				var armed := _sell_armed == s.id and Time.get_ticks_msec() < _sell_armed_until
+				out.append({"id": "sell", "icon": "#?" if armed else "#$", "label": "CONFIRMER" if armed else "VENDRE",
+						"cost": "+%dM" % s.sell_value().metal, "cost_color": Ui.GOLD, "active": armed,
+						"call": func() -> void: _ask_sell(s)})
 		"mobile":
 			if not selected.is_empty():
 				for kind in Content.BUILD_ORDER:

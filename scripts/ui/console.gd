@@ -19,6 +19,7 @@ var _info_key := ""
 var _refresh_timer := 0.0
 var _queue_slots: Array[Button] = []
 var _queue_bar: ProgressBar
+var _rally_btn: Button
 var _info_hp: ProgressBar
 var _info_detail: Label
 var _pulse_id := ""
@@ -235,6 +236,7 @@ func _clear_info() -> void:
 		c.queue_free()
 	_queue_slots.clear()
 	_queue_bar = null
+	_rally_btn = null
 	_info_hp = null
 	_info_detail = null
 
@@ -305,6 +307,12 @@ func _queue_row(producer_id: int) -> void:
 	_queue_bar.custom_minimum_size = Vector2(0, 6)
 	_queue_bar.add_theme_stylebox_override("fill", Ui.box(Ui.GREEN, Ui.GREEN, 0, 3))
 	_info_box.add_child(_queue_bar)
+	_rally_btn = Button.new()
+	_rally_btn.focus_mode = Control.FOCUS_NONE
+	_rally_btn.custom_minimum_size = Vector2(0, 34)
+	_rally_btn.add_theme_font_size_override("font_size", 13)
+	_rally_btn.pressed.connect(func() -> void: game.toggle_rally_mode())
+	_info_box.add_child(_rally_btn)
 
 
 static func unit_icon(type_name: String) -> Texture2D:
@@ -414,13 +422,13 @@ func _update_info() -> void:
 
 
 func _rally_text(p: Producer) -> String:
-	if not p.busy() and not p.has_rally():
-		return "Touche la carte pour placer le point de ralliement"
-	var parts: Array[String] = []
-	if p.busy():
-		parts.append("%s : %.1f s" % [Content.UNITS[p.queue[0]].name, p.current_time() - p.progress])
-	parts.append("Ralliement placé" if p.has_rally() else "Pas de ralliement")
-	return "  ·  ".join(parts)
+	if _rally_btn != null:
+		var on: bool = game.rally_mode
+		_rally_btn.text = "⚑ TOUCHE LA CARTE…" if on else ("⚑ DÉPLACER LE RALLIEMENT" if p.has_rally() else "⚑ PLACER LE RALLIEMENT")
+		_rally_btn.theme_type_variation = "PrimaryButton" if on else ""
+	if not p.busy():
+		return "File vide"
+	return "%s : %.1f s" % [Content.UNITS[p.queue[0]].name, p.current_time() - p.progress]
 
 
 func _update_queue(p: Producer) -> void:
