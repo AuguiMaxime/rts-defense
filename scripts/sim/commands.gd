@@ -11,6 +11,14 @@ extends RefCounted
 ##   upgrade / sell      {"s": id}
 ##   train / next_wave   {}
 ##   orbital             {"p": Vector2}
+##   queue               {"p": id producteur (-1 = base), "u": type d'unité}
+##   cancel              {"p": id producteur, "i": rang dans la file}
+##   rally               {"p": id producteur, "c": Vector2i}
+##   unit_move           {"u": [ids unités], "c": Vector2i}
+##   unit_attack         {"u": [ids], "e": id ennemi}
+##   stop                {"u": [ids], "w": [ids]}
+##   auto_repair         {"w": [ids], "on": bool}
+##   repair_base         {"w": [ids]}
 
 
 ## Applique un ordre. Renvoie "" si tout va bien, sinon la raison du refus.
@@ -20,6 +28,11 @@ static func apply(world: GameWorld, cmd: Dictionary) -> String:
 		var w := world.worker_by_id(int(id))
 		if w != null:
 			ws.append(w)
+	var us: Array = []
+	for id in cmd.get("u", []) if cmd.get("u") is Array else []:
+		var u := world.unit_by_id(int(id))
+		if u != null:
+			us.append(u)
 	var site: BuildSite = world.site_by_id(int(cmd.get("s", -1))) if cmd.has("s") else null
 	match cmd.get("t", ""):
 		"move":
@@ -72,6 +85,28 @@ static func apply(world: GameWorld, cmd: Dictionary) -> String:
 			if reason != "":
 				return reason
 			world.train_worker()
+		"queue":
+			var reason := world.can_queue(int(cmd.p), cmd.u)
+			if reason != "":
+				return reason
+			world.queue_unit(int(cmd.p), cmd.u)
+		"cancel":
+			world.cancel_queue(int(cmd.p), int(cmd.i))
+		"rally":
+			world.set_rally(int(cmd.p), cmd.c)
+		"unit_move":
+			world.command_units_move(us, cmd.c)
+		"unit_attack":
+			var e := world.enemy_by_id(int(cmd.e))
+			if e == null:
+				return "Cible introuvable"
+			world.command_units_attack(us, e)
+		"stop":
+			world.command_stop(us, ws)
+		"auto_repair":
+			world.set_auto_repair(ws, bool(cmd.on))
+		"repair_base":
+			world.command_repair_base(ws)
 		"next_wave":
 			world.waves.start_next()
 		"orbital":

@@ -19,6 +19,8 @@ var carry_amount := 0
 var timer := 0.0
 var hp := Balance.WORKER_HP
 var alive := true
+var auto_repair := false # répare tout seul le bâtiment abîmé le plus proche
+var repair_base := false # la cible de réparation est la base
 
 
 func cell() -> Vector2i:

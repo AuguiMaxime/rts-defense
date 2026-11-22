@@ -2,7 +2,7 @@ class_name Enemy
 extends RefCounted
 ## Un ennemi. Position en cases.
 
-enum Target { NONE, BASE, WORKER, SITE }
+enum Target { NONE, BASE, WORKER, SITE, UNIT }
 
 var id := 0
 var type := "normal"

@@ -30,8 +30,52 @@ const TOWERS := {
 
 const TOWER_ORDER: Array[String] = ["gun", "cannon", "missile", "laser"]
 
-const HOUSE := {"name": "Habitat", "desc": "+3 de population max.", "metal": 60, "essence": 0, "hp": 150, "pop": 3}
-const BASE_POP := 6
+const HOUSE := {"name": "Habitat", "desc": "+5 de population max.", "metal": 60, "essence": 0, "hp": 150, "pop": 5, "size": 1, "build": 6.0}
+const BASE_POP := 10
+
+## Bâtiments de production (2x2 cases). produces = unités formées.
+const PRODUCTION := {
+	"barracks": {
+		"name": "Caserne", "desc": "Forme l'infanterie : soldat, grenadier, sniper.",
+		"metal": 150, "essence": 0, "hp": 500, "size": 2, "build": 14.0,
+		"produces": ["soldier", "grenadier", "sniper"],
+	},
+	"factory": {
+		"name": "Usine", "desc": "Fabrique les unités mécaniques : char, mécha anti-air.",
+		"metal": 200, "essence": 60, "hp": 650, "size": 2, "build": 18.0,
+		"produces": ["tank", "aa_mech"],
+	},
+}
+const BUILD_ORDER: Array[String] = ["gun", "cannon", "missile", "laser", "house", "barracks", "factory"]
+
+## Ce que forme la base.
+const BASE_PRODUCES: Array[String] = ["worker", "soldier"]
+
+## Unités du joueur. time = secondes de formation ; pop = place occupée ;
+## targets : "ground", "air", "both" ; splash = rayon de zone en cases.
+const UNITS := {
+	"worker": {"name": "Ouvrier", "desc": "Récolte, construit et répare.", "metal": 50, "essence": 0, "time": 4.0, "pop": 1},
+	"soldier": {
+		"name": "Soldat", "desc": "Infanterie polyvalente, sol et air.", "metal": 50, "essence": 0, "time": 5.0, "pop": 1,
+		"hp": 60, "speed": 2.2, "damage": 7, "range": 3.5, "delay": 0.6, "armor": 0, "targets": "both", "splash": 0.0,
+	},
+	"grenadier": {
+		"name": "Grenadier", "desc": "Grenades à dégâts de zone. Sol uniquement.", "metal": 75, "essence": 25, "time": 7.0, "pop": 1,
+		"hp": 75, "speed": 2.0, "damage": 18, "range": 3.5, "delay": 1.3, "armor": 1, "targets": "ground", "splash": 0.9,
+	},
+	"sniper": {
+		"name": "Sniper", "desc": "Très longue portée, gros dégâts, perce l'armure.", "metal": 90, "essence": 40, "time": 8.0, "pop": 1,
+		"hp": 45, "speed": 2.0, "damage": 42, "range": 6.5, "delay": 1.8, "armor": 0, "targets": "both", "splash": 0.0,
+	},
+	"tank": {
+		"name": "Char", "desc": "Blindé, canon lourd à dégâts de zone. Sol uniquement.", "metal": 150, "essence": 75, "time": 12.0, "pop": 3,
+		"hp": 280, "speed": 1.5, "damage": 32, "range": 4.5, "delay": 1.4, "armor": 4, "targets": "ground", "splash": 0.8,
+	},
+	"aa_mech": {
+		"name": "Mécha AA", "desc": "Marcheur anti-aérien, rafales de missiles.", "metal": 120, "essence": 60, "time": 10.0, "pop": 2,
+		"hp": 190, "speed": 1.8, "damage": 16, "range": 5.5, "delay": 0.5, "armor": 2, "targets": "air", "splash": 0.0,
+	},
+}
 
 const ORBITAL := {"name": "Frappe orbitale", "damage": 140, "radius": 2.0, "cooldown": 40.0}
 
@@ -112,6 +156,14 @@ static func skin(id: String) -> Dictionary:
 	return SKINS[0]
 
 
-## Coût d'un bâtiment ("house" ou un type de tourelle).
+## Fiche d'un bâtiment : tourelle, "house", "barracks" ou "factory".
 static func building(kind: String) -> Dictionary:
-	return HOUSE if kind == "house" else TOWERS[kind]
+	if kind == "house":
+		return HOUSE
+	if PRODUCTION.has(kind):
+		return PRODUCTION[kind]
+	return TOWERS[kind]
+
+
+static func is_tower(kind: String) -> bool:
+	return TOWERS.has(kind)

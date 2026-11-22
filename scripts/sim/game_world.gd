@@ -1,9 +1,12 @@
 class_name GameWorld
 extends RefCounted
 ## État complet d'une partie et ses règles. Avancé par tick(delta).
-## Aucune dépendance à l'affichage : c'est ce bloc qui tournera sur le serveur en multi.
+## Aucune dépendance à l'affichage : c'est ce bloc qui tourne chez l'hôte en coop.
 
 enum State { PLAYING, WON, LOST }
+
+## Identifiant de producteur réservé à la base (les bâtiments utilisent leur id, toujours > 0).
+const BASE_ID := -1
 
 var grid: GameGrid
 var pathfinder: Pathfinder
@@ -14,7 +17,8 @@ var base_hp := Balance.BASE_HP
 var enemies: Array[Enemy] = []
 var kills := 0
 ## Compteurs de la partie (missions du jour, statistiques).
-var stats := {"towers_built": 0, "houses_built": 0, "upgrades": 0, "workers_trained": 0, "boss_kills": 0, "metal_harvested": 0}
+var stats := {"towers_built": 0, "houses_built": 0, "upgrades": 0, "workers_trained": 0, "boss_kills": 0,
+		"metal_harvested": 0, "units_trained": 0}
 ## Événements visuels (tirs, destructions) que l'affichage récupère avec take_events().
 var events: Array[Dictionary] = []
 ## En coop, l'hôte garde aussi une copie des événements pour l'autre joueur.
@@ -32,23 +36,30 @@ var worker_speed_mult := 1.0
 var carry_bonus := 0
 var laser_unlocked := false
 var workers: Array[Worker] = []
+var units: Array[Unit] = []
 var sites: Array[BuildSite] = []
-var train_queue := 0
-var train_timer := 0.0
+var base_producer := Producer.new()
+
+## Nombre d'unités en file à la base (compatibilité HUD / tests).
+var train_queue: int:
+	get:
+		return base_producer.queue.size()
 
 var _next_id := 1
 var _next_enemy_id := 1
 var _next_site_id := 1
+var _next_unit_id := 1
 var _flow_dirty := true
 var _base_rect := Rect2()
 var _rng := RandomNumberGenerator.new()
+var _auto_repair_timer := 0.0
 ## Grille spatiale des ennemis (cases de BUCKET x BUCKET), refaite à chaque tick.
 const BUCKET := 4
 var _buckets := {}
 
 
 ## config (optionnel) : start_metal, start_workers, base_hp, damage_mult, worker_speed_mult,
-## carry_bonus, orbital (bool), waves (nombre de vagues), difficulty, laser (bool).
+## carry_bonus, orbital (bool), waves (nombre de vagues), difficulty, wave_interval, laser (bool).
 func _init(g: GameGrid, config := {}) -> void:
 	grid = g
 	metal = config.get("start_metal", Balance.START_METAL)
@@ -62,7 +73,7 @@ func _init(g: GameGrid, config := {}) -> void:
 	pathfinder = Pathfinder.new(g)
 	flow = FlowField.new(g, pathfinder)
 	waves = WaveManager.new()
-	_rng.seed = 12345 # déterministe : même partie sur tous les appareils en multi
+	_rng.seed = 12345 # déterministe
 	if not g.base_cells.is_empty():
 		_base_rect = Rect2(Vector2(g.base_cells[0]), Vector2.ONE)
 		for c in g.base_cells:
@@ -85,18 +96,23 @@ func tick(delta: float) -> void:
 	if _flow_dirty:
 		flow.rebuild()
 		_flow_dirty = false
-	if train_queue > 0:
-		train_timer += delta
-		if train_timer >= Balance.WORKER_TRAIN_TIME:
-			train_timer = 0.0
-			train_queue -= 1
-			_spawn_worker()
+	_tick_producer(base_producer, BASE_ID, delta)
+	for s in sites:
+		if s.built and s.producer != null:
+			_tick_producer(s.producer, s.id, delta)
+	_auto_repair_timer -= delta
+	if _auto_repair_timer <= 0.0:
+		_auto_repair_timer = 0.5
+		_auto_repair_scan()
 	for w in workers:
 		_tick_worker(w, delta)
 	_rebuild_buckets()
 	for s in sites:
 		if s.built and s.is_tower():
 			_tick_tower(s, delta)
+	for u in units:
+		_tick_unit(u, delta)
+	_separate_units()
 	for e in enemies:
 		_tick_enemy(e, delta)
 	_remove_dead()
@@ -145,6 +161,151 @@ func base_center() -> Vector2:
 	return _base_rect.get_center()
 
 
+func base_rect() -> Rect2:
+	return _base_rect
+
+
+# --- Production ------------------------------------------------------------------
+
+func producer_by_id(id: int) -> Producer:
+	if id == BASE_ID:
+		return base_producer
+	var s := site_by_id(id)
+	return s.producer if s != null and s.built else null
+
+
+## Types que peut former ce producteur.
+func producer_options(id: int) -> Array:
+	if id == BASE_ID:
+		return Content.BASE_PRODUCES
+	var s := site_by_id(id)
+	return Content.PRODUCTION[s.kind].produces if s != null and s.is_producer() else []
+
+
+func pop_used() -> int:
+	var n := workers.size()
+	for u in units:
+		n += u.pop()
+	n += base_producer.queued_pop()
+	for s in sites:
+		if s.producer != null:
+			n += s.producer.queued_pop()
+	return n
+
+
+## Raison du refus, ou "" si on peut mettre cette unité en file.
+func can_queue(producer_id: int, type_name: String) -> String:
+	var p := producer_by_id(producer_id)
+	if p == null:
+		return "Bâtiment indisponible"
+	if not producer_options(producer_id).has(type_name):
+		return "Ce bâtiment ne forme pas cette unité"
+	if p.queue.size() >= Producer.MAX_QUEUE:
+		return "File pleine (%d max)" % Producer.MAX_QUEUE
+	var d: Dictionary = Content.UNITS[type_name]
+	if pop_used() + int(d.pop) > pop_cap:
+		return "Population max atteinte : construis un habitat"
+	if metal < d.metal:
+		return "Pas assez de métal (%d)" % d.metal
+	if essence < d.essence:
+		return "Pas assez d'essence (%d)" % d.essence
+	return ""
+
+
+## Met une unité en file : le coût est payé tout de suite (remboursé si on annule).
+func queue_unit(producer_id: int, type_name: String) -> bool:
+	if can_queue(producer_id, type_name) != "":
+		return false
+	var d: Dictionary = Content.UNITS[type_name]
+	metal -= d.metal
+	essence -= d.essence
+	producer_by_id(producer_id).queue.append(type_name)
+	return true
+
+
+func cancel_queue(producer_id: int, index: int) -> bool:
+	var p := producer_by_id(producer_id)
+	if p == null or index < 0 or index >= p.queue.size():
+		return false
+	var d: Dictionary = Content.UNITS[p.queue[index]]
+	metal += d.metal
+	essence += d.essence
+	p.queue.remove_at(index)
+	if index == 0:
+		p.progress = 0.0
+	return true
+
+
+func set_rally(producer_id: int, c: Vector2i) -> void:
+	var p := producer_by_id(producer_id)
+	if p != null and grid.is_inside(c):
+		p.rally = c
+
+
+## Compatibilité : former un ouvrier à la base.
+func can_train_worker() -> String:
+	return can_queue(BASE_ID, "worker")
+
+
+func train_worker() -> bool:
+	return queue_unit(BASE_ID, "worker")
+
+
+func _tick_producer(p: Producer, producer_id: int, delta: float) -> void:
+	if not p.busy():
+		return
+	p.progress += delta
+	if p.progress < p.current_time():
+		return
+	var type_name: String = p.queue.pop_front()
+	p.progress = 0.0
+	var spot := _spawn_spot(producer_id, p)
+	if type_name == "worker":
+		var w := _spawn_worker(spot)
+		stats.workers_trained += 1
+		_send_to_rally_worker(w, p)
+	else:
+		var u := Unit.create(type_name, Vector2(spot) + Vector2(0.5, 0.5))
+		u.id = _next_unit_id
+		_next_unit_id += 1
+		units.append(u)
+		stats.units_trained += 1
+		if p.has_rally():
+			_unit_go(u, p.rally)
+	_emit({"type": "spawned", "pos": Vector2(spot) + Vector2(0.5, 0.5)})
+
+
+func _producer_cells(producer_id: int) -> Array[Vector2i]:
+	if producer_id == BASE_ID:
+		return grid.base_cells
+	var s := site_by_id(producer_id)
+	return s.cells() if s != null else grid.base_cells
+
+
+## Case libre autour du producteur, la plus proche du point de ralliement.
+func _spawn_spot(producer_id: int, p: Producer) -> Vector2i:
+	var spots := pathfinder.free_cells_around(_producer_cells(producer_id))
+	if spots.is_empty():
+		return Vector2i(base_center().floor())
+	if not p.has_rally():
+		return spots[_rng.randi_range(0, spots.size() - 1)]
+	var best := spots[0]
+	for c in spots:
+		if Vector2(c).distance_squared_to(Vector2(p.rally)) < Vector2(best).distance_squared_to(Vector2(p.rally)):
+			best = c
+	return best
+
+
+func _send_to_rally_worker(w: Worker, p: Producer) -> void:
+	if not p.has_rally():
+		return
+	var t := grid.get_cell(p.rally)
+	if t == GameGrid.Cell.METAL or t == GameGrid.Cell.ESSENCE:
+		command_harvest([w], p.rally)
+	else:
+		command_move([w], p.rally)
+
+
 # --- Combat ---------------------------------------------------------------------
 
 func _rebuild_buckets() -> void:
@@ -163,11 +324,12 @@ func _can_hit(st: Dictionary, e: Enemy) -> bool:
 	return e.hp > 0 and not ((st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying))
 
 
-func _find_target(center: Vector2, st: Dictionary) -> Enemy:
-	var r: float = st.range
+func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
+	if r < 0.0:
+		r = st.range
 	var best: Enemy = null
 	var best_d := r * r
-	var b0 := Vector2i(int(center.x - r) / BUCKET, int(center.y - r) / BUCKET)
+	var b0 := Vector2i(int(maxf(0.0, center.x - r)) / BUCKET, int(maxf(0.0, center.y - r)) / BUCKET)
 	var b1 := Vector2i(int(center.x + r) / BUCKET, int(center.y + r) / BUCKET)
 	for by in range(b0.y, b1.y + 1):
 		for bx in range(b0.x, b1.x + 1):
@@ -184,11 +346,25 @@ func _find_target(center: Vector2, st: Dictionary) -> Enemy:
 	return best
 
 
+## Tir d'une tourelle ou d'une unité : dégâts (de zone si splash) + événement visuel.
+func _fire(kind: String, from: Vector2, target: Enemy, st: Dictionary) -> void:
+	var dmg := roundi(st.damage * damage_mult)
+	if st.splash > 0.0:
+		var sp: float = st.splash
+		for e in enemies:
+			if e.hp > 0 and not e.flying and e.pos.distance_squared_to(target.pos) <= sp * sp:
+				_damage_enemy(e, dmg)
+	else:
+		_damage_enemy(target, dmg)
+	if kind != "laser":
+		_emit({"type": "shot", "kind": kind, "from": from, "to": target.pos})
+
+
 func _tick_tower(s: BuildSite, delta: float) -> void:
 	var st := s.stats()
 	s.cooldown -= delta
 	s.retarget_timer -= delta
-	var center := Vector2(s.cell) + Vector2(0.5, 0.5)
+	var center := s.center()
 	var t := s.target
 	# On garde la cible tant qu'elle est vivante et à portée ; sinon on cherche (au plus 5 fois par seconde).
 	if t == null or t.hp <= 0 or center.distance_squared_to(t.pos) > st.range * st.range:
@@ -200,21 +376,82 @@ func _tick_tower(s: BuildSite, delta: float) -> void:
 	s.beam_target = t if s.kind == "laser" else null
 	if t == null:
 		return
-	var best := t
-	s.aim_angle = (best.pos - center).angle()
+	s.aim_angle = (t.pos - center).angle()
 	if s.cooldown > 0.0:
 		return
 	s.cooldown = st.delay
-	var dmg := roundi(st.damage * damage_mult)
-	if st.splash > 0.0:
-		var sp: float = st.splash
-		for e in enemies:
-			if e.hp > 0 and not e.flying and e.pos.distance_squared_to(best.pos) <= sp * sp:
-				_damage_enemy(e, dmg)
-	else:
-		_damage_enemy(best, dmg)
-	if s.kind != "laser":
-		_emit({"type": "shot", "kind": s.kind, "from": center, "to": best.pos})
+	_fire(s.kind, center, t, st)
+
+
+func _tick_unit(u: Unit, delta: float) -> void:
+	var st := u.stats()
+	u.cooldown -= delta
+	u.retarget_timer -= delta
+	u.repath_timer -= delta
+	var rng: float = st.range
+	if u.target != null and u.target.hp <= 0:
+		u.target = null
+		if u.order == Unit.Order.ATTACK:
+			u.order = Unit.Order.GUARD
+			u.guard_pos = u.pos
+	match u.order:
+		Unit.Order.MOVE:
+			# Déplacement forcé : on ignore les ennemis jusqu'à l'arrivée (comme un clic de déplacement).
+			if _follow_path(u, st.speed, delta):
+				u.order = Unit.Order.GUARD
+				u.guard_pos = u.pos
+			return
+		Unit.Order.GUARD:
+			if u.target == null and u.retarget_timer <= 0.0:
+				u.retarget_timer = 0.3
+				var t := _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA)
+				if t != null and t.pos.distance_to(u.guard_pos) <= Unit.LEASH + rng:
+					u.target = t
+			if u.target != null and u.target.pos.distance_to(u.guard_pos) > Unit.LEASH + rng:
+				u.target = null # trop loin de son poste : on lâche
+	if u.target != null:
+		var d := u.pos.distance_to(u.target.pos)
+		if d <= rng:
+			u.path.clear()
+			u.aim_angle = (u.target.pos - u.pos).angle()
+			u.facing = (u.target.pos - u.pos).normalized()
+			if u.cooldown <= 0.0:
+				u.cooldown = st.delay
+				_fire(u.type, u.pos, u.target, st)
+			return
+		if u.repath_timer <= 0.0:
+			u.repath_timer = 0.5
+			u.path = _path_toward(u.cell(), Vector2i(u.target.pos.floor()))
+		_follow_path(u, st.speed, delta)
+		return
+	# Garde sans cible : retour au poste.
+	if u.pos.distance_to(u.guard_pos) > 0.7:
+		if u.path.is_empty() and u.repath_timer <= 0.0:
+			u.repath_timer = 0.5
+			u.path = _path_toward(u.cell(), Vector2i(u.guard_pos.floor()))
+		_follow_path(u, st.speed, delta)
+
+
+## Chemin vers une case, ou vers une case libre voisine si elle est bloquée.
+func _path_toward(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	if pathfinder.is_free(to):
+		return pathfinder.find_path(from, to)
+	return pathfinder.find_path_to_adjacent(from, [to] as Array[Vector2i])
+
+
+## Écarte légèrement les unités qui se superposent.
+func _separate_units() -> void:
+	var n := units.size()
+	for i in n:
+		for j in range(i + 1, n):
+			var a := units[i]
+			var b := units[j]
+			var d := a.pos - b.pos
+			var l := d.length()
+			if l < 0.45 and l > 0.0001:
+				var push := d / l * (0.45 - l) * 0.5
+				a.pos += push
+				b.pos -= push
 
 
 func _damage_enemy(e: Enemy, amount: int) -> void:
@@ -253,7 +490,7 @@ func _tick_enemy(e: Enemy, delta: float) -> void:
 	e.pos += dir * e.speed * delta
 
 
-## Cible la plus proche à portée : ouvrier, chantier, tourelle ou base.
+## Cible la plus proche à portée : ouvrier, unité, bâtiment ou base.
 func _pick_target(e: Enemy) -> void:
 	e.target_kind = Enemy.Target.NONE
 	e.target_ref = null
@@ -268,8 +505,14 @@ func _pick_target(e: Enemy) -> void:
 			best_d = d
 			e.target_kind = Enemy.Target.WORKER
 			e.target_ref = w
+	for u in units:
+		d = e.pos.distance_to(u.pos) - 0.35
+		if d < best_d:
+			best_d = d
+			e.target_kind = Enemy.Target.UNIT
+			e.target_ref = u
 	for s in sites:
-		d = _dist_to_rect(e.pos, Rect2(Vector2(s.cell), Vector2.ONE))
+		d = _dist_to_rect(e.pos, s.rect())
 		if d < best_d:
 			best_d = d
 			e.target_kind = Enemy.Target.SITE
@@ -283,9 +526,12 @@ func _target_distance(e: Enemy) -> float:
 		Enemy.Target.WORKER:
 			var w: Worker = e.target_ref
 			return e.pos.distance_to(w.pos) - 0.3 if w.alive else INF
+		Enemy.Target.UNIT:
+			var u: Unit = e.target_ref
+			return e.pos.distance_to(u.pos) - 0.35 if u.alive else INF
 		Enemy.Target.SITE:
 			var s: BuildSite = e.target_ref
-			return _dist_to_rect(e.pos, Rect2(Vector2(s.cell), Vector2.ONE)) if s.alive else INF
+			return _dist_to_rect(e.pos, s.rect()) if s.alive else INF
 	return INF
 
 
@@ -299,10 +545,14 @@ func _enemy_attack(e: Enemy) -> void:
 			var w: Worker = e.target_ref
 			w.hp -= e.damage
 			to = w.pos
+		Enemy.Target.UNIT:
+			var u: Unit = e.target_ref
+			u.hp -= maxi(1, e.damage - int(u.stats().armor))
+			to = u.pos
 		Enemy.Target.SITE:
 			var s: BuildSite = e.target_ref
 			s.hp -= e.damage
-			to = Vector2(s.cell) + Vector2(0.5, 0.5)
+			to = s.center()
 	_emit({"type": "hit", "from": e.pos, "to": to, "ranged": e.attack_range > 1.5})
 
 
@@ -312,22 +562,35 @@ func _remove_dead() -> void:
 			enemies = enemies.filter(func(x: Enemy) -> bool: return x.hp > 0)
 			break
 	for w in workers.filter(func(x: Worker) -> bool: return x.hp <= 0):
-		if w.hp <= 0:
-			w.alive = false
-			workers.erase(w)
-			_emit({"type": "death", "pos": w.pos, "big": false})
+		w.alive = false
+		workers.erase(w)
+		_emit({"type": "death", "pos": w.pos, "big": false})
+	for u in units.filter(func(x: Unit) -> bool: return x.hp <= 0):
+		u.alive = false
+		units.erase(u)
+		_emit({"type": "death", "pos": u.pos, "big": u.type == "tank"})
 	for s in sites.filter(func(x: BuildSite) -> bool: return x.hp <= 0):
-		if s.hp <= 0:
-			s.alive = false
-			sites.erase(s)
-			if s.built and s.kind == "house":
-				pop_cap -= Content.HOUSE.pop
-			pathfinder.set_solid(s.cell, false)
-			_flow_dirty = true
-			_emit({"type": "death", "pos": Vector2(s.cell) + Vector2(0.5, 0.5), "big": true})
-			for w in workers:
-				if w.target_site == s:
-					_resume_or_idle(w)
+		_remove_site(s)
+		_emit({"type": "death", "pos": s.center(), "big": true})
+
+
+func _remove_site(s: BuildSite) -> void:
+	s.alive = false
+	sites.erase(s)
+	if s.built and s.kind == "house":
+		pop_cap -= Content.HOUSE.pop
+	if s.producer != null:
+		# Ce qui était en file est remboursé.
+		for t in s.producer.queue:
+			metal += int(Content.UNITS[t].metal)
+			essence += int(Content.UNITS[t].essence)
+		s.producer.queue.clear()
+	for c in s.cells():
+		pathfinder.set_solid(c, false)
+	_flow_dirty = true
+	for w in workers:
+		if w.target_site == s:
+			_resume_or_idle(w)
 
 
 static func _dist_to_rect(p: Vector2, r: Rect2) -> float:
@@ -335,10 +598,12 @@ static func _dist_to_rect(p: Vector2, r: Rect2) -> float:
 	return p.distance_to(q)
 
 
+# --- Ouvriers -----------------------------------------------------------------
+
 func _tick_worker(w: Worker, delta: float) -> void:
 	match w.state:
 		Worker.State.MOVING:
-			if _follow_path(w, delta):
+			if _follow_path(w, Balance.WORKER_SPEED * worker_speed_mult, delta):
 				_on_arrived(w)
 		Worker.State.HARVESTING:
 			w.timer -= delta
@@ -355,30 +620,37 @@ func _tick_worker(w: Worker, delta: float) -> void:
 			if s.work_done >= s.work_needed:
 				_finish_site(s)
 		Worker.State.REPAIRING:
+			var amount := ceili(Balance.REPAIR_RATE * delta)
+			if w.repair_base:
+				base_hp = mini(max_base_hp, base_hp + amount)
+				if base_hp >= max_base_hp:
+					_resume_or_idle(w)
+				return
 			var s := w.target_site
 			if s == null or not s.alive or s.hp >= s.max_hp:
-				_set_idle(w)
+				_resume_or_idle(w)
 				return
-			s.hp = mini(s.max_hp, s.hp + ceili(Balance.REPAIR_RATE * delta))
+			s.hp = mini(s.max_hp, s.hp + amount)
 			if s.hp >= s.max_hp:
 				_resume_or_idle(w)
 
 
-func _follow_path(w: Worker, delta: float) -> bool:
-	var step := Balance.WORKER_SPEED * worker_speed_mult * delta
-	while step > 0.0 and not w.path.is_empty():
-		var target := Vector2(w.path[0]) + Vector2(0.5, 0.5)
-		var d := w.pos.distance_to(target)
+## Avance le long du chemin (ouvrier ou unité). Renvoie true une fois arrivé.
+func _follow_path(m: Variant, speed: float, delta: float) -> bool:
+	var step := speed * delta
+	while step > 0.0 and not m.path.is_empty():
+		var target := Vector2(m.path[0]) + Vector2(0.5, 0.5)
+		var d: float = m.pos.distance_to(target)
 		if d > 0.001:
-			w.facing = (target - w.pos) / d
+			m.facing = (target - m.pos) / d
 		if d <= step:
-			w.pos = target
+			m.pos = target
 			step -= d
-			w.path.remove_at(0)
+			m.path.remove_at(0)
 		else:
-			w.pos += (target - w.pos) / d * step
+			m.pos += (target - m.pos) / d * step
 			step = 0.0
-	return w.path.is_empty()
+	return m.path.is_empty()
 
 
 func _on_arrived(w: Worker) -> void:
@@ -408,25 +680,27 @@ func _deposit(w: Worker) -> void:
 	w.carry_type = -1
 
 
+## Les ouvriers en réparation auto vont réparer le bâtiment abîmé le plus proche (base comprise).
+func _auto_repair_scan() -> void:
+	for w in workers:
+		if not w.auto_repair or w.job == Worker.Job.BUILD or w.job == Worker.Job.REPAIR:
+			continue
+		var best: BuildSite = null
+		var best_d := Balance.AUTO_REPAIR_RADIUS
+		for s in sites:
+			if s.built and s.hp < s.max_hp:
+				var d := _dist_to_rect(w.pos, s.rect())
+				if d < best_d:
+					best = s
+					best_d = d
+		var base_d := _dist_to_rect(w.pos, _base_rect)
+		if base_hp < max_base_hp and base_d < best_d:
+			command_repair_base([w])
+		elif best != null:
+			command_repair([w], best)
+
+
 # --- Ordres du joueur ---------------------------------------------------------
-
-## Raison du refus, ou "" si on peut former un ouvrier.
-func can_train_worker() -> String:
-	if workers.size() + train_queue >= pop_cap:
-		return "Population max atteinte : construis un habitat"
-	if metal < Balance.WORKER_COST_METAL:
-		return "Pas assez de métal (%d)" % Balance.WORKER_COST_METAL
-	return ""
-
-
-func train_worker() -> bool:
-	if can_train_worker() != "":
-		return false
-	metal -= Balance.WORKER_COST_METAL
-	train_queue += 1
-	stats.workers_trained += 1
-	return true
-
 
 func command_move(ws: Array, c: Vector2i) -> void:
 	for w: Worker in ws:
@@ -434,11 +708,9 @@ func command_move(ws: Array, c: Vector2i) -> void:
 			continue
 		w.job = Worker.Job.NONE
 		w.target_site = null
+		w.repair_base = false
 		w.target_deposit = Vector2i(-1, -1)
-		if pathfinder.is_free(c):
-			_set_path(w, pathfinder.find_path(w.cell(), c))
-		else:
-			_move_to_adjacent(w, [c] as Array[Vector2i])
+		_set_path(w, _path_toward(w.cell(), c))
 
 
 func command_harvest(ws: Array, deposit: Vector2i) -> void:
@@ -447,6 +719,7 @@ func command_harvest(ws: Array, deposit: Vector2i) -> void:
 			continue
 		w.job = Worker.Job.HARVEST
 		w.target_site = null
+		w.repair_base = false
 		w.target_deposit = deposit
 		if w.carry_amount > 0:
 			_move_to_adjacent(w, grid.base_cells)
@@ -460,7 +733,8 @@ func command_build(ws: Array, site: BuildSite) -> void:
 			continue
 		w.job = Worker.Job.BUILD
 		w.target_site = site
-		_move_to_adjacent(w, [site.cell] as Array[Vector2i])
+		w.repair_base = false
+		_move_to_adjacent(w, site.cells())
 
 
 func command_repair(ws: Array, site: BuildSite) -> void:
@@ -469,25 +743,91 @@ func command_repair(ws: Array, site: BuildSite) -> void:
 			continue
 		w.job = Worker.Job.REPAIR
 		w.target_site = site
-		_move_to_adjacent(w, [site.cell] as Array[Vector2i])
+		w.repair_base = false
+		_move_to_adjacent(w, site.cells())
 
 
-## Raison du refus, ou "" si le bâtiment peut être posé.
+func command_repair_base(ws: Array) -> void:
+	for w: Worker in ws:
+		if w == null:
+			continue
+		w.job = Worker.Job.REPAIR
+		w.target_site = null
+		w.repair_base = true
+		_move_to_adjacent(w, grid.base_cells)
+
+
+func set_auto_repair(ws: Array, on: bool) -> void:
+	for w: Worker in ws:
+		if w != null:
+			w.auto_repair = on
+
+
+func command_units_move(us: Array, c: Vector2i) -> void:
+	for u: Unit in us:
+		if u != null:
+			_unit_go(u, c)
+
+
+func command_units_attack(us: Array, e: Enemy) -> void:
+	for u: Unit in us:
+		if u == null or e == null:
+			continue
+		var st := u.stats()
+		if (st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying):
+			continue # cette unité ne peut pas toucher cette cible
+		u.order = Unit.Order.ATTACK
+		u.target = e
+		u.repath_timer = 0.0
+
+
+## Arrête tout : unités en garde sur place, ouvriers inactifs.
+func command_stop(us: Array, ws: Array) -> void:
+	for u: Unit in us:
+		if u != null:
+			u.order = Unit.Order.GUARD
+			u.target = null
+			u.path.clear()
+			u.guard_pos = u.pos
+	for w: Worker in ws:
+		if w != null:
+			w.target_deposit = Vector2i(-1, -1)
+			_set_idle(w)
+
+
+func _unit_go(u: Unit, c: Vector2i) -> void:
+	u.order = Unit.Order.MOVE
+	u.target = null
+	u.path = _path_toward(u.cell(), c)
+	if u.path.is_empty():
+		u.order = Unit.Order.GUARD
+		u.guard_pos = u.pos
+
+
+## Raison du refus, ou "" si le bâtiment peut être posé (c = coin haut-gauche).
 func can_place(kind: String, c: Vector2i) -> String:
 	if kind == "laser" and not laser_unlocked:
 		return "Laser à débloquer dans la boutique"
 	var cost := Content.building(kind)
-	if not grid.is_inside(c):
-		return "Hors de la map"
-	if grid.get_cell(c) != GameGrid.Cell.EMPTY or site_at(c) != null:
-		return "Case occupée"
+	var size := int(cost.get("size", 1))
+	var cells: Array[Vector2i] = []
+	for dy in size:
+		for dx in size:
+			cells.append(c + Vector2i(dx, dy))
+	for cc in cells:
+		if not grid.is_inside(cc):
+			return "Hors de la map"
+		if grid.get_cell(cc) != GameGrid.Cell.EMPTY or site_at(cc) != null:
+			return "Emplacement occupé" if size > 1 else "Case occupée"
 	if metal < cost.metal:
 		return "Pas assez de métal (%d)" % cost.metal
 	if essence < cost.essence:
 		return "Pas assez d'essence (%d)" % cost.essence
-	pathfinder.set_solid(c, true)
+	for cc in cells:
+		pathfinder.set_solid(cc, true)
 	var open := enemies_can_reach_base()
-	pathfinder.set_solid(c, false)
+	for cc in cells:
+		pathfinder.set_solid(cc, false)
 	if not open:
 		return "Bloquerait le chemin des ennemis"
 	return ""
@@ -503,14 +843,18 @@ func place(kind: String, c: Vector2i) -> BuildSite:
 	s.id = _next_site_id
 	_next_site_id += 1
 	s.cell = c
-	if kind == "house":
-		s.work_needed = Balance.HOUSE_BUILD_WORK
 	sites.append(s)
-	pathfinder.set_solid(c, true)
+	for cc in s.cells():
+		pathfinder.set_solid(cc, true)
 	_flow_dirty = true
 	for w in workers:
-		if w.state == Worker.State.MOVING and w.path.has(c):
-			_set_path(w, pathfinder.find_path(w.cell(), w.path.back()))
+		if w.state == Worker.State.MOVING and s.cells().any(func(cc: Vector2i) -> bool: return w.path.has(cc)):
+			_set_path(w, _path_toward(w.cell(), w.path.back()))
+	for u in units:
+		if not u.path.is_empty():
+			u.repath_timer = 0.0
+			if u.order == Unit.Order.MOVE:
+				u.path = _path_toward(u.cell(), u.path.back())
 	return s
 
 
@@ -551,7 +895,7 @@ func upgrade(s: BuildSite) -> bool:
 	stats.upgrades += 1
 	s.max_hp = s.stats().hp
 	s.hp += s.max_hp - old_max
-	_emit({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
+	_emit({"type": "built", "pos": s.center()})
 	return true
 
 
@@ -561,15 +905,7 @@ func sell(s: BuildSite) -> void:
 	var refund := s.sell_value()
 	metal += refund.metal
 	essence += refund.essence
-	s.alive = false
-	sites.erase(s)
-	if s.built and s.kind == "house":
-		pop_cap -= Content.HOUSE.pop
-	pathfinder.set_solid(s.cell, false)
-	_flow_dirty = true
-	for w in workers:
-		if w.target_site == s:
-			_resume_or_idle(w)
+	_remove_site(s)
 
 
 # --- Pouvoir de base ------------------------------------------------------------------
@@ -605,9 +941,13 @@ func enemies_can_reach_base() -> bool:
 
 func site_at(c: Vector2i) -> BuildSite:
 	for s in sites:
-		if s.cell == c:
+		if s.contains(c):
 			return s
 	return null
+
+
+func is_base_cell(c: Vector2i) -> bool:
+	return grid.get_cell(c) == GameGrid.Cell.BASE
 
 
 func worker_at(p: Vector2, radius := 0.5) -> Worker:
@@ -621,11 +961,41 @@ func worker_at(p: Vector2, radius := 0.5) -> Worker:
 	return best
 
 
+func unit_at(p: Vector2, radius := 0.55) -> Unit:
+	var best: Unit = null
+	var best_d := radius
+	for u in units:
+		var d := u.pos.distance_to(p)
+		if d <= best_d:
+			best = u
+			best_d = d
+	return best
+
+
+func enemy_at(p: Vector2, radius := 0.7) -> Enemy:
+	var best: Enemy = null
+	var best_d := radius
+	for e in enemies:
+		var d := (e.pos + e.visual_offset).distance_to(p)
+		if e.hp > 0 and d <= best_d:
+			best = e
+			best_d = d
+	return best
+
+
 func workers_in_rect(r: Rect2) -> Array[Worker]:
 	var result: Array[Worker] = []
 	for w in workers:
 		if r.has_point(w.pos):
 			result.append(w)
+	return result
+
+
+func units_in_rect(r: Rect2) -> Array[Unit]:
+	var result: Array[Unit] = []
+	for u in units:
+		if r.has_point(u.pos):
+			result.append(u)
 	return result
 
 
@@ -646,14 +1016,17 @@ func nearest_available_worker(c: Vector2i) -> Worker:
 
 # --- Interne ----------------------------------------------------------------
 
-func _spawn_worker() -> void:
+func _spawn_worker(at := Vector2i(-1, -1)) -> Worker:
 	var w := Worker.new()
 	w.id = _next_id
 	_next_id += 1
-	var spots := pathfinder.free_cells_around(grid.base_cells)
-	var c := spots[(w.id - 1) % spots.size()] if not spots.is_empty() else Vector2i.ZERO
+	var c := at
+	if c.x < 0:
+		var spots := pathfinder.free_cells_around(grid.base_cells)
+		c = spots[(w.id - 1) % spots.size()] if not spots.is_empty() else Vector2i.ZERO
 	w.pos = Vector2(c) + Vector2(0.5, 0.5)
 	workers.append(w)
+	return w
 
 
 func _move_to_adjacent(w: Worker, targets: Array[Vector2i]) -> void:
@@ -672,16 +1045,19 @@ func _set_idle(w: Worker) -> void:
 	w.state = Worker.State.IDLE
 	w.job = Worker.Job.NONE
 	w.target_site = null
+	w.repair_base = false
 	w.path.clear()
 
 
 func _finish_site(s: BuildSite) -> void:
 	s.built = true
 	s.hp = s.max_hp
-	_emit({"type": "built", "pos": Vector2(s.cell) + Vector2(0.5, 0.5)})
+	_emit({"type": "built", "pos": s.center()})
 	if s.kind == "house":
 		pop_cap += Content.HOUSE.pop
 		stats.houses_built += 1
+	elif s.is_producer():
+		s.producer = Producer.new()
 	else:
 		stats.towers_built += 1
 	for w in workers:
@@ -691,6 +1067,7 @@ func _finish_site(s: BuildSite) -> void:
 
 ## Après un chantier ou une réparation, l'ouvrier retourne à son gisement s'il en avait un.
 func _resume_or_idle(w: Worker) -> void:
+	w.repair_base = false
 	if grid.is_inside(w.target_deposit):
 		command_harvest([w], w.target_deposit)
 	else:
@@ -708,6 +1085,20 @@ func worker_by_id(id: int) -> Worker:
 	for w in workers:
 		if w.id == id:
 			return w
+	return null
+
+
+func unit_by_id(id: int) -> Unit:
+	for u in units:
+		if u.id == id:
+			return u
+	return null
+
+
+func enemy_by_id(id: int) -> Enemy:
+	for e in enemies:
+		if e.id == id:
+			return e
 	return null
 
 

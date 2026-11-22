@@ -29,6 +29,11 @@ func _init() -> void:
 	_test_resume_harvest()
 	_test_boss()
 	_test_stats()
+	_test_production_queue()
+	_test_rally()
+	_test_units_combat()
+	_test_buildings_2x2()
+	_test_auto_repair()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -287,7 +292,8 @@ func _test_house_and_pop() -> void:
 	world.waves.timer = 9999
 	for i in Content.BASE_POP - world.workers.size():
 		world.train_worker()
-	_check(world.can_train_worker() != "", "population max bloque la formation")
+		_run(world, Balance.WORKER_TRAIN_TIME + 0.1)
+	_check(world.can_train_worker().contains("Population"), "population max bloque la formation")
 	_built(world, "house", Vector2i(2, 2))
 	_check(world.pop_cap == Content.BASE_POP + Content.HOUSE.pop, "un habitat ajoute +3")
 	_check(world.can_train_worker() == "", "on peut de nouveau former")
@@ -399,3 +405,101 @@ func _test_stats() -> void:
 	var st := world.stats
 	_check(st.towers_built == 1 and st.houses_built == 1 and st.upgrades == 1, "tourelles, habitats, améliorations comptés")
 	_check(st.workers_trained == 1 and st.boss_kills == 1 and st.metal_harvested > 0, "ouvriers, boss et métal récolté comptés")
+
+
+func _test_production_queue() -> void:
+	print("File de production")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.metal = 1000
+	world.waves.timer = 9999
+	for i in 5:
+		world.queue_unit(GameWorld.BASE_ID, "worker")
+	_check(world.can_queue(GameWorld.BASE_ID, "worker").contains("File pleine"), "file limitée à 5")
+	var m := world.metal
+	world.cancel_queue(GameWorld.BASE_ID, 4)
+	_check(world.metal == m + 50 and world.train_queue == 4, "annulation remboursée")
+	_check(world.base_producer.ratio() == 0.0, "progression à zéro au départ")
+	world.tick(1.0)
+	_check(world.base_producer.ratio() > 0.2, "la barre de progression avance")
+	var n := world.workers.size()
+	_run(world, 4.0 * 4 + 0.5)
+	_check(world.workers.size() == n + 4 and world.train_queue == 0, "les 4 ouvriers sortent l'un après l'autre")
+	world.queue_unit(GameWorld.BASE_ID, "soldier")
+	_run(world, 5.2)
+	_check(world.units.size() == 1 and world.units[0].type == "soldier", "la base forme un soldat")
+
+
+func _test_rally() -> void:
+	print("Point de ralliement")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.set_rally(GameWorld.BASE_ID, Vector2i(1, 5))
+	world.queue_unit(GameWorld.BASE_ID, "worker")
+	_run(world, 4.1)
+	var w := world.workers.back() as Worker
+	_check(w.job == Worker.Job.HARVEST and w.target_deposit == Vector2i(1, 5), "ralliement sur un minerai : le nouvel ouvrier récolte")
+	world.set_rally(GameWorld.BASE_ID, Vector2i(2, 1))
+	world.queue_unit(GameWorld.BASE_ID, "soldier")
+	_run(world, 12.0)
+	_check(world.units[0].pos.distance_to(Vector2(2.5, 1.5)) < 1.0, "ralliement sur le sol : le soldat y va")
+
+
+func _test_units_combat() -> void:
+	print("Unités de combat")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.workers.clear()
+	world.metal = 1000
+	world.queue_unit(GameWorld.BASE_ID, "soldier")
+	world.queue_unit(GameWorld.BASE_ID, "soldier")
+	_run(world, 10.5)
+	world.command_units_move(world.units, Vector2i(4, 2))
+	_run(world, 4.0)
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	_run(world, 12.0)
+	_check(world.enemies.is_empty() and world.kills == 1, "les soldats en garde abattent l'ennemi qui approche")
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	world.command_units_attack(world.units, world.enemies[0])
+	_check(world.units[0].order == Unit.Order.ATTACK, "ordre d'attaque sur une cible")
+	_run(world, 12.0)
+	_check(world.kills == 2, "les soldats poursuivent et détruisent la cible")
+	var aa := Unit.create("aa_mech", Vector2(3.5, 3.5))
+	world.units.append(aa)
+	world.spawn_enemy("normal", Vector2i(0, 0), 1.0)
+	world.command_units_attack([aa], world.enemies[0])
+	_check(aa.order != Unit.Order.ATTACK, "le mécha anti-air refuse une cible au sol")
+
+
+func _test_buildings_2x2() -> void:
+	print("Caserne et usine (2x2)")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.metal = 5000
+	world.essence = 5000
+	_check(world.can_place("barracks", Vector2i(4, 0)) != "", "une caserne ne peut pas chevaucher un rocher")
+	var b := _built(world, "barracks", Vector2i(1, 1))
+	_check(b.size == 2 and not world.pathfinder.is_free(Vector2i(2, 2)) and world.site_at(Vector2i(2, 2)) == b, "la caserne occupe 4 cases")
+	_check(b.producer != null, "la caserne a une file de production")
+	_check(world.can_queue(b.id, "tank") != "", "la caserne ne forme pas de char")
+	world.queue_unit(b.id, "grenadier")
+	_run(world, 7.5)
+	_check(world.units.size() == 1 and world.units[0].type == "grenadier", "la caserne forme un grenadier")
+	world.sell(b)
+	_check(world.pathfinder.is_free(Vector2i(2, 2)), "vendue : ses 4 cases se libèrent")
+
+
+func _test_auto_repair() -> void:
+	print("Réparation automatique")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	var s := _built(world, "gun", Vector2i(6, 1))
+	s.hp = 40
+	var w := world.workers[0]
+	world.command_harvest([w], Vector2i(1, 5))
+	world.set_auto_repair([w], true)
+	_run(world, 25.0)
+	_check(s.hp == s.max_hp, "l'ouvrier en réparation auto répare la tourelle abîmée")
+	_check(w.job == Worker.Job.HARVEST, "puis il retourne récolter")
+	world.base_hp = 500
+	_run(world, 60.0)
+	_check(world.base_hp > 900, "il répare aussi la base (%d PV)" % world.base_hp)
