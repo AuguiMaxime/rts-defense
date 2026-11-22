@@ -442,7 +442,7 @@ func _process(delta: float) -> void:
 	else:
 		_info.add_theme_color_override("font_color", Ui.MUTED)
 		if game.build_kind == "" and game.selected.is_empty() and w.waves.wave == 0 and not is_instance_valid(game.tutorial):
-			_info.text = "Touche la base pour former des unités · glisse un doigt pour sélectionner tes ouvriers"
+			_info.text = "Touche la base pour former des unités · retouche ou ✕ pour désélectionner"
 		else:
 			_info.text = ""
 	if _coop_badge != null:

@@ -213,6 +213,16 @@ func _clear_selection() -> void:
 
 func deselect() -> void:
 	_clear_selection()
+	Sfx.play("click", -8.0)
+
+
+## Échap (PC) ou retour Android : annule le placement / désélectionne.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		if build_kind != "" or selection_kind() != "none":
+			set_build_kind("")
+			deselect()
+			get_viewport().set_input_as_handled()
 
 
 # --- Contrôles --------------------------------------------------------------------
@@ -232,13 +242,20 @@ func _on_tapped(world_px: Vector2) -> void:
 		return
 
 	# 1. Toucher un de mes ouvriers ou une de mes unités : on le sélectionne.
+	#    Toucher à nouveau ce qui est déjà sélectionné seul : on désélectionne.
 	var u := world.unit_at(p)
 	if u != null:
-		_set_selection([], [u])
+		if sel_units.size() == 1 and sel_units[0] == u and selected.is_empty():
+			deselect()
+		else:
+			_set_selection([], [u])
 		return
 	var w := world.worker_at(p)
 	if w != null:
-		_set_selection([w])
+		if selected.size() == 1 and selected[0] == w and sel_units.is_empty():
+			deselect()
+		else:
+			_set_selection([w])
 		return
 
 	var site := world.site_at(c)
@@ -261,9 +278,15 @@ func _on_tapped(world_px: Vector2) -> void:
 
 	# 4. Sinon : sélectionner la base ou le bâtiment touché.
 	if on_base:
-		select_base()
+		if sel_base:
+			deselect()
+		else:
+			select_base()
 	elif site != null:
-		focus_site(site)
+		if site == focused_site:
+			deselect()
+		else:
+			focus_site(site)
 	else:
 		_clear_selection()
 		if world.grid.is_inside(c):
@@ -290,11 +313,15 @@ func _order_selection(p: Vector2, c: Vector2i, site: BuildSite, on_base: bool) -
 		elif site.hp < site.max_hp:
 			issue({"t": "repair", "w": wids, "s": site.id})
 			hud.flash("Réparation en cours", Ui.GREEN)
+		else:
+			focus_site(site) # rien à faire dessus : on passe à la sélection du bâtiment
 		return
 	if on_base:
 		if world.base_hp < world.max_base_hp:
 			issue({"t": "repair_base", "w": wids})
 			hud.flash("Réparation de la base", Ui.GREEN)
+		else:
+			select_base()
 		return
 	match world.grid.get_cell(c):
 		GameGrid.Cell.METAL, GameGrid.Cell.ESSENCE:

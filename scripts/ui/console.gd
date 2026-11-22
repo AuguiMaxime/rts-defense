@@ -4,11 +4,13 @@ extends HBoxContainer
 
 const CARD_COLS := 4
 const CARD_ROWS := 2
-const CARD_SIZE := Vector2(86, 86)
+const CARD_SIZE := Vector2(66, 66)
 
 var game: Node
 var minimap: Minimap
 var _info_box: VBoxContainer
+var _info_panel: PanelContainer
+var _card_panel: PanelContainer
 var _card_grid: GridContainer
 var _card_buttons: Array[Button] = []
 var _actions: Array = []
@@ -31,17 +33,18 @@ func setup(g: Node) -> void:
 
 	var mm_panel := _panel(Color(Ui.CYAN, 0.4))
 	minimap = Minimap.new()
-	minimap.custom_minimum_size = Vector2(210, 150)
+	minimap.custom_minimum_size = Vector2(150, 106)
 	mm_panel.add_child(minimap)
 	minimap.setup(g)
 	add_child(mm_panel)
 
+	add_child(Ui.spacer())
 	var info_panel := _panel(Color(Ui.CYAN, 0.4))
-	info_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info_panel.custom_minimum_size = Vector2(300, 150)
-	_info_box = Ui.vbox(6)
+	info_panel.custom_minimum_size = Vector2(250, 0)
+	_info_box = Ui.vbox(4)
 	info_panel.add_child(_info_box)
 	add_child(info_panel)
+	_info_panel = info_panel
 
 	var card_panel := _panel(Color(Ui.CYAN, 0.55))
 	_card_grid = GridContainer.new()
@@ -56,6 +59,7 @@ func setup(g: Node) -> void:
 		_card_buttons.append(b)
 	card_panel.add_child(_card_grid)
 	add_child(card_panel)
+	_card_panel = card_panel
 
 
 func blocks() -> Array[Control]:
@@ -68,10 +72,10 @@ func blocks() -> Array[Control]:
 func _panel(border: Color) -> PanelContainer:
 	var p := PanelContainer.new()
 	var sb := Ui.box(Color(0.03, 0.06, 0.11, 0.92), border, 2, 4)
-	sb.content_margin_left = 8
-	sb.content_margin_right = 8
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
 	sb.shadow_color = Color(Ui.CYAN, 0.12)
 	sb.shadow_size = 8
 	p.add_theme_stylebox_override("panel", sb)
@@ -95,27 +99,27 @@ func _make_card_button() -> Button:
 	img.name = "Img"
 	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	img.custom_minimum_size = Vector2(0, 46)
+	img.custom_minimum_size = Vector2(0, 32)
 	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(img)
 	var icon := CurrencyIcon.new()
 	icon.name = "Icon"
-	icon.custom_minimum_size = Vector2(34, 40)
+	icon.custom_minimum_size = Vector2(24, 28)
 	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(icon)
-	var glyph := Ui.label("", 26, Ui.CYAN, true)
+	var glyph := Ui.label("", 20, Ui.CYAN, true)
 	glyph.name = "Glyph"
 	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	glyph.custom_minimum_size = Vector2(0, 40)
+	glyph.custom_minimum_size = Vector2(0, 28)
 	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(glyph)
-	var name_l := Ui.label("", 12, Ui.TEXT, true)
+	var name_l := Ui.label("", 10, Ui.TEXT, true)
 	name_l.name = "Name"
 	name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(name_l)
-	var cost := Ui.label("", 13, Ui.METAL, true)
+	var cost := Ui.label("", 11, Ui.METAL, true)
 	cost.name = "Cost"
 	cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -193,40 +197,49 @@ func _clear_info() -> void:
 
 
 func _title_row(text: String, tex: Variant, color := Ui.CYAN) -> void:
-	var h := Ui.hbox(10)
+	var h := Ui.hbox(6)
 	if tex is Texture2D:
 		var img := TextureRect.new()
 		img.texture = tex
 		img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		img.custom_minimum_size = Vector2(40, 40)
+		img.custom_minimum_size = Vector2(26, 26)
 		h.add_child(img)
-	var t := Ui.title(text, 17, color)
+	var t := Ui.title(text, 13, color)
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	t.clip_text = true
 	h.add_child(t)
+	# Bouton de désélection
+	var x := Button.new()
+	x.text = "✕"
+	x.focus_mode = Control.FOCUS_NONE
+	x.custom_minimum_size = Vector2(40, 34)
+	x.add_theme_font_size_override("font_size", 18)
+	x.pressed.connect(func() -> void: game.deselect())
+	h.add_child(x)
 	_info_box.add_child(h)
 
 
 func _hp_bar(color := Ui.GREEN) -> void:
 	_info_hp = ProgressBar.new()
 	_info_hp.show_percentage = false
-	_info_hp.custom_minimum_size = Vector2(0, 10)
+	_info_hp.custom_minimum_size = Vector2(0, 6)
 	_info_hp.add_theme_stylebox_override("fill", Ui.box(color, color, 0, 3))
 	_info_box.add_child(_info_hp)
 
 
-func _detail(text := "", size := 17) -> void:
+func _detail(text := "", size := 13) -> void:
 	_info_detail = Ui.label(text, size, Ui.MUTED)
 	_info_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_info_box.add_child(_info_detail)
 
 
 func _queue_row(producer_id: int) -> void:
-	var h := Ui.hbox(6)
+	var h := Ui.hbox(4)
 	for i in Producer.MAX_QUEUE:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(48, 48)
+		b.custom_minimum_size = Vector2(40, 40)
 		b.focus_mode = Control.FOCUS_NONE
 		var img := TextureRect.new()
 		img.name = "Img"
@@ -235,10 +248,10 @@ func _queue_row(producer_id: int) -> void:
 		img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(img)
 		img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		img.offset_left = -6
-		img.offset_top = -6
-		img.offset_right = 6
-		img.offset_bottom = 6
+		img.offset_left = -4
+		img.offset_top = -4
+		img.offset_right = 4
+		img.offset_bottom = 4
 		var idx := i
 		b.pressed.connect(func() -> void: game.cancel_queue(producer_id, idx))
 		h.add_child(b)
@@ -246,7 +259,7 @@ func _queue_row(producer_id: int) -> void:
 	_info_box.add_child(h)
 	_queue_bar = ProgressBar.new()
 	_queue_bar.show_percentage = false
-	_queue_bar.custom_minimum_size = Vector2(0, 8)
+	_queue_bar.custom_minimum_size = Vector2(0, 6)
 	_queue_bar.add_theme_stylebox_override("fill", Ui.box(Ui.GREEN, Ui.GREEN, 0, 3))
 	_info_box.add_child(_queue_bar)
 
@@ -262,7 +275,7 @@ func _build_info() -> void:
 	var w: GameWorld = game.world
 	match game.selection_kind():
 		"base":
-			_title_row("BASE DE COMMANDEMENT", Sprites.BASE_CORE)
+			_title_row("BASE", Sprites.BASE_CORE)
 			_hp_bar(Ui.CYAN)
 			_queue_row(GameWorld.BASE_ID)
 			_detail()
@@ -295,19 +308,21 @@ func _build_info() -> void:
 					parts.append("%d UNITÉ%s" % [us.size(), "S" if us.size() > 1 else ""])
 				_title_row("  ·  ".join(parts), null, Ui.GREEN)
 				var grid := GridContainer.new()
-				grid.columns = 8
-				for x in (ws + us).slice(0, 16):
+				grid.columns = 9
+				grid.add_theme_constant_override("h_separation", 2)
+				grid.add_theme_constant_override("v_separation", 2)
+				var all: Array = ws + us
+				for x in all.slice(0, 18):
 					var img := TextureRect.new()
 					img.texture = Sprites.WORKER if x is Worker else unit_icon((x as Unit).type)
 					img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 					img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-					img.custom_minimum_size = Vector2(34, 34)
+					img.custom_minimum_size = Vector2(24, 24)
 					grid.add_child(img)
 				_info_box.add_child(grid)
 				_detail()
 		_:
-			_title_row("AUCUNE SÉLECTION", null, Ui.MUTED)
-			_detail("Touche la base pour former des unités.\nTouche un ouvrier pour construire.\nGlisse un doigt pour sélectionner un groupe.", 16)
+			pass
 
 
 func _update_info() -> void:
@@ -388,6 +403,7 @@ func _process(delta: float) -> void:
 		_info_key = key
 		_build_info()
 		_context_key = ""
+		_info_panel.visible = game.selection_kind() != "none"
 	if _info_hp != null:
 		_update_info()
 	_refresh_timer -= delta
@@ -395,6 +411,7 @@ func _process(delta: float) -> void:
 		_refresh_timer = 0.25
 		_context_key = key + game.build_kind
 		_apply_actions(game.card_actions())
+		_card_panel.visible = not _actions.is_empty()
 	for i in _actions.size():
 		var b := _card_buttons[i]
 		if _pulse_id != "" and _actions[i].get("id", "") == _pulse_id:
