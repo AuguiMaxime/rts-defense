@@ -193,6 +193,7 @@ func hbox(sep := 12) -> HBoxContainer:
 func spacer(min_size := Vector2(0, 0), expand := true) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = min_size
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE # un espace vide ne doit jamais bloquer les touchers
 	if expand:
 		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		c.size_flags_vertical = Control.SIZE_EXPAND_FILL

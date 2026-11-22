@@ -20,6 +20,7 @@ var tool := "#"
 var brush := 1
 var _undo: Array = []
 var _stroke_open := false
+var _last_paint := Vector2i(-999, -999)
 var _issues: Array[String] = []
 
 var map_view: MapView
@@ -61,9 +62,10 @@ func _ready() -> void:
 		_begin_stroke()
 		_paint(Vector2i((p / TILE).floor()))
 		_end_stroke())
-	camera.selection_updated.connect(func(_a: Vector2, b: Vector2) -> void:
+	camera.selection_updated.connect(func(a: Vector2, b: Vector2) -> void:
+		var start := _last_paint if _stroke_open else Vector2i((a / TILE).floor())
 		_begin_stroke()
-		_paint(Vector2i((b / TILE).floor())))
+		_paint_line(start, Vector2i((b / TILE).floor())))
 	camera.selection_ended.connect(func(_a: Vector2, _b: Vector2) -> void: _end_stroke())
 	camera.selection_cancelled.connect(_end_stroke)
 	camera.is_over_ui = _is_over_ui
@@ -183,7 +185,8 @@ func _end_stroke() -> void:
 		_validate()
 
 
-func _paint(c: Vector2i) -> void:
+func _paint(c: Vector2i, refresh := true) -> void:
+	_last_paint = c
 	if tool == "B":
 		_stamp_base(rows, c)
 	else:
@@ -196,6 +199,23 @@ func _paint(c: Vector2i) -> void:
 				if rows[cc.y][cc.x] == "B" and tool != ".":
 					continue # on ne peint pas par-dessus la base (gomme exceptée)
 				_set_char(rows, cc, tool)
+	if refresh:
+		_refresh()
+
+
+## Peint toutes les cases entre deux points (un glissé rapide ne laisse pas de trous).
+func _paint_line(a: Vector2i, b: Vector2i) -> void:
+	if tool == "B":
+		_paint(b)
+		_last_paint = b
+		return
+	var n := maxi(absi(b.x - a.x), absi(b.y - a.y))
+	for i in n + 1:
+		var t := float(i) / maxf(n, 1)
+		var c := Vector2i(roundi(lerpf(a.x, b.x, t)), roundi(lerpf(a.y, b.y, t)))
+		if c != _last_paint or i == 0:
+			_paint(c, false)
+	_last_paint = b
 	_refresh()
 
 
@@ -275,15 +295,9 @@ func _build_ui() -> void:
 	_name_edit.add_theme_font_size_override("font_size", 20)
 	_name_edit.placeholder_text = "Nom de la carte"
 	th.add_child(_name_edit)
-	for pair in [["grass", "HERBE"], ["sand", "SABLE"], ["dirt", "TERRE"], ["mars", "MARS"]]:
-		var b := _small_button(pair[1], 78)
-		b.pressed.connect(func() -> void:
-			data.GROUND = pair[0]
-			_refresh()
-			_highlight())
-		_ground_buttons[pair[0]] = b
-		th.add_child(b)
-	th.add_child(Ui.spacer())
+	var tgap := Ui.spacer()
+	tgap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	th.add_child(tgap)
 	_w_spin = _spin(20, 80, 1, 44)
 	_h_spin = _spin(14, 50, 1, 28)
 	_w_spin.custom_minimum_size.x = 88
@@ -305,10 +319,11 @@ func _build_ui() -> void:
 	# Outils à gauche
 	var left := _panel()
 	left.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	var lv := Ui.vbox(6)
+	var lv := Ui.vbox(5)
 	lv.add_child(Ui.label("PINCEAU", 16, Ui.MUTED, true))
 	for t in TOOLS:
 		var b := _small_button(t.name, 150)
+		b.custom_minimum_size.y = 40
 		var sw := ColorRect.new()
 		sw.color = t.color
 		sw.custom_minimum_size = Vector2(14, 14)
@@ -332,13 +347,31 @@ func _build_ui() -> void:
 		_brush_buttons[n] = b
 		bh.add_child(b)
 	lv.add_child(bh)
+	lv.add_child(Ui.label("SOL", 16, Ui.MUTED, true))
+	var gg := GridContainer.new()
+	gg.columns = 2
+	gg.add_theme_constant_override("h_separation", 4)
+	gg.add_theme_constant_override("v_separation", 4)
+	for pair in [["grass", "HERBE"], ["sand", "SABLE"], ["dirt", "TERRE"], ["mars", "MARS"]]:
+		var b := _small_button(pair[1], 73)
+		b.custom_minimum_size.y = 38
+		b.add_theme_font_size_override("font_size", 12)
+		b.pressed.connect(func() -> void:
+			data.GROUND = pair[0]
+			_refresh()
+			_highlight())
+		_ground_buttons[pair[0]] = b
+		gg.add_child(b)
+	lv.add_child(gg)
 	var undo := _small_button("↶ ANNULER", 150)
 	undo.pressed.connect(_undo_last)
 	lv.add_child(undo)
 	left.add_child(lv)
 	mid.add_child(left)
 
-	mid.add_child(Ui.spacer())
+	var gap := Ui.spacer()
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE # sinon il avale les touchers sur la carte
+	mid.add_child(gap)
 
 	# Réglages et fichiers à droite
 	var right := _panel()
