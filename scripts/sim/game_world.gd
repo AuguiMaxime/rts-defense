@@ -448,8 +448,8 @@ func _separate_units() -> void:
 			var b := units[j]
 			var d := a.pos - b.pos
 			var l := d.length()
-			if l < 0.45 and l > 0.0001:
-				var push := d / l * (0.45 - l) * 0.5
+			if l < 0.6 and l > 0.0001:
+				var push := d / l * (0.6 - l) * 0.5
 				a.pos += push
 				b.pos -= push
 
@@ -763,10 +763,33 @@ func set_auto_repair(ws: Array, on: bool) -> void:
 			w.auto_repair = on
 
 
+## Déplace un groupe en formation : chaque unité vise une case libre autour du point touché.
 func command_units_move(us: Array, c: Vector2i) -> void:
+	var spots := _formation_cells(c, us.size())
+	var i := 0
 	for u: Unit in us:
 		if u != null:
-			_unit_go(u, c)
+			_unit_go(u, spots[mini(i, spots.size() - 1)])
+			i += 1
+
+
+func _formation_cells(c: Vector2i, n: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if pathfinder.is_free(c):
+		out.append(c)
+	var r := 1
+	while out.size() < n and r <= 4:
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var cc := c + Vector2i(dx, dy)
+				if pathfinder.is_free(cc) and out.size() < n:
+					out.append(cc)
+		r += 1
+	if out.is_empty():
+		out.append(c)
+	return out
 
 
 func command_units_attack(us: Array, e: Enemy) -> void:

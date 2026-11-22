@@ -6,8 +6,10 @@ const TILE := MapView.TILE
 var world: GameWorld
 var level: Dictionary
 var map_script: Variant
-var selected: Array[Worker] = []
-var focused_site: BuildSite = null
+var selected: Array[Worker] = [] # ouvriers sélectionnés
+var sel_units: Array[Unit] = [] # unités de combat sélectionnées
+var focused_site: BuildSite = null # bâtiment sélectionné
+var sel_base := false # base sélectionnée
 var build_kind := "" # "" = pas en mode construction ; "orbital" = ciblage du pouvoir
 var speed := 1
 var paused := false
@@ -116,10 +118,11 @@ func _process(delta: float) -> void:
 			if _snapshot_timer <= 0.0:
 				_snapshot_timer = 0.1
 				Net.send_snapshot(NetSync.snapshot(world))
-	if focused_site != null and not world.sites.has(focused_site):
-		focus_site(null)
-	if selected.any(func(w: Worker) -> bool: return not world.workers.has(w)):
-		_set_selection(selected.filter(func(w: Worker) -> bool: return world.workers.has(w)))
+	if focused_site != null and not focused_site.alive:
+		_clear_selection()
+	if selected.any(func(w: Worker) -> bool: return not w.alive) or sel_units.any(func(u: Unit) -> bool: return not u.alive):
+		_set_selection(selected.filter(func(w: Worker) -> bool: return w.alive), sel_units.filter(func(u: Unit) -> bool: return u.alive))
+	_update_rally_display()
 	if world.waves.wave != _last_wave:
 		_last_wave = world.waves.wave
 		Sfx.play("wave", -2.0, 1.0)
@@ -132,6 +135,80 @@ func _process(delta: float) -> void:
 	if world.state != GameWorld.State.PLAYING and not _ended:
 		_ended = true
 		hud.show_end(world.state == GameWorld.State.WON)
+
+
+# --- Sélection ------------------------------------------------------------------------
+# Modèle façon StarCraft : on sélectionne soit la base, soit un bâtiment, soit des ouvriers/unités.
+# La grille d'actions en bas à droite dépend de la sélection.
+
+func selection_kind() -> String:
+	if sel_base:
+		return "base"
+	if focused_site != null:
+		return "site"
+	if not selected.is_empty() or not sel_units.is_empty():
+		return "mobile"
+	return "none"
+
+
+## Clé qui change quand le contenu de la sélection change (pour reconstruire la console).
+func selection_key() -> String:
+	match selection_kind():
+		"base":
+			return "base"
+		"site":
+			return "site%d-%s-%d" % [focused_site.id, focused_site.built, focused_site.level]
+		"mobile":
+			return "mob" + ",".join(selected.map(func(w: Worker) -> String: return "w%d" % w.id)) \
+					+ ",".join(sel_units.map(func(u: Unit) -> String: return "u%d" % u.id))
+	return "none"
+
+
+## Identifiant du producteur sélectionné (base ou caserne/usine terminée), sinon 0.
+func selected_producer_id() -> int:
+	if sel_base:
+		return GameWorld.BASE_ID
+	if focused_site != null and focused_site.built and focused_site.is_producer():
+		return focused_site.id
+	return 0
+
+
+func select_base() -> void:
+	_clear_selection()
+	sel_base = true
+	units_view.sel_base = true
+
+
+func focus_site(s: BuildSite) -> void:
+	_clear_selection()
+	focused_site = s
+	units_view.focused_site = s
+
+
+func _set_selection(ws: Array, us: Array = []) -> void:
+	_clear_selection()
+	selected.assign(ws)
+	sel_units.assign(us)
+	units_view.selected = selected
+	units_view.sel_units = sel_units
+
+
+func _clear_selection() -> void:
+	selected.clear()
+	sel_units.clear()
+	focused_site = null
+	sel_base = false
+	units_view.focused_site = null
+	units_view.sel_base = false
+	units_view.selected = selected
+	units_view.sel_units = sel_units
+	map_view.set_selected(Vector2i(-1, -1))
+	if build_kind != "" and build_kind != "orbital":
+		set_build_kind("")
+
+
+func deselect() -> void:
+	_clear_selection()
 
 
 # --- Contrôles --------------------------------------------------------------------
@@ -150,42 +227,203 @@ func _on_tapped(world_px: Vector2) -> void:
 		_try_place(c)
 		return
 
+	# 1. Toucher un de mes ouvriers ou une de mes unités : on le sélectionne.
+	var u := world.unit_at(p)
+	if u != null:
+		_set_selection([], [u])
+		return
 	var w := world.worker_at(p)
 	if w != null:
 		_set_selection([w])
 		return
 
 	var site := world.site_at(c)
-	if selected.is_empty():
-		if site != null:
-			focus_site(site)
+	var on_base := world.is_base_cell(c)
+	var kind := selection_kind()
+
+	# 2. Producteur sélectionné : toucher la carte place le point de ralliement.
+	var pid := selected_producer_id()
+	if pid != 0 and not (on_base and pid == GameWorld.BASE_ID) and not (site != null and site == focused_site):
+		if site == null and not on_base and world.grid.is_inside(c):
+			issue({"t": "rally", "p": pid, "c": c})
+			Sfx.play("click", -4.0)
+			hud.flash("Point de ralliement placé", Ui.GREEN)
 			return
-		focus_site(null)
-		map_view.set_selected(c)
-		if world.grid.is_inside(c):
-			hud.show_info(GameGrid.CELL_NAMES[world.grid.get_cell(c)])
+
+	# 3. Ouvriers / unités sélectionnés : donner un ordre.
+	if kind == "mobile":
+		_order_selection(p, c, site, on_base)
 		return
 
+	# 4. Sinon : sélectionner la base ou le bâtiment touché.
+	if on_base:
+		select_base()
+	elif site != null:
+		focus_site(site)
+	else:
+		_clear_selection()
+		if world.grid.is_inside(c):
+			hud.show_info(GameGrid.CELL_NAMES[world.grid.get_cell(c)])
+
+
+func _order_selection(p: Vector2, c: Vector2i, site: BuildSite, on_base: bool) -> void:
+	var wids := Commands.ids(selected)
+	var uids := sel_units.map(func(x: Unit) -> int: return x.id)
+	var enemy := world.enemy_at(p)
+	if enemy != null and not uids.is_empty():
+		issue({"t": "unit_attack", "u": uids, "e": enemy.id})
+		if not wids.is_empty():
+			issue({"t": "move", "w": wids, "c": c})
+		hud.flash("Attaque !", Ui.RED)
+		return
+	if not uids.is_empty():
+		issue({"t": "unit_move", "u": uids, "c": c})
+	if wids.is_empty():
+		return
 	if site != null:
 		if not site.built:
-			issue({"t": "build", "w": Commands.ids(selected), "s": site.id})
+			issue({"t": "build", "w": wids, "s": site.id})
 		elif site.hp < site.max_hp:
-			issue({"t": "repair", "w": Commands.ids(selected), "s": site.id})
+			issue({"t": "repair", "w": wids, "s": site.id})
 			hud.flash("Réparation en cours", Ui.GREEN)
+		return
+	if on_base:
+		if world.base_hp < world.max_base_hp:
+			issue({"t": "repair_base", "w": wids})
+			hud.flash("Réparation de la base", Ui.GREEN)
 		return
 	match world.grid.get_cell(c):
 		GameGrid.Cell.METAL, GameGrid.Cell.ESSENCE:
-			issue({"t": "harvest", "w": Commands.ids(selected), "c": c})
+			issue({"t": "harvest", "w": wids, "c": c})
 		_:
-			issue({"t": "move", "w": Commands.ids(selected), "c": c})
+			issue({"t": "move", "w": wids, "c": c})
 
 
-func focus_site(s: BuildSite) -> void:
-	focused_site = s
-	units_view.focused_site = s
-	if s != null:
-		_set_selection([])
-		map_view.set_selected(Vector2i(-1, -1))
+func _try_place(c: Vector2i) -> void:
+	var reason := world.can_place(build_kind, c)
+	if reason != "":
+		hud.flash(reason, Ui.RED)
+		return
+	issue({"t": "place", "k": build_kind, "c": c, "w": Commands.ids(selected)})
+	set_build_kind("")
+
+
+func _on_selection_ended(a: Vector2, b: Vector2) -> void:
+	units_view.selection_rect = Rect2()
+	var r := Rect2(a / TILE, (b - a) / TILE).abs()
+	var us := world.units_in_rect(r)
+	# Comme dans StarCraft : s'il y a des unités de combat dans le cadre, on ne prend qu'elles.
+	if not us.is_empty():
+		_set_selection([], us)
+	else:
+		_set_selection(world.workers_in_rect(r))
+
+
+func set_build_kind(kind: String) -> void:
+	build_kind = kind
+	units_view.show_ranges = kind in Content.TOWERS
+	if kind == "orbital":
+		hud.flash("Touche la zone à frapper", Ui.CYAN)
+	elif kind != "":
+		var size := int(Content.building(kind).get("size", 1))
+		hud.flash("Touche %s pour construire : %s" % ["l'emplacement (2x2, coin haut-gauche)" if size > 1 else "une case libre", Content.building(kind).name], Ui.CYAN)
+
+
+# --- Grille d'actions ----------------------------------------------------------------
+
+static func _cost_text(metal: int, essence: int) -> String:
+	var parts: Array[String] = []
+	if metal > 0:
+		parts.append("%dM" % metal)
+	if essence > 0:
+		parts.append("%dE" % essence)
+	return " ".join(parts)
+
+
+func _affordable(metal: int, essence: int) -> bool:
+	return world.metal >= metal and world.essence >= essence
+
+
+func card_actions() -> Array:
+	var out: Array = []
+	match selection_kind():
+		"base":
+			for t in Content.BASE_PRODUCES:
+				out.append(_unit_action(GameWorld.BASE_ID, t))
+			if world.orbital_unlocked():
+				var ready := world.orbital_ready()
+				out.append({"id": "orbital", "icon": "orbital", "label": "ORBITALE",
+						"cost": "PRÊTE" if ready else "%d s" % ceili(world.orbital_cooldown),
+						"cost_color": Ui.GREEN if ready else Ui.MUTED, "enabled": ready, "active": build_kind == "orbital",
+						"call": func() -> void:
+							if world.orbital_ready():
+								set_build_kind("" if build_kind == "orbital" else "orbital")
+							else:
+								hud.flash("Frappe orbitale en recharge", Ui.RED)})
+		"site":
+			var s := focused_site
+			if not s.built:
+				out.append({"id": "cancel_site", "icon": "#✕", "label": "ANNULER", "cost": "+%dM" % s.sell_value().metal,
+						"call": sell_focused})
+			else:
+				if s.is_producer():
+					for t in Content.PRODUCTION[s.kind].produces:
+						out.append(_unit_action(s.id, t))
+				if s.is_tower() and s.level < BuildSite.MAX_LEVEL:
+					var uc := s.upgrade_cost()
+					out.append({"id": "upgrade", "icon": "#▲", "label": "AMÉLIORER", "cost": _cost_text(uc.metal, uc.essence),
+							"enabled": world.can_upgrade(s) == "", "call": upgrade_focused})
+				if s.hp < s.max_hp:
+					out.append({"id": "repair", "icon": Sprites.SITE, "label": "RÉPARER", "call": repair_focused})
+				out.append({"id": "sell", "icon": "#$", "label": "VENDRE", "cost": "+%dM" % s.sell_value().metal,
+						"cost_color": Ui.GOLD, "call": sell_focused})
+		"mobile":
+			if not selected.is_empty():
+				for kind in Content.BUILD_ORDER:
+					if kind == "laser" and not world.laser_unlocked:
+						continue
+					var b := Content.building(kind)
+					var icon: Variant = Sprites.TOWER_LOOK[kind].turret if Content.is_tower(kind) else \
+							("pop" if kind == "house" else (Sprites.SOLDIER_GREEN if kind == "barracks" else Sprites.TANK_GREEN))
+					var k: String = kind
+					out.append({"id": kind, "icon": icon, "tint": Sprites.TOWER_LOOK[kind].tint if Content.is_tower(kind) else Color(1, 1, 1),
+							"label": str(b.name).to_upper(), "cost": _cost_text(b.metal, b.essence),
+							"enabled": _affordable(b.metal, b.essence), "active": build_kind == kind,
+							"call": func() -> void: set_build_kind("" if build_kind == k else k)})
+				var all_auto := selected.all(func(x: Worker) -> bool: return x.auto_repair)
+				out.append({"id": "auto_repair", "icon": Sprites.SITE, "label": "AUTO-RÉPAR.",
+						"cost": "ACTIVE" if all_auto else "INACTIVE", "cost_color": Ui.GREEN if all_auto else Ui.MUTED,
+						"active": all_auto,
+						"call": func() -> void:
+							issue({"t": "auto_repair", "w": Commands.ids(selected), "on": not all_auto})
+							hud.flash("Réparation automatique %s" % ("désactivée" if all_auto else "activée"), Ui.GREEN)})
+			if out.size() < Console.CARD_COLS * Console.CARD_ROWS:
+				out.append({"id": "stop", "icon": "#■", "label": "STOP",
+						"call": func() -> void:
+							issue({"t": "stop", "u": sel_units.map(func(x: Unit) -> int: return x.id), "w": Commands.ids(selected)})})
+	return out.slice(0, Console.CARD_COLS * Console.CARD_ROWS)
+
+
+func _unit_action(producer_id: int, t: String) -> Dictionary:
+	var d: Dictionary = Content.UNITS[t]
+	return {"id": t, "icon": Console.unit_icon(t), "tint": Sprites.UNIT_LOOK[t].tint if Sprites.UNIT_LOOK.has(t) else Color(1, 1, 1),
+			"label": str(d.name).to_upper(), "cost": _cost_text(d.metal, d.essence),
+			"enabled": world.can_queue(producer_id, t) == "",
+			"call": func() -> void: queue_unit(producer_id, t)}
+
+
+func queue_unit(producer_id: int, t: String) -> void:
+	var reason := world.can_queue(producer_id, t)
+	if reason != "":
+		hud.flash(reason, Ui.RED)
+		return
+	issue({"t": "queue", "p": producer_id, "u": t})
+
+
+func cancel_queue(producer_id: int, index: int) -> void:
+	var p := world.producer_by_id(producer_id)
+	if p != null and index < p.queue.size():
+		issue({"t": "cancel", "p": producer_id, "i": index})
 
 
 func upgrade_focused() -> void:
@@ -214,54 +452,22 @@ func sell_focused() -> void:
 	var refund := focused_site.sell_value()
 	issue({"t": "sell", "s": focused_site.id})
 	hud.flash("Vendu : +%d métal" % refund.metal, Ui.GOLD)
-	focus_site(null)
-
-
-func _try_place(c: Vector2i) -> void:
-	var reason := world.can_place(build_kind, c)
-	if reason != "":
-		hud.flash(reason, Ui.RED)
-		return
-	issue({"t": "place", "k": build_kind, "c": c, "w": Commands.ids(selected)})
-	set_build_kind("")
-
-
-func _on_selection_ended(a: Vector2, b: Vector2) -> void:
-	units_view.selection_rect = Rect2()
-	_set_selection(world.workers_in_rect(Rect2(a / TILE, (b - a) / TILE).abs()))
-
-
-func _set_selection(ws: Array) -> void:
-	selected.assign(ws)
-	if not ws.is_empty() and focused_site != null:
-		focused_site = null
-		units_view.focused_site = null
-	units_view.selected = selected
-	map_view.set_selected(Vector2i(-1, -1))
-
-
-func set_build_kind(kind: String) -> void:
-	build_kind = kind
-	units_view.show_ranges = kind in Content.TOWERS
-	if kind != "":
-		focus_site(null)
-	hud.refresh_build_buttons()
-	if kind == "orbital":
-		hud.flash("Touche la zone à frapper", Ui.CYAN)
-	elif kind != "":
-		hud.flash("Touche une case libre pour construire : %s" % Content.building(kind).name, Ui.CYAN)
-
-
-func deselect() -> void:
-	_set_selection([])
+	_clear_selection()
 
 
 func train_worker() -> void:
-	var reason := world.can_train_worker()
-	if reason != "":
-		hud.flash(reason, Ui.RED)
+	queue_unit(GameWorld.BASE_ID, "worker")
+
+
+func _update_rally_display() -> void:
+	var pid := selected_producer_id()
+	var p := world.producer_by_id(pid) if pid != 0 else null
+	if p != null and p.has_rally():
+		units_view.rally_from = world.base_center() if pid == GameWorld.BASE_ID else focused_site.center()
+		units_view.rally_to = Vector2(p.rally) + Vector2(0.5, 0.5)
 	else:
-		issue({"t": "train"})
+		units_view.rally_from = Vector2.INF
+		units_view.rally_to = Vector2.INF
 
 
 ## Envoie un ordre : appliqué tout de suite en solo et chez l'hôte, envoyé à l'hôte côté client.

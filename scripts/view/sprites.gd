@@ -29,14 +29,28 @@ const TANK := preload("res://assets/kenney/tank_sand.png")
 const TANK_HEAVY := preload("res://assets/kenney/tank_sand.png")
 const PLANE := preload("res://assets/kenney/plane_grey.png")
 const EXPLOSION := preload("res://assets/kenney/explosion.png")
+const SOLDIER_GREEN := preload("res://assets/kenney/soldier_green.png")
+const SOLDIER_BROWN := preload("res://assets/kenney/soldier_brown.png")
+const TANK_GREEN := preload("res://assets/kenney/tank_green.png")
+const TANK_TURRET_GREEN := preload("res://assets/kenney/tank_turret_green.png")
+const TANK_TURRET_SAND := preload("res://assets/kenney/tank_turret_sand.png")
+
+## Unités du joueur : corps, tourelle éventuelle (qui vise), taille en pixels, teinte.
+const UNIT_LOOK := {
+	"soldier": {"tex": SOLDIER_GREEN, "size": 96, "tint": Color(1, 1, 1)},
+	"grenadier": {"tex": SOLDIER_BROWN, "size": 100, "tint": Color(1, 1, 1)},
+	"sniper": {"tex": SOLDIER, "size": 96, "tint": Color(0.65, 0.95, 1.0)},
+	"tank": {"tex": TANK_GREEN, "size": 84, "tint": Color(1, 1, 1), "turret": TANK_TURRET_GREEN, "turret_size": 84},
+	"aa_mech": {"tex": TANK_GREEN, "size": 68, "tint": Color(0.70, 1.0, 0.95), "turret": TURRET_MISSILE, "turret_size": 56},
+}
 
 ## Apparence de chaque type d'ennemi : texture, taille en pixels, teinte.
 const ENEMY_LOOK := {
-	"normal": {"tex": TANK, "size": 52, "tint": Color(1.0, 0.45, 0.40)},
+	"normal": {"tex": TANK, "size": 52, "tint": Color(1.0, 0.45, 0.40), "turret": TANK_TURRET_SAND},
 	"fast": {"tex": SOLDIER, "size": 64, "tint": Color(1.0, 0.40, 0.35)},
-	"armored": {"tex": TANK_HEAVY, "size": 76, "tint": Color(0.55, 0.30, 0.30)},
+	"armored": {"tex": TANK_HEAVY, "size": 76, "tint": Color(0.55, 0.30, 0.30), "turret": TANK_TURRET_SAND},
 	"flying": {"tex": PLANE, "size": 72, "tint": Color(1.0, 0.45, 0.40)},
-	"boss": {"tex": TANK_HEAVY, "size": 120, "tint": Color(0.75, 0.22, 0.28)},
+	"boss": {"tex": TANK_HEAVY, "size": 120, "tint": Color(0.75, 0.22, 0.28), "turret": TANK_TURRET_SAND},
 }
 
 ## Les unités du pack regardent vers la droite, les tourelles vers le haut.

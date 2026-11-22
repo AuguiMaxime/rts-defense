@@ -13,9 +13,9 @@ var _t := 0.0
 const STEPS := [
 	{"title": "SÉLECTIONNE TES OUVRIERS", "text": "Glisse un doigt autour des petits robots près de la base pour les sélectionner."},
 	{"title": "RÉCOLTE DU MÉTAL", "text": "Touche un gisement bleu : tes ouvriers font les allers-retours tout seuls."},
-	{"title": "CONSTRUIS UNE DÉFENSE", "text": "Touche la carte MITRAILLEUSE en bas, puis une case libre entre la base et les ennemis."},
-	{"title": "AGRANDIS TON ÉQUIPE", "text": "Plus d'ouvriers = plus de métal et des chantiers plus rapides. Touche la carte OUVRIER."},
-	{"title": "PRÊT AU COMBAT", "text": "Les ennemis sortent des cercles rouges. Touche une tourelle pour l'améliorer, la réparer ou la vendre. Ne laisse pas tomber la base !"},
+	{"title": "CONSTRUIS UNE DÉFENSE", "text": "Avec un ouvrier sélectionné, touche MITRAILLEUSE en bas à droite, puis une case libre entre la base et les ennemis."},
+	{"title": "FORME DES UNITÉS", "text": "Touche la base, puis OUVRIER ou SOLDAT. Touche ensuite un minerai : les nouveaux ouvriers iront y récolter tout seuls."},
+	{"title": "PRÊT AU COMBAT", "text": "Les ennemis sortent des cercles rouges. Construis une caserne ou une usine pour une armée, et touche un bâtiment pour l'améliorer, le réparer ou le vendre."},
 ]
 
 
@@ -27,8 +27,8 @@ func setup(g: Node) -> void:
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(c)
 	c.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	c.offset_top = -330
-	c.offset_bottom = -170
+	c.offset_top = -390
+	c.offset_bottom = -225
 	_panel = Ui.panel(Vector2(520, 0), true)
 	var v := Ui.vbox(8)
 	var top := Ui.hbox(10)
@@ -88,13 +88,15 @@ func _process(delta: float) -> void:
 			if w.workers.any(func(x: Worker) -> bool: return x.job == Worker.Job.HARVEST):
 				_show(2)
 		2:
-			_marker(Vector2.INF)
+			_marker(_workers_center() if game.selected.is_empty() else Vector2.INF)
 			_pulse_card("gun")
 			if not w.sites.is_empty():
 				_show(3)
 		3:
-			_pulse_card("")
-			if w.train_queue > 0 or w.workers.size() > Balance.START_WORKERS:
+			_marker(Vector2.INF if game.sel_base else w.base_center())
+			_pulse_card("worker" if game.sel_base else "")
+			if w.train_queue > 0 or w.workers.size() > Balance.START_WORKERS or not w.units.is_empty():
+				_pulse_card("")
 				_show(4)
 		4:
 			_marker(Vector2.INF)
