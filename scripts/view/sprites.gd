@@ -53,6 +53,8 @@ const UNIT_LOOK := {
 	"tank": {"tex": preload("res://assets/gen/tank_hull.png"), "size": 76, "tint": Color(1, 1, 1), "rot": PI / 2.0,
 			"turret": preload("res://assets/gen/tank_turret.png"), "turret_size": 88},
 	"aa_mech": {"tex": preload("res://assets/gen/mech_turret.png"), "size": 70, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"heavy_tank": {"tex": preload("res://assets/gen/htank_hull.png"), "size": 92, "tint": Color(1, 1, 1), "rot": PI / 2.0,
+			"turret": preload("res://assets/gen/htank_turret.png"), "turret_size": 96},
 }
 
 ## Apparence de chaque type d'ennemi : texture, taille en pixels, teinte.
@@ -63,6 +65,12 @@ const ENEMY_LOOK := {
 	"armored": {"tex": preload("res://assets/gen/e_armored.png"), "size": 80, "tint": Color(1, 1, 1), "rot": PI / 2.0},
 	"flying": {"tex": preload("res://assets/gen/e_flying.png"), "size": 80, "tint": Color(1, 1, 1), "rot": PI / 2.0},
 	"boss": {"tex": preload("res://assets/gen/e_boss.png"), "size": 140, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"swarmer": {"tex": preload("res://assets/gen/e_swarmer.png"), "size": 40, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"spitter": {"tex": preload("res://assets/gen/e_spitter.png"), "size": 58, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"brute": {"tex": preload("res://assets/gen/e_brute.png"), "size": 92, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"shell": {"tex": preload("res://assets/gen/e_shell.png"), "size": 68, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"siege": {"tex": preload("res://assets/gen/e_siege.png"), "size": 86, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"mothership": {"tex": preload("res://assets/gen/e_mothership.png"), "size": 170, "tint": Color(1, 1, 1), "rot": PI / 2.0},
 }
 
 ## Les unités du pack regardent vers la droite, les tourelles vers le haut.

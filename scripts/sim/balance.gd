@@ -41,7 +41,16 @@ const ENEMIES := {
 	"armored": {"hp": 150, "speed": 0.8, "damage": 15, "range": 0.9, "cooldown": 1.4, "armor": 5, "flying": false},
 	"flying": {"hp": 35, "speed": 1.8, "damage": 5, "range": 2.5, "cooldown": 1.2, "armor": 0, "flying": true},
 	"boss": {"hp": 600, "speed": 0.55, "damage": 40, "range": 1.2, "cooldown": 1.5, "armor": 5, "flying": false},
+	# Nouveaux ennemis
+	"swarmer": {"hp": 14, "speed": 3.0, "damage": 3, "range": 0.6, "cooldown": 0.6, "armor": 0, "flying": false},
+	"spitter": {"hp": 40, "speed": 1.1, "damage": 6, "range": 2.8, "cooldown": 1.8, "armor": 0, "flying": false},
+	"brute": {"hp": 200, "speed": 0.9, "damage": 25, "range": 1.0, "cooldown": 1.3, "armor": 2, "flying": false},
+	"shell": {"hp": 100, "speed": 0.9, "damage": 10, "range": 0.8, "cooldown": 1.2, "armor": 6, "flying": false},
+	"siege": {"hp": 170, "speed": 0.6, "damage": 18, "range": 2.6, "cooldown": 2.8, "armor": 4, "flying": false},
+	"mothership": {"hp": 900, "speed": 0.45, "damage": 30, "range": 3.0, "cooldown": 1.4, "armor": 3, "flying": true},
 }
+## Ennemis considérés comme boss (barre de PV, bandeau, étourdissement réduit…).
+const BOSSES: Array[String] = ["boss", "mothership"]
 
 const REPAIR_RATE := 12.0 # PV rendus par seconde et par ouvrier
 const HOUSE_BUILD_WORK := 6.0
@@ -51,4 +60,5 @@ const IDLE_ASSIST_RADIUS := 14.0 # un ouvrier inactif va construire / réparer d
 const BOSS_EVERY := 5 # un boss toutes les 5 vagues
 
 ## Métal gagné en détruisant un ennemi.
-const KILL_BOUNTY := {"normal": 1, "fast": 1, "armored": 3, "flying": 2, "boss": 25}
+const KILL_BOUNTY := {"normal": 1, "fast": 1, "armored": 3, "flying": 2, "boss": 25,
+		"swarmer": 0, "spitter": 2, "brute": 5, "shell": 4, "siege": 5, "mothership": 30}

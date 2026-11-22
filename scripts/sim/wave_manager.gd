@@ -28,9 +28,27 @@ static func composition(n: int) -> Array[String]:
 	if n >= 5:
 		for i in (n - 3) / 2:
 			list.insert(list.size() / 2, "flying")
+	# Aliens : nuées rapides, cracheurs à distance, carapaces blindées, brutes, artillerie.
+	if n >= 4:
+		for i in n / 2:
+			list.insert(mini(list.size(), i * 4 + 2), "swarmer")
+	if n >= 4:
+		for i in (n - 2) / 3:
+			list.insert(list.size() / 3, "spitter")
+	if n >= 7:
+		for i in (n - 5) / 3:
+			list.append("shell")
+	if n >= 8:
+		for i in (n - 6) / 4:
+			list.append("brute")
+	if n >= 11:
+		for i in (n - 9) / 3:
+			list.append("siege")
 	if n % Balance.BOSS_EVERY == 0:
+		# Un boss sur deux est le vaisseau-mère volant.
+		var air := (n / Balance.BOSS_EVERY) % 2 == 0
 		for i in n / Balance.BOSS_EVERY:
-			list.append("boss")
+			list.append("mothership" if air and i == 0 else "boss")
 	return list
 
 
@@ -57,8 +75,8 @@ func start_next() -> void:
 		return
 	wave += 1
 	var list := composition(wave)
-	var bosses := list.filter(func(t: String) -> bool: return t == "boss")
-	list = list.filter(func(t: String) -> bool: return t != "boss")
+	var bosses := list.filter(func(t: String) -> bool: return Balance.BOSSES.has(t))
+	list = list.filter(func(t: String) -> bool: return not Balance.BOSSES.has(t))
 	var keep := maxi(2, roundi(list.size() * difficulty))
 	# On retire des ennemis répartis dans la liste pour garder le mélange des types.
 	while list.size() > keep:

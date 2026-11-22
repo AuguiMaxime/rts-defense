@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dy0wk4j6efky6"
-path="res://.godot/imported/e_boss2.png-01671cb7ed81c69d9bef85078064a419.ctex"
+uid="uid://ktka54opqr8v"
+path="res://.godot/imported/e_swarmer.png-42b82b0b7921e23788b8d18c0af6e280.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/gen/e_boss2.png"
-dest_files=["res://.godot/imported/e_boss2.png-01671cb7ed81c69d9bef85078064a419.ctex"]
+source_file="res://assets/gen/e_swarmer.png"
+dest_files=["res://.godot/imported/e_swarmer.png-42b82b0b7921e23788b8d18c0af6e280.ctex"]
 
 [params]
 

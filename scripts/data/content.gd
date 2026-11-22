@@ -70,9 +70,9 @@ const PRODUCTION := {
 		"produces": ["soldier", "warrior", "grenadier", "sniper", "medic"],
 	},
 	"factory": {
-		"name": "Usine", "desc": "Fabrique les unités mécaniques : char, mécha anti-air.",
+		"name": "Usine", "desc": "Fabrique les unités mécaniques : char, mécha anti-air, mastodonte.",
 		"metal": 200, "essence": 60, "hp": 650, "size": 2, "build": 18.0,
-		"produces": ["tank", "aa_mech"],
+		"produces": ["tank", "aa_mech", "heavy_tank"],
 	},
 }
 const BUILD_ORDER: Array[String] = TOWER_ORDER + BUILDING_ORDER
@@ -119,6 +119,11 @@ const UNITS := {
 		"name": "Mécha AA", "desc": "Marcheur anti-aérien, rafales de missiles.", "metal": 120, "essence": 60, "time": 10.0, "pop": 2,
 		"hp": 190, "speed": 1.8, "damage": 16, "range": 5.5, "delay": 0.5, "armor": 2, "targets": "air", "splash": 0.0,
 		"ability": "salvo",
+	},
+	"heavy_tank": {
+		"name": "Mastodonte", "desc": "Char lourd : énorme blindage, obus dévastateurs. Mode siège. Sol uniquement.", "metal": 250, "essence": 125, "time": 16.0, "pop": 4,
+		"hp": 480, "speed": 1.2, "damage": 55, "range": 5.0, "delay": 2.0, "armor": 6, "targets": "ground", "splash": 1.0,
+		"ability": "siege",
 	},
 }
 

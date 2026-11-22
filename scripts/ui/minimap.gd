@@ -57,7 +57,7 @@ func _draw() -> void:
 	for u in w.units:
 		draw_rect(Rect2(r.position + u.pos * k - Vector2(2, 2), Vector2(4, 4)), Ui.GREEN)
 	for e in w.enemies:
-		var sz := 5.0 if e.type == "boss" else 3.0
+		var sz := 5.0 if e.is_boss() else 3.0
 		draw_rect(Rect2(r.position + e.pos * k - Vector2(sz, sz) / 2, Vector2(sz, sz)), Ui.RED)
 	# Cadre de la caméra
 	var cam: Camera2D = game.camera

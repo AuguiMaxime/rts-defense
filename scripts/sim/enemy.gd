@@ -28,6 +28,10 @@ var stun_timer := 0.0
 var visual_offset := Vector2.ZERO # petit décalage pour ne pas tous se superposer à l'écran
 
 
+func is_boss() -> bool:
+	return Balance.BOSSES.has(type)
+
+
 static func create(type_name: String, at: Vector2, hp_scale: float) -> Enemy:
 	var d: Dictionary = Balance.ENEMIES[type_name]
 	var e := Enemy.new()

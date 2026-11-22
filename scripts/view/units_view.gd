@@ -233,7 +233,7 @@ func _draw_unit(u: Unit) -> void:
 	var look: Dictionary = Sprites.UNIT_LOOK[u.type]
 	var p := u.pos * TILE
 	var size: float = look.size
-	var ring := 28.0 if u.type in ["tank", "aa_mech"] else 20.0
+	var ring := 34.0 if u.type == "heavy_tank" else (28.0 if u.type in ["tank", "aa_mech"] else 20.0)
 	if sel_units.has(u):
 		draw_circle(p, ring, Color(COLOR_SELECTED, 0.18))
 		draw_arc(p, ring, 0, TAU, 32, COLOR_SELECTED, 3.0)
@@ -293,7 +293,7 @@ func _draw_enemy(e: Enemy) -> void:
 	var look: Dictionary = Sprites.ENEMY_LOOK[e.type]
 	var p := (e.pos + e.visual_offset) * TILE
 	var size: float = look.size
-	if e.type == "boss":
+	if e.is_boss():
 		var pulse := 0.5 + 0.5 * sin(_anim * 5.0)
 		draw_circle(p, size * 0.55, Color(1.0, 0.1, 0.2, 0.18 + 0.12 * pulse))
 		draw_arc(p, size * 0.55, 0, TAU, 40, Color(1.0, 0.3, 0.35, 0.8), 3.0)
@@ -313,7 +313,7 @@ func _draw_enemy(e: Enemy) -> void:
 		for i in 3:
 			var a := _anim * 6.0 + i * TAU / 3.0
 			draw_circle(p + Vector2(cos(a) * 16, -size * 0.35 + sin(a) * 5), 4, Color(1.0, 0.9, 0.3))
-	if e.type == "boss":
+	if e.is_boss():
 		var half := 46.0
 		_draw_bar(Rect2(p - Vector2(half, size * 0.55 + 4), Vector2(half * 2, 0)), float(e.hp) / e.max_hp, COLOR_ENEMY_BAR, 10.0)
 	elif e.hp < e.max_hp:
@@ -331,7 +331,7 @@ func _draw_effects() -> void:
 						draw_set_transform(p, (ev.to - ev.from).angle() + PI / 2.0)
 						draw_texture_rect(Sprites.ROCKET, Rect2(-14, -14, 28, 28), false)
 						draw_set_transform(Vector2.ZERO)
-					"cannon", "tank":
+					"cannon", "tank", "heavy_tank":
 						var p: Vector2 = ev.to.lerp(ev.from, k) * TILE
 						draw_circle(p, 7, Color(0.2, 0.2, 0.2))
 						draw_circle(ev.to * TILE, 50 * (1.0 - k), Color(1, 0.6, 0.2, 0.5 * k))
@@ -442,7 +442,7 @@ func _sound(ev: Dictionary) -> void:
 	match ev.type:
 		"shot":
 			match ev.get("kind", "gun"):
-				"cannon", "tank", "sniper_tower":
+				"cannon", "tank", "heavy_tank", "sniper_tower":
 					Sfx.play("cannon", -4.0, 0.12)
 				"flame":
 					Sfx.play("shot", -16.0, 0.15)

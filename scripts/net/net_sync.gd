@@ -3,7 +3,8 @@ extends RefCounted
 ## Photo de l'état du jeu envoyée par l'hôte, et application de cette photo côté client.
 ## Formats compacts (tableaux) pour limiter la taille des paquets.
 
-const ENEMY_TYPES: Array[String] = ["normal", "fast", "armored", "flying", "boss"]
+const ENEMY_TYPES: Array[String] = ["normal", "fast", "armored", "flying", "boss",
+		"swarmer", "spitter", "brute", "shell", "siege", "mothership"]
 
 static func _prod(p: Producer) -> Array:
 	if p == null:

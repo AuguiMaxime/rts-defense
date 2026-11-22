@@ -401,7 +401,7 @@ func _fire(kind: String, from: Vector2, target: Enemy, st: Dictionary, mult := 1
 						e.slow_timer = st.slow_time
 						e.slow_mult = st.slow
 					else:
-						e.stun_timer = maxf(e.stun_timer, st.stun * (0.5 if e.type == "boss" else 1.0))
+						e.stun_timer = maxf(e.stun_timer, st.stun * (0.5 if e.is_boss() else 1.0))
 			_emit({"type": "wave_fx", "kind": kind, "pos": target.pos, "r": sp, "from": from})
 			return
 	if st.splash > 0.0:
@@ -683,12 +683,12 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 	e.hp -= maxi(1, amount - e.armor)
 	if e.hp <= 0:
 		kills += 1
-		if e.type == "boss":
+		if e.is_boss():
 			stats.boss_kills += 1
 		var bounty: int = Balance.KILL_BOUNTY.get(e.type, 1)
 		metal += bounty
 		_emit({"type": "bounty", "pos": e.pos, "amount": bounty})
-		_emit({"type": "death", "pos": e.pos, "big": e.type == "armored" or e.type == "boss", "boss": e.type == "boss"})
+		_emit({"type": "death", "pos": e.pos, "big": e.type in ["armored", "brute", "siege", "shell"] or e.is_boss(), "boss": e.is_boss()})
 
 
 func _tick_enemy(e: Enemy, delta: float) -> void:
@@ -1442,7 +1442,7 @@ func _resume_or_idle(w: Worker) -> void:
 
 func boss() -> Enemy:
 	for e in enemies:
-		if e.type == "boss" and e.hp > 0:
+		if e.is_boss() and e.hp > 0:
 			return e
 	return null
 

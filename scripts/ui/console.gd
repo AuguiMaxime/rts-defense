@@ -51,6 +51,7 @@ func setup(g: Node) -> void:
 	_idle_btn = _make_idle_button()
 	quick.add_child(_idle_btn)
 	left.add_child(quick)
+	mm_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	left.add_child(mm_panel)
 	add_child(left)
 
