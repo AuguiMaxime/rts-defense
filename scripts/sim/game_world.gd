@@ -347,8 +347,51 @@ func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
 
 
 ## Tir d'une tourelle ou d'une unité : dégâts (de zone si splash) + événement visuel.
-func _fire(kind: String, from: Vector2, target: Enemy, st: Dictionary) -> void:
-	var dmg := roundi(st.damage * damage_mult)
+func _fire(kind: String, from: Vector2, target: Enemy, st: Dictionary, mult := 1.0) -> void:
+	var dmg := roundi(st.damage * damage_mult * mult)
+	match st.get("effect", ""):
+		"cone":
+			var dir := (target.pos - from).normalized()
+			var r2: float = st.range * st.range
+			for e in enemies:
+				if e.hp > 0 and not e.flying and e.pos.distance_squared_to(from) <= r2 \
+						and dir.dot((e.pos - from).normalized()) > 0.8:
+					_damage_enemy(e, dmg)
+			_emit({"type": "shot", "kind": kind, "from": from, "to": from + dir * st.range})
+			return
+		"chain":
+			var pts: Array = [from]
+			var hit := {}
+			var cur := target
+			for i in int(st.chain):
+				hit[cur.id] = true
+				pts.append(cur.pos)
+				_damage_enemy(cur, roundi(dmg * pow(0.85, i)))
+				var nxt: Enemy = null
+				var bd: float = st.chain_range * st.chain_range
+				for e in enemies:
+					if e.hp > 0 and not hit.has(e.id) and _can_hit(st, e):
+						var d := e.pos.distance_squared_to(cur.pos)
+						if d < bd:
+							bd = d
+							nxt = e
+				if nxt == null:
+					break
+				cur = nxt
+			_emit({"type": "chain", "pts": pts})
+			return
+		"slow", "stun":
+			var sp: float = st.splash
+			for e in enemies:
+				if e.hp > 0 and _can_hit(st, e) and e.pos.distance_squared_to(target.pos) <= sp * sp:
+					_damage_enemy(e, dmg)
+					if st.effect == "slow":
+						e.slow_timer = st.slow_time
+						e.slow_mult = st.slow
+					else:
+						e.stun_timer = maxf(e.stun_timer, st.stun * (0.5 if e.type == "boss" else 1.0))
+			_emit({"type": "wave_fx", "kind": kind, "pos": target.pos, "r": sp, "from": from})
+			return
 	if st.splash > 0.0:
 		var sp: float = st.splash
 		for e in enemies:
@@ -384,11 +427,24 @@ func _tick_tower(s: BuildSite, delta: float) -> void:
 
 
 func _tick_unit(u: Unit, delta: float) -> void:
-	var st := u.stats()
+	if u.ability_cd > 0.0:
+		u.ability_cd -= delta
+	if u.buff_time > 0.0:
+		u.buff_time -= delta
+		if u.buff_time <= 0.0 and u.ability() == "bastion":
+			u.max_hp = int(u.stats().hp)
+			u.hp = mini(u.hp, u.max_hp)
+	var st := u.eff()
 	u.cooldown -= delta
 	u.retarget_timer -= delta
 	u.repath_timer -= delta
 	var rng: float = st.range
+	if st.targets == "none":
+		_tick_medic(u, st, delta)
+		return
+	if u.sieged:
+		_tick_sieged(u, st)
+		return
 	if u.target != null and u.target.hp <= 0:
 		u.target = null
 		if u.order == Unit.Order.ATTACK:
@@ -417,7 +473,7 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			u.facing = (u.target.pos - u.pos).normalized()
 			if u.cooldown <= 0.0:
 				u.cooldown = st.delay
-				_fire(u.type, u.pos, u.target, st)
+				_unit_shoot(u, st)
 			return
 		if u.repath_timer <= 0.0:
 			u.repath_timer = 0.5
@@ -430,6 +486,98 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			u.repath_timer = 0.5
 			u.path = _path_toward(u.cell(), Vector2i(u.guard_pos.floor()))
 		_follow_path(u, st.speed, delta)
+
+
+## Tir d'une unité (passif critique du sniper).
+func _unit_shoot(u: Unit, st: Dictionary) -> void:
+	var mult := 1.0
+	if st.get("passive", "") == "first_crit":
+		if u.target.id != u.last_target_id:
+			u.last_target_id = u.target.id
+			u.crit_ready = true
+		if u.crit_ready:
+			u.crit_ready = false
+			mult = 3.0
+			_emit({"type": "crit", "pos": u.target.pos})
+	_fire(u.type, u.pos, u.target, st, mult)
+
+
+## Char en mode siège : immobile, tire sur ce qui est à portée.
+func _tick_sieged(u: Unit, st: Dictionary) -> void:
+	u.path.clear()
+	var rng: float = st.range
+	if u.target != null and (u.target.hp <= 0 or u.pos.distance_to(u.target.pos) > rng):
+		u.target = null
+	if u.target == null and u.retarget_timer <= 0.0:
+		u.retarget_timer = 0.3
+		u.target = _find_target(u.pos, st, rng)
+	if u.target == null:
+		return
+	u.aim_angle = (u.target.pos - u.pos).angle()
+	if u.cooldown <= 0.0:
+		u.cooldown = st.delay
+		_unit_shoot(u, st)
+
+
+## Médic : se déplace sur ordre, soigne en continu l'unité blessée la plus proche à portée.
+func _tick_medic(u: Unit, st: Dictionary, delta: float) -> void:
+	if u.order == Unit.Order.MOVE:
+		if _follow_path(u, st.speed, delta):
+			u.order = Unit.Order.GUARD
+			u.guard_pos = u.pos
+		return
+	var best: Unit = null
+	var bd: float = st.range
+	for o in units:
+		if o != u and o.alive and o.hp < o.max_hp:
+			var d := u.pos.distance_to(o.pos)
+			if d < bd:
+				bd = d
+				best = o
+	if best == null:
+		u.heal_acc = 0.0
+		return
+	u.facing = (best.pos - u.pos).normalized()
+	u.heal_acc += float(st.heal) * delta
+	if u.heal_acc >= 1.0:
+		var amount := int(u.heal_acc)
+		u.heal_acc -= amount
+		best.hp = mini(best.max_hp, best.hp + amount)
+		if randf() < 0.25:
+			_emit({"type": "heal", "from": u.pos, "to": best.pos})
+
+
+## Pouvoirs : appliqués à toutes les unités de la liste qui ont ce pouvoir et l'ont rechargé.
+func use_ability(us: Array, ability_id: String) -> int:
+	var n := 0
+	var ab: Dictionary = Content.ABILITIES.get(ability_id, {})
+	if ab.is_empty():
+		return 0
+	for u: Unit in us:
+		if u == null or not u.alive or u.ability() != ability_id or u.ability_cd > 0.0:
+			continue
+		n += 1
+		u.ability_cd = ab.cd
+		match ability_id:
+			"siege":
+				u.sieged = not u.sieged
+				u.path.clear()
+				u.order = Unit.Order.GUARD
+				u.guard_pos = u.pos
+				u.target = null
+			"nanoheal":
+				for o in units:
+					if o.alive and o.pos.distance_to(u.pos) <= ab.radius:
+						o.hp = mini(o.max_hp, o.hp + int(ab.amount))
+			"bastion":
+				u.buff_time = ab.dur
+				var bonus := int(u.stats().hp * 0.5)
+				u.max_hp = int(u.stats().hp) + bonus
+				u.hp += bonus
+			_:
+				u.buff_time = ab.dur
+		_emit({"type": "ability", "id": ability_id, "pos": u.pos})
+	return n
 
 
 ## Chemin vers une case, ou vers une case libre voisine si elle est bloquée.
@@ -471,6 +619,11 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 func _tick_enemy(e: Enemy, delta: float) -> void:
 	if e.hp <= 0:
 		return
+	if e.slow_timer > 0.0:
+		e.slow_timer -= delta
+	if e.stun_timer > 0.0:
+		e.stun_timer -= delta
+		return # étourdi : ni déplacement ni attaque
 	e.attack_timer -= delta
 	e.retarget_timer -= delta
 	if e.retarget_timer <= 0.0:
@@ -487,7 +640,7 @@ func _tick_enemy(e: Enemy, delta: float) -> void:
 	if dir == Vector2.ZERO:
 		dir = (base_center() - e.pos).normalized()
 	e.facing = dir
-	e.pos += dir * e.speed * delta
+	e.pos += dir * e.speed * (e.slow_mult if e.slow_timer > 0.0 else 1.0) * delta
 
 
 ## Cible la plus proche à portée : ouvrier, unité, bâtiment ou base.
@@ -547,7 +700,7 @@ func _enemy_attack(e: Enemy) -> void:
 			to = w.pos
 		Enemy.Target.UNIT:
 			var u: Unit = e.target_ref
-			u.hp -= maxi(1, e.damage - int(u.stats().armor))
+			u.hp -= maxi(1, e.damage - int(u.eff().armor))
 			to = u.pos
 		Enemy.Target.SITE:
 			var s: BuildSite = e.target_ref
@@ -849,6 +1002,8 @@ func command_stop(us: Array, ws: Array) -> void:
 
 
 func _unit_go(u: Unit, c: Vector2i) -> void:
+	if u.sieged:
+		return # un char en mode siège ne bouge pas
 	u.order = Unit.Order.MOVE
 	u.target = null
 	u.path = _path_toward(u.cell(), c)

@@ -34,12 +34,19 @@ const SOLDIER_BROWN := preload("res://assets/kenney/soldier_brown.png")
 const TANK_GREEN := preload("res://assets/kenney/tank_green.png")
 const TANK_TURRET_GREEN := preload("res://assets/kenney/tank_turret_green.png")
 const TANK_TURRET_SAND := preload("res://assets/kenney/tank_turret_sand.png")
+const TURRET_FLAME := preload("res://assets/kenney/turret_flame.png")
+const TURRET_HEAVY := preload("res://assets/kenney/turret_heavy.png")
+const TURRET_BLOCK := preload("res://assets/kenney/turret_block.png")
+const TURRET_SHIELD := preload("res://assets/kenney/turret_shield.png")
+const FLAME := preload("res://assets/kenney/flame.png")
 
 ## Unités du joueur : corps, tourelle éventuelle (qui vise), taille en pixels, teinte.
 const UNIT_LOOK := {
 	"soldier": {"tex": SOLDIER_GREEN, "size": 96, "tint": Color(1, 1, 1)},
-	"grenadier": {"tex": SOLDIER_BROWN, "size": 100, "tint": Color(1, 1, 1)},
+	"warrior": {"tex": SOLDIER_BROWN, "size": 96, "tint": Color(1.0, 0.8, 0.6)},
+	"grenadier": {"tex": SOLDIER_BROWN, "size": 112, "tint": Color(0.8, 0.7, 0.6)},
 	"sniper": {"tex": SOLDIER, "size": 96, "tint": Color(0.65, 0.95, 1.0)},
+	"medic": {"tex": SOLDIER, "size": 96, "tint": Color(1.0, 1.0, 1.0)},
 	"tank": {"tex": TANK_GREEN, "size": 84, "tint": Color(1, 1, 1), "turret": TANK_TURRET_GREEN, "turret_size": 84},
 	"aa_mech": {"tex": TANK_GREEN, "size": 68, "tint": Color(0.70, 1.0, 0.95), "turret": TURRET_MISSILE, "turret_size": 56},
 }
@@ -62,6 +69,11 @@ const TOWER_LOOK := {
 	"cannon": {"base": TOWER_BASE2, "turret": TURRET_DOUBLE, "tint": Color(1, 1, 1)},
 	"missile": {"base": TOWER_BASE3, "turret": TURRET_MISSILE, "tint": Color(1, 1, 1)},
 	"laser": {"base": TOWER_BASE2, "turret": TURRET_LIGHT, "tint": Color(0.55, 0.95, 1.0)},
+	"flame": {"base": TOWER_BASE, "turret": TURRET_FLAME, "tint": Color(1.0, 0.62, 0.4)},
+	"sniper_tower": {"base": TOWER_BASE3, "turret": TURRET_HEAVY, "tint": Color(0.75, 0.85, 1.0)},
+	"tesla": {"base": TOWER_BASE2, "turret": TURRET_LIGHT, "tint": Color(0.8, 0.6, 1.0)},
+	"cryo": {"base": TOWER_BASE, "turret": TURRET_BLOCK, "tint": Color(0.6, 0.92, 1.0)},
+	"stun": {"base": TOWER_BASE3, "turret": TURRET_SHIELD, "tint": Color(1.0, 0.88, 0.4)},
 }
 
 ## Sol de chaque map : texture et teinte.

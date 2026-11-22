@@ -36,6 +36,8 @@ func _init() -> void:
 	_test_auto_repair()
 	_test_map_data()
 	_test_idle_assist()
+	_test_abilities()
+	_test_new_towers()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -547,3 +549,93 @@ func _test_idle_assist() -> void:
 	world.command_harvest(world.workers, Vector2i(1, 5))
 	_run(world, 2.0)
 	_check(world.idle_workers().is_empty(), "un ouvrier qui récolte n'est pas inactif")
+
+
+func _add_unit(world: GameWorld, type_name: String, at: Vector2) -> Unit:
+	var u := Unit.create(type_name, at)
+	u.id = world._next_unit_id
+	world._next_unit_id += 1
+	world.units.append(u)
+	return u
+
+
+func _test_abilities() -> void:
+	print("Pouvoirs des unités")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.workers.clear()
+	var sol := _add_unit(world, "soldier", Vector2(2.5, 2.5))
+	var base_dmg: int = sol.eff().damage
+	_check(world.use_ability([sol], "stim") == 1, "stimulant activé")
+	_check(sol.eff().damage > base_dmg and sol.eff().speed > sol.stats().speed, "+dégâts et +vitesse")
+	_check(world.use_ability([sol], "stim") == 0, "pas de relance pendant la recharge")
+	_run(world, 6.0)
+	_check(sol.eff().damage == base_dmg, "effet terminé après 5 s")
+	var gre := _add_unit(world, "grenadier", Vector2(3.5, 2.5))
+	world.use_ability([gre], "bastion")
+	_check(gre.max_hp > int(gre.stats().hp) and int(gre.eff().armor) == int(gre.stats().armor) + 4, "bastion : PV max et armure")
+	_run(world, 6.0)
+	_check(gre.max_hp == int(gre.stats().hp) and gre.hp <= gre.max_hp, "bastion terminé, PV ramenés au max")
+	var tank := _add_unit(world, "tank", Vector2(1.5, 1.5))
+	world.use_ability([tank], "siege")
+	_check(tank.sieged and tank.eff().range == Content.SIEGE_RANGE, "char en mode siège : portée 9")
+	var p0 := tank.pos
+	world.command_units_move([tank], Vector2i(4, 0))
+	_run(world, 2.0)
+	_check(tank.pos == p0, "le char en siège ne bouge pas")
+	world.spawn_enemy("normal", Vector2i(9, 2), 1.0)
+	world.enemies[0].speed = 0.0
+	var hp0 := world.enemies[0].hp
+	_run(world, 3.0)
+	_check(world.enemies.is_empty() or world.enemies[0].hp < hp0, "il touche un ennemi à 8 cases")
+	var med := _add_unit(world, "medic", Vector2(2.0, 3.0))
+	sol.hp = 20
+	_run(world, 3.0)
+	_check(sol.hp > 35, "le médic soigne en continu (%d PV)" % sol.hp)
+	sol.hp = 10
+	world.use_ability([med], "nanoheal")
+	_check(sol.hp >= 60, "nanosoin : +60 PV")
+	# Sniper : premier tir critique
+	var w2 := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	w2.waves.timer = 9999
+	w2.workers.clear()
+	_add_unit(w2, "sniper", Vector2(1.5, 1.5))
+	w2.spawn_enemy("armored", Vector2i(4, 1), 1.0)
+	var e := w2.enemies[0]
+	e.speed = 0.0
+	e.max_hp = 9999
+	e.hp = 9999
+	w2.tick(0.05)
+	w2.tick(0.05)
+	var first := 9999 - e.hp
+	_run(w2, 2.0)
+	var second := 9999 - e.hp - first
+	_check(first > 0 and first > second * 2, "sniper : 1er tir critique (%d puis %d)" % [first, second])
+
+
+func _test_new_towers() -> void:
+	print("Nouvelles tourelles")
+	for kind in ["flame", "sniper_tower", "tesla", "cryo", "stun"]:
+		var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+		world.waves.timer = 9999
+		world.workers.clear()
+		_built(world, kind, Vector2i(3, 2))
+		for c in ([Vector2i(4, 2), Vector2i(5, 2), Vector2i(4, 2)] if kind == "flame" else [Vector2i(4, 1), Vector2i(5, 2), Vector2i(4, 3)]):
+			world.spawn_enemy("normal", c, 1.0)
+		for en in world.enemies:
+			en.speed = 0.0
+			en.max_hp = 5000
+			en.hp = 5000
+		_run(world, 3.0)
+		var hurt := world.enemies.filter(func(x: Enemy) -> bool: return x.hp < 5000).size()
+		var extra := ""
+		match kind:
+			"flame", "tesla":
+				extra = " (zone : %d touchés)" % hurt
+				_check(hurt >= 2, "%s touche plusieurs ennemis%s" % [kind, extra])
+				continue
+			"cryo":
+				_check(world.enemies.any(func(x: Enemy) -> bool: return x.slow_timer > 0.0), "cryo ralentit")
+			"stun":
+				_check(world.enemies.any(func(x: Enemy) -> bool: return x.stun_timer > 0.0) or hurt > 0, "impulsion étourdit")
+		_check(hurt >= 1, "%s inflige des dégâts" % kind)

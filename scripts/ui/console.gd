@@ -2,7 +2,7 @@ class_name Console
 extends HBoxContainer
 ## Console du bas façon StarCraft : minimap | informations de la sélection (+ file) | grille d'actions.
 
-const CARD_COLS := 4
+const CARD_COLS := 5
 const CARD_ROWS := 2
 const CARD_SIZE := Vector2(66, 66)
 
@@ -462,14 +462,16 @@ func _process(delta: float) -> void:
 	if _info_hp != null:
 		_update_info()
 	_refresh_timer -= delta
-	if key + game.build_kind != _context_key or _refresh_timer <= 0.0:
+	if key + game.build_kind + game.build_menu != _context_key or _refresh_timer <= 0.0:
 		_refresh_timer = 0.25
-		_context_key = key + game.build_kind
+		_context_key = key + game.build_kind + game.build_menu
 		_apply_actions(game.card_actions())
 		_card_panel.visible = not _actions.is_empty()
 	for i in _actions.size():
 		var b := _card_buttons[i]
-		if _pulse_id != "" and _actions[i].get("id", "") == _pulse_id:
+		var aid: String = _actions[i].get("id", "")
+		if _pulse_id != "" and (aid == _pulse_id or (aid == "towers" and Content.is_tower(_pulse_id)) \
+				or (aid == "buildings" and Content.BUILDING_ORDER.has(_pulse_id))):
 			b.self_modulate = Color(1, 1, 1).lerp(Color(0.4, 1.6, 1.8), 0.5 + 0.5 * sin(_t * 6.0))
 		else:
 			b.self_modulate = Color(1, 1, 1)

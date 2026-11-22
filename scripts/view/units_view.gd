@@ -41,7 +41,8 @@ func _process(delta: float) -> void:
 	if world != null:
 		for ev in world.take_events():
 			_sound(ev)
-			ev["ttl"] = {"death": 0.45, "orbital": 0.9, "bounty": 0.9, "spawned": 0.5}.get(ev.type, 0.08 if ev.get("kind", "") in ["gun", "soldier", "sniper"] else 0.18)
+			ev["ttl"] = {"death": 0.45, "orbital": 0.9, "bounty": 0.9, "spawned": 0.5, "chain": 0.22, "wave_fx": 0.4, "crit": 0.8, "ability": 0.6, "heal": 0.35}.get(ev.type,
+					0.08 if ev.get("kind", "") in ["gun", "soldier", "warrior", "grenadier"] else (0.3 if ev.get("kind", "") in ["sniper", "sniper_tower"] else (0.2 if ev.get("kind", "") == "flame" else 0.18)))
 			ev["life"] = ev.ttl
 			_effects.append(ev)
 	for ev in _effects:
@@ -231,6 +232,18 @@ func _draw_unit(u: Unit) -> void:
 		draw_set_transform(p, (u.aim_angle if u.target != null else u.facing.angle()) + off)
 		draw_texture_rect(look.turret, Rect2(-ts / 2, -ts / 2, ts, ts), false, look.tint * skin_tint)
 	draw_set_transform(Vector2.ZERO)
+	if u.type == "medic":
+		draw_rect(Rect2(p + Vector2(-3, -9), Vector2(6, 18)), Color(0.95, 0.2, 0.25))
+		draw_rect(Rect2(p + Vector2(-9, -3), Vector2(18, 6)), Color(0.95, 0.2, 0.25))
+	if u.buff_time > 0.0:
+		var glow := 0.5 + 0.5 * sin(_anim * 10.0)
+		draw_arc(p, ring + 3, 0, TAU, 32, Color(1.0, 0.7, 0.2, 0.5 + 0.4 * glow), 3.0)
+	if u.sieged:
+		for i in 4:
+			var a := PI / 4.0 + i * PI / 2.0
+			draw_line(p + Vector2.from_angle(a) * 22, p + Vector2.from_angle(a) * 36, Color(0.75, 0.8, 0.7), 5.0)
+		if sel_units.has(u):
+			draw_arc(p, Content.SIEGE_RANGE * TILE, 0, TAU, 96, Color(1.0, 0.7, 0.2, 0.45), 2.0)
 	if u.hp < u.max_hp:
 		_draw_bar(Rect2(p - Vector2(20, ring + 4), Vector2(40, 0)), float(u.hp) / u.max_hp)
 
@@ -270,6 +283,12 @@ func _draw_enemy(e: Enemy) -> void:
 	if look.has("turret"):
 		draw_texture_rect(look.turret, Rect2(-size / 2, -size / 2, size, size), false, look.tint)
 	draw_set_transform(Vector2.ZERO)
+	if e.slow_timer > 0.0:
+		draw_circle(p, size * 0.38, Color(0.5, 0.85, 1.0, 0.35))
+	if e.stun_timer > 0.0:
+		for i in 3:
+			var a := _anim * 6.0 + i * TAU / 3.0
+			draw_circle(p + Vector2(cos(a) * 16, -size * 0.35 + sin(a) * 5), 4, Color(1.0, 0.9, 0.3))
 	if e.type == "boss":
 		var half := 46.0
 		_draw_bar(Rect2(p - Vector2(half, size * 0.55 + 4), Vector2(half * 2, 0)), float(e.hp) / e.max_hp, COLOR_ENEMY_BAR, 10.0)
@@ -288,13 +307,68 @@ func _draw_effects() -> void:
 						draw_set_transform(p, (ev.to - ev.from).angle() + PI / 2.0)
 						draw_texture_rect(Sprites.ROCKET, Rect2(-14, -14, 28, 28), false)
 						draw_set_transform(Vector2.ZERO)
-					"cannon", "grenadier", "tank":
+					"cannon", "tank":
 						var p: Vector2 = ev.to.lerp(ev.from, k) * TILE
 						draw_circle(p, 7, Color(0.2, 0.2, 0.2))
 						draw_circle(ev.to * TILE, 50 * (1.0 - k), Color(1, 0.6, 0.2, 0.5 * k))
+					"warrior", "grenadier":
+						var c: Vector2 = ev.to * TILE
+						var a0: float = (ev.to - ev.from).angle()
+						draw_arc(c - Vector2.from_angle(a0) * 10, 26 if ev.kind == "grenadier" else 18, a0 - 1.0, a0 + 1.0, 12, Color(1, 1, 0.85, k), 4.0)
+					"flame":
+						var from: Vector2 = ev.from * TILE
+						var to: Vector2 = ev.to * TILE
+						var ang := (to - from).angle()
+						for i in 6:
+							var t := (i + 1) / 6.0
+							var jitter := Vector2.from_angle(ang + PI / 2.0) * sin(_anim * 30.0 + i) * 10.0 * t
+							var fs := 22.0 + 34.0 * t
+							draw_set_transform(from.lerp(to, t) + jitter, ang + PI / 2.0)
+							draw_texture_rect(Sprites.FLAME, Rect2(-fs / 2, -fs / 2, fs, fs), false, Color(1, 1, 1, 0.9 * k + 0.1))
+						draw_set_transform(Vector2.ZERO)
+					"sniper", "sniper_tower":
+						draw_line(ev.from * TILE, ev.to * TILE, Color(0.7, 0.95, 1.0, k * 0.5), 7.0)
+						draw_line(ev.from * TILE, ev.to * TILE, Color(1, 1, 1, k), 2.0)
+						draw_circle(ev.to * TILE, 9 * k, Color(1, 1, 1, k))
 					_:
 						draw_line(ev.from * TILE, ev.to * TILE, Color(1, 0.95, 0.6, k), 3.0)
 						draw_circle(ev.to * TILE, 5, Color(1, 0.9, 0.5, k))
+			"chain":
+				var k: float = ev.ttl / ev.life
+				var pts: Array = ev.pts
+				for i in pts.size() - 1:
+					var a: Vector2 = pts[i] * TILE
+					var b: Vector2 = pts[i + 1] * TILE
+					var line := PackedVector2Array([a])
+					var normal := (b - a).normalized().orthogonal()
+					for j in range(1, 6):
+						line.append(a.lerp(b, j / 6.0) + normal * randf_range(-12, 12))
+					line.append(b)
+					draw_polyline(line, Color(0.7, 0.55, 1.0, 0.45 * k), 8.0)
+					draw_polyline(line, Color(0.95, 0.9, 1.0, k), 2.5)
+					draw_circle(b, 8 * k, Color(0.9, 0.8, 1.0, k))
+			"wave_fx":
+				var t: float = 1.0 - ev.ttl / ev.life
+				var c: Vector2 = ev.pos * TILE
+				var col := Color(0.55, 0.9, 1.0) if ev.kind == "cryo" else Color(1.0, 0.88, 0.35)
+				draw_line(ev.from * TILE, c, Color(col, 0.6 * (1.0 - t)), 3.0)
+				draw_circle(c, ev.r * TILE * (0.4 + 0.6 * t), Color(col, 0.25 * (1.0 - t)))
+				draw_arc(c, ev.r * TILE * (0.4 + 0.6 * t), 0, TAU, 40, Color(col, 1.0 - t), 3.0)
+			"crit":
+				var t: float = 1.0 - ev.ttl / ev.life
+				var font := ThemeDB.fallback_font
+				var at: Vector2 = ev.pos * TILE + Vector2(-26, -30 - 30 * t)
+				draw_string_outline(font, at, "CRITIQUE !", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, 4, Color(0, 0, 0, 1.0 - t))
+				draw_string(font, at, "CRITIQUE !", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1.0, 0.8, 0.2, 1.0 - t))
+			"ability":
+				var t: float = 1.0 - ev.ttl / ev.life
+				var col := Color(0.4, 1.0, 0.5) if ev.id == "nanoheal" else Color(1.0, 0.7, 0.2)
+				var rad := (Content.ABILITIES.nanoheal.radius * TILE if ev.id == "nanoheal" else 40.0) * (0.3 + 0.7 * t)
+				draw_arc(ev.pos * TILE, rad, 0, TAU, 40, Color(col, 1.0 - t), 4.0)
+			"heal":
+				var k: float = ev.ttl / ev.life
+				draw_line(ev.from * TILE, ev.to * TILE, Color(0.4, 1.0, 0.5, 0.6 * k), 3.0)
+				draw_circle(ev.to * TILE, 10 * k, Color(0.4, 1.0, 0.5, 0.5 * k))
 			"bounty":
 				var t: float = 1.0 - ev.ttl / ev.life
 				var font := ThemeDB.fallback_font
@@ -339,12 +413,18 @@ func _sound(ev: Dictionary) -> void:
 	match ev.type:
 		"shot":
 			match ev.get("kind", "gun"):
-				"cannon", "tank", "grenadier":
+				"cannon", "tank", "sniper_tower":
 					Sfx.play("cannon", -4.0, 0.12)
+				"flame":
+					Sfx.play("shot", -16.0, 0.15)
 				"missile", "aa_mech":
 					Sfx.play("missile", -6.0, 0.15)
 				_:
 					Sfx.play("shot", -10.0, 0.07)
+		"chain", "wave_fx":
+			Sfx.play("missile", -8.0, 0.2)
+		"ability":
+			Sfx.play("click", -2.0, 0.1)
 		"base_hit":
 			base_hit.emit()
 		"death":

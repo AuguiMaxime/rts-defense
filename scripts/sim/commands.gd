@@ -19,6 +19,7 @@ extends RefCounted
 ##   stop                {"u": [ids], "w": [ids]}
 ##   auto_repair         {"w": [ids], "on": bool}
 ##   repair_base         {"w": [ids]}
+##   ability             {"u": [ids], "a": id du pouvoir}
 
 
 ## Applique un ordre. Renvoie "" si tout va bien, sinon la raison du refus.
@@ -96,6 +97,8 @@ static func apply(world: GameWorld, cmd: Dictionary) -> String:
 			world.set_rally(int(cmd.p), cmd.c)
 		"unit_move":
 			world.command_units_move(us, cmd.c)
+		"ability":
+			world.use_ability(us, str(cmd.a))
 		"unit_attack":
 			var e := world.enemy_by_id(int(cmd.e))
 			if e == null:

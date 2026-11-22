@@ -24,12 +24,12 @@ static func snapshot(w: GameWorld) -> Dictionary:
 	var units := []
 	for u in w.units:
 		if u.alive:
-			units.append([u.id, u.type, u.pos.x, u.pos.y, u.facing.x, u.facing.y, u.aim_angle, u.hp, u.max_hp, u.order])
+			units.append([u.id, u.type, u.pos.x, u.pos.y, u.facing.x, u.facing.y, u.aim_angle, u.hp, u.max_hp, u.order, u.sieged, u.buff_time, u.ability_cd])
 	var enemies := []
 	for e in w.enemies:
 		if e.hp > 0:
 			enemies.append([e.id, ENEMY_TYPES.find(e.type), e.pos.x, e.pos.y, e.facing.x, e.facing.y, e.hp, e.max_hp,
-					e.visual_offset.x, e.visual_offset.y])
+					e.visual_offset.x, e.visual_offset.y, e.slow_timer, e.stun_timer])
 	var sites := []
 	for s in w.sites:
 		sites.append([s.id, s.kind, s.cell.x, s.cell.y, s.built, s.work_done, s.work_needed,
@@ -110,6 +110,9 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		u.hp = a[7]
 		u.max_hp = a[8]
 		u.order = a[9]
+		u.sieged = a[10]
+		u.buff_time = a[11]
+		u.ability_cd = a[12]
 		units.append(u)
 	for old in w.units:
 		if not units.has(old):
@@ -132,6 +135,8 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		e.hp = a[6]
 		e.max_hp = a[7]
 		e.visual_offset = Vector2(a[8], a[9])
+		e.slow_timer = a[10]
+		e.stun_timer = a[11]
 		enemies.append(e)
 	w.enemies = enemies
 

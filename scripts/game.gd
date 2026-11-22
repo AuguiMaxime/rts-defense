@@ -195,6 +195,7 @@ func _set_selection(ws: Array, us: Array = []) -> void:
 	sel_units.assign(us)
 	units_view.selected = selected
 	units_view.sel_units = sel_units
+	build_menu = ""
 
 
 func _clear_selection() -> void:
@@ -211,6 +212,7 @@ func _clear_selection() -> void:
 		set_build_kind("")
 	rally_mode = false
 	_sell_armed = -1
+	build_menu = ""
 
 
 var _idle_index := 0
@@ -476,29 +478,91 @@ func card_actions() -> Array:
 						"call": func() -> void: _ask_sell(s)})
 		"mobile":
 			if not selected.is_empty():
-				for kind in Content.BUILD_ORDER:
-					if kind == "laser" and not world.laser_unlocked:
-						continue
-					var b := Content.building(kind)
-					var icon: Variant = Sprites.TOWER_LOOK[kind].turret if Content.is_tower(kind) else \
-							("pop" if kind == "house" else (Sprites.SOLDIER_GREEN if kind == "barracks" else Sprites.TANK_GREEN))
-					var k: String = kind
-					out.append({"id": kind, "icon": icon, "tint": Sprites.TOWER_LOOK[kind].tint if Content.is_tower(kind) else Color(1, 1, 1),
-							"label": str(b.name).to_upper(), "cost": _cost_text(b.metal, b.essence),
-							"enabled": _affordable(b.metal, b.essence), "active": build_kind == kind,
-							"call": func() -> void: set_build_kind("" if build_kind == k else k)})
-				var all_auto := selected.all(func(x: Worker) -> bool: return x.auto_repair)
-				out.append({"id": "auto_repair", "icon": Sprites.SITE, "label": "AUTO-RÉPAR.",
-						"cost": "ACTIVE" if all_auto else "INACTIVE", "cost_color": Ui.GREEN if all_auto else Ui.MUTED,
-						"active": all_auto,
-						"call": func() -> void:
-							issue({"t": "auto_repair", "w": Commands.ids(selected), "on": not all_auto})
-							hud.flash("Réparation automatique %s" % ("désactivée" if all_auto else "activée"), Ui.GREEN)})
+				if build_menu == "":
+					out.append({"id": "towers", "icon": Sprites.TURRET_GUN, "label": "TOURELLES", "cost": "%d" % _tower_list().size(),
+							"cost_color": Ui.CYAN, "call": func() -> void: build_menu = "towers"})
+					out.append({"id": "buildings", "icon": "pop", "label": "BÂTIMENTS", "cost": "%d" % Content.BUILDING_ORDER.size(),
+							"cost_color": Ui.CYAN, "call": func() -> void: build_menu = "buildings"})
+					var all_auto := selected.all(func(x: Worker) -> bool: return x.auto_repair)
+					out.append({"id": "auto_repair", "icon": Sprites.SITE, "label": "AUTO-RÉPAR.",
+							"cost": "ACTIVE" if all_auto else "INACTIVE", "cost_color": Ui.GREEN if all_auto else Ui.MUTED,
+							"active": all_auto,
+							"call": func() -> void:
+								issue({"t": "auto_repair", "w": Commands.ids(selected), "on": not all_auto})
+								hud.flash("Réparation automatique %s" % ("désactivée" if all_auto else "activée"), Ui.GREEN)})
+				else:
+					out.append({"id": "back", "icon": "#‹", "label": "RETOUR",
+							"call": func() -> void:
+								build_menu = ""
+								set_build_kind("")})
+					for kind in (_tower_list() if build_menu == "towers" else Content.BUILDING_ORDER):
+						out.append(_build_action(kind))
+					return out.slice(0, Console.CARD_COLS * Console.CARD_ROWS)
+			# Pouvoirs des unités sélectionnées (un bouton par pouvoir présent).
+			var seen := {}
+			for u: Unit in sel_units:
+				var ab := u.ability()
+				var passive: String = u.stats().get("passive", "")
+				if ab != "" and not seen.has(ab):
+					seen[ab] = true
+					out.append(_ability_action(ab))
+				elif passive != "" and not seen.has(passive):
+					seen[passive] = true
+					out.append({"id": passive, "icon": "#✦", "label": "CRITIQUE", "cost": "PASSIF", "cost_color": Ui.GOLD,
+							"call": func() -> void: hud.flash("Passif : le premier tir sur chaque cible est critique (x3)", Ui.GOLD)})
 			if out.size() < Console.CARD_COLS * Console.CARD_ROWS:
 				out.append({"id": "stop", "icon": "#■", "label": "STOP",
 						"call": func() -> void:
 							issue({"t": "stop", "u": sel_units.map(func(x: Unit) -> int: return x.id), "w": Commands.ids(selected)})})
 	return out.slice(0, Console.CARD_COLS * Console.CARD_ROWS)
+
+
+var build_menu := "" # menu de l'ouvrier : "", "towers" ou "buildings"
+
+
+func _tower_list() -> Array[String]:
+	var out: Array[String] = []
+	for k in Content.TOWER_ORDER:
+		if k != "laser" or world.laser_unlocked:
+			out.append(k)
+	return out
+
+
+func _build_action(kind: String) -> Dictionary:
+	var b := Content.building(kind)
+	var icon: Variant = Sprites.TOWER_LOOK[kind].turret if Content.is_tower(kind) else \
+			("pop" if kind == "house" else (Sprites.SOLDIER_GREEN if kind == "barracks" else Sprites.TANK_GREEN))
+	return {"id": kind, "icon": icon, "tint": Sprites.TOWER_LOOK[kind].tint if Content.is_tower(kind) else Color(1, 1, 1),
+			"label": str(b.name).to_upper(), "cost": _cost_text(b.metal, b.essence),
+			"enabled": _affordable(b.metal, b.essence), "active": build_kind == kind,
+			"call": func() -> void:
+				set_build_kind("" if build_kind == kind else kind)
+				if build_kind != "":
+					hud.flash(str(b.desc), Ui.MUTED)}
+
+
+func _ability_action(ab: String) -> Dictionary:
+	var d: Dictionary = Content.ABILITIES[ab]
+	var us := sel_units.filter(func(x: Unit) -> bool: return x.ability() == ab)
+	var ready := us.filter(func(x: Unit) -> bool: return x.ability_cd <= 0.0)
+	var cd := 999.0
+	for x: Unit in us:
+		cd = minf(cd, x.ability_cd)
+	var active := false
+	if d.get("toggle", false):
+		active = us.any(func(x: Unit) -> bool: return x.sieged)
+	else:
+		active = us.any(func(x: Unit) -> bool: return x.buff_time > 0.0)
+	var icon: String = {"stim": "#⚡", "charge": "#»", "bastion": "#⛨", "nanoheal": "#✚", "siege": "#⊕", "salvo": "#≋"}.get(ab, "#★")
+	return {"id": ab, "icon": icon, "label": d.short, "active": active,
+			"cost": "PRÊT" if not ready.is_empty() else "%d s" % ceili(cd),
+			"cost_color": Ui.GREEN if not ready.is_empty() else Ui.MUTED, "enabled": not ready.is_empty(),
+			"call": func() -> void:
+				if ready.is_empty():
+					hud.flash("%s en recharge" % d.name, Ui.RED)
+					return
+				issue({"t": "ability", "u": ready.map(func(x: Unit) -> int: return x.id), "a": ab})
+				hud.flash("%s : %s" % [d.name, d.desc], Ui.GREEN)}
 
 
 func _unit_action(producer_id: int, t: String) -> Dictionary:

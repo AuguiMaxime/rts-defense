@@ -22,6 +22,9 @@ var attack_timer := 0.0
 var retarget_timer := 0.0
 var target_kind := Target.NONE
 var target_ref: Variant = null
+var slow_timer := 0.0
+var slow_mult := 1.0
+var stun_timer := 0.0
 var visual_offset := Vector2.ZERO # petit décalage pour ne pas tous se superposer à l'écran
 
 
