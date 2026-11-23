@@ -58,7 +58,9 @@ func setup(g: Node) -> void:
 	add_child(Ui.spacer())
 	var info_panel := _panel(Color(Ui.CYAN, 0.4))
 	info_panel.custom_minimum_size = Vector2(250, 0)
-	_info_box = Ui.vbox(4)
+	info_panel.size_flags_vertical = Control.SIZE_FILL # même hauteur que le panneau d'actions
+	info_panel.clip_contents = true
+	_info_box = Ui.vbox(3)
 	info_panel.add_child(_info_box)
 	add_child(info_panel)
 	_info_panel = info_panel
@@ -75,6 +77,7 @@ func setup(g: Node) -> void:
 		_card_grid.add_child(b)
 		_card_buttons.append(b)
 	card_panel.add_child(_card_grid)
+	card_panel.size_flags_vertical = Control.SIZE_FILL
 	add_child(card_panel)
 	_card_panel = card_panel
 
@@ -295,7 +298,7 @@ func _title_row(text: String, tex: Variant, color := Ui.CYAN) -> void:
 	var x := Button.new()
 	x.text = "✕"
 	x.focus_mode = Control.FOCUS_NONE
-	x.custom_minimum_size = Vector2(40, 34)
+	x.custom_minimum_size = Vector2(36, 28)
 	x.add_theme_font_size_override("font_size", 18)
 	x.pressed.connect(func() -> void: game.deselect())
 	h.add_child(x)
@@ -320,7 +323,7 @@ func _queue_row(producer_id: int) -> void:
 	var h := Ui.hbox(4)
 	for i in Producer.MAX_QUEUE:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(40, 40)
+		b.custom_minimum_size = Vector2(34, 34)
 		b.focus_mode = Control.FOCUS_NONE
 		var img := TextureRect.new()
 		img.name = "Img"
@@ -338,17 +341,21 @@ func _queue_row(producer_id: int) -> void:
 		h.add_child(b)
 		_queue_slots.append(b)
 	_info_box.add_child(h)
+	# Bouton de ralliement : petit carré au bout de la file
+	_rally_btn = Button.new()
+	_rally_btn.focus_mode = Control.FOCUS_NONE
+	_rally_btn.custom_minimum_size = Vector2(38, 34)
+	_rally_btn.add_theme_font_size_override("font_size", 16)
+	_rally_btn.tooltip_text = "Placer le point de ralliement"
+	_rally_btn.pressed.connect(func() -> void: game.toggle_rally_mode())
+	var gap := Ui.spacer()
+	h.add_child(gap)
+	h.add_child(_rally_btn)
 	_queue_bar = ProgressBar.new()
 	_queue_bar.show_percentage = false
 	_queue_bar.custom_minimum_size = Vector2(0, 6)
 	_queue_bar.add_theme_stylebox_override("fill", Ui.box(Ui.GREEN, Ui.GREEN, 0, 3))
 	_info_box.add_child(_queue_bar)
-	_rally_btn = Button.new()
-	_rally_btn.focus_mode = Control.FOCUS_NONE
-	_rally_btn.custom_minimum_size = Vector2(0, 34)
-	_rally_btn.add_theme_font_size_override("font_size", 13)
-	_rally_btn.pressed.connect(func() -> void: game.toggle_rally_mode())
-	_info_box.add_child(_rally_btn)
 	# Les bâtiments de recherche ne forment pas d'unités : pas de ralliement.
 	var ps: BuildSite = (game.world as GameWorld).site_by_id(producer_id) if producer_id != GameWorld.BASE_ID else null
 	if ps != null and (Content.PRODUCTION[ps.kind].produces as Array).is_empty():
@@ -466,7 +473,7 @@ func _update_info() -> void:
 func _rally_text(p: Producer) -> String:
 	if _rally_btn != null:
 		var on: bool = game.rally_mode
-		_rally_btn.text = "⚑ TOUCHE LA CARTE…" if on else ("⚑ DÉPLACER LE RALLIEMENT" if p.has_rally() else "⚑ PLACER LE RALLIEMENT")
+		_rally_btn.text = "⚑"
 		_rally_btn.theme_type_variation = "PrimaryButton" if on else ""
 	if not p.busy():
 		return "File vide"
