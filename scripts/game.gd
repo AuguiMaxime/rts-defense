@@ -95,6 +95,7 @@ func _build_config() -> Dictionary:
 		"orbital": Save.tech_level("orbital") > 0,
 		"laser": Save.owns("tower_laser"),
 		"objectives": [] if survival else map_script.objectives,
+		"coop": Net.online,
 	}
 	var used: Array[String] = []
 	if Net.is_client():
@@ -562,6 +563,8 @@ func card_actions() -> Array:
 							"call": func() -> void: hud.flash("Tourelle déjà au niveau maximum", Ui.GOLD)})
 				if sel_sites.any(func(x: BuildSite) -> bool: return x.hp < x.max_hp):
 					out.append({"id": "repair", "icon": Sprites.SITE, "label": "RÉPARER", "call": repair_focused})
+				if s.kind == "hq":
+					return out.slice(0, Console.CARD_COLS * Console.CARD_ROWS)
 				var armed := _sell_armed == s.id and Time.get_ticks_msec() < _sell_armed_until
 				var refund := 0
 				for x: BuildSite in sel_sites:

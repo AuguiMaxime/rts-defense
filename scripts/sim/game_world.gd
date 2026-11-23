@@ -30,6 +30,8 @@ var record_net_events := false
 var net_events: Array[Dictionary] = []
 ## Gisements : quantité restante par case ; cases épuisées (dans l'ordre).
 var deposit_left := {}
+## Base du joueur 2 (coop), ou null.
+var hq_site: BuildSite = null
 ## Recherches terminées : id -> niveau (partagé avec Research.levels).
 var upgrades := {}
 var depleted: Array[Vector2i] = []
@@ -102,6 +104,24 @@ func _init(g: GameGrid, config := {}) -> void:
 					"total": int(Balance.OBJECTIVES[o.type].count)})
 	for i in config.get("start_workers", Balance.START_WORKERS):
 		_spawn_worker()
+	# Coop : la 2e base est posée là où la carte la prévoit, avec 3 ouvriers.
+	if config.get("coop", false) and grid.base2_cells.size() == 9:
+		var tl := grid.base2_cells[0]
+		for c in grid.base2_cells:
+			tl = Vector2i(mini(tl.x, c.x), mini(tl.y, c.y))
+		var hq := BuildSite.new("hq")
+		hq.id = _next_site_id
+		_next_site_id += 1
+		hq.cell = tl
+		sites.append(hq)
+		for c in hq.cells():
+			pathfinder.set_solid(c, true)
+		_finish_site(hq)
+		hq_site = hq
+		for i in 3:
+			var spots := pathfinder.free_cells_around(hq.cells())
+			if not spots.is_empty():
+				_spawn_worker(spots[randi() % spots.size()])
 
 
 # --- Avancement du temps -------------------------------------------------
@@ -1091,7 +1111,7 @@ func _tick_worker(w: Worker, delta: float) -> void:
 				w.carry_amount = take
 				if left - take <= 0:
 					_deplete(c)
-				_move_to_adjacent(w, grid.base_cells)
+				_move_to_adjacent(w, _dropoff_cells(w))
 		Worker.State.BUILDING:
 			var s := w.target_site
 			if s == null or s.built or not s.alive:
@@ -1158,6 +1178,14 @@ func _on_arrived(w: Worker) -> void:
 			w.state = Worker.State.REPAIRING
 		_:
 			w.state = Worker.State.IDLE
+
+
+## Base la plus proche où déposer (principale ou base du joueur 2).
+func _dropoff_cells(w: Worker) -> Array[Vector2i]:
+	if hq_site != null and hq_site.alive and hq_site.built:
+		if w.pos.distance_squared_to(hq_site.center()) < w.pos.distance_squared_to(base_center()):
+			return hq_site.cells()
+	return grid.base_cells
 
 
 func _deposit(w: Worker) -> void:
@@ -1247,7 +1275,7 @@ func command_harvest(ws: Array, deposit: Vector2i) -> void:
 			_retarget_deposit(w)
 			continue
 		if w.carry_amount > 0:
-			_move_to_adjacent(w, grid.base_cells)
+			_move_to_adjacent(w, _dropoff_cells(w))
 		else:
 			_move_to_adjacent(w, [deposit] as Array[Vector2i])
 
@@ -1627,6 +1655,8 @@ func _finish_site(s: BuildSite) -> void:
 		stats.houses_built += 1
 	elif s.is_producer():
 		s.producer = Producer.new()
+		if s.kind == "hq":
+			pop_cap += Content.BASE_POP # la 2e base loge autant que la base principale
 	else:
 		stats.towers_built += 1
 	for w in workers:

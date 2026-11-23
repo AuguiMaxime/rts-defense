@@ -44,6 +44,7 @@ func _init() -> void:
 	_test_objectives()
 	_test_research()
 	_test_hold()
+	_test_coop_base()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -818,3 +819,21 @@ func _test_hold() -> void:
 	_check(e.hp < 9999, "elle tire sur ce qui passe à portée")
 	world.command_units_move([u], Vector2i(0, 4))
 	_check(u.order == Unit.Order.MOVE, "un ordre de déplacement la libère")
+
+
+func _test_coop_base() -> void:
+	print("Base du joueur 2 (coop)")
+	var layout: String = preload("res://maps/map_01.gd").LAYOUT
+	var solo := GameWorld.new(MapLoader.from_layout(layout))
+	_check(solo.hq_site == null and solo.grid.base2_cells.size() == 9, "en solo, l'emplacement J2 reste libre")
+	_check(solo.pathfinder.is_free(solo.grid.base2_cells[4]), "et praticable")
+	var w := GameWorld.new(MapLoader.from_layout(layout), {"coop": true})
+	_check(w.hq_site != null and w.hq_site.built and w.hq_site.producer != null, "en coop, la base J2 est posée")
+	_check(w.workers.size() == Balance.START_WORKERS + 3, "avec 3 ouvriers de plus")
+	_check(w.can_queue(w.hq_site.id, "worker") == "", "elle forme des ouvriers")
+	var near: Worker = null
+	for x in w.workers:
+		if x.pos.distance_to(w.hq_site.center()) < 3.0:
+			near = x
+	_check(near != null and w._dropoff_cells(near) == w.hq_site.cells(), "ses ouvriers déposent à la base la plus proche")
+	_check(MapData.from_grid(w.grid).count("b") == 9 or MapData.from_grid(solo.grid).count("b") == 9, "l'emplacement J2 est conservé à l'enregistrement")

@@ -23,6 +23,8 @@ const CELL_NAMES := {
 var width := 0
 var height := 0
 var base_cells: Array[Vector2i] = []
+## Emplacement de la 2e base (coop, joueur 2) : cases libres en solo.
+var base2_cells: Array[Vector2i] = []
 var spawn_points: Array[Vector2i] = []
 var metal_deposits: Array[Vector2i] = []
 var essence_deposits: Array[Vector2i] = []

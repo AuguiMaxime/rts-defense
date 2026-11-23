@@ -74,6 +74,11 @@ const PRODUCTION := {
 		"metal": 200, "essence": 60, "hp": 650, "size": 2, "build": 18.0,
 		"produces": ["tank", "aa_mech", "heavy_tank"],
 	},
+	"hq": {
+		"name": "Base du joueur 2", "desc": "Deuxième base (coop) : forme ouvriers et soldats, reçoit les ressources.",
+		"metal": 0, "essence": 0, "hp": 1000, "size": 3, "build": 1.0,
+		"produces": ["worker", "soldier"],
+	},
 	"forge": {
 		"name": "Forge", "desc": "Recherche des améliorations pour l'infanterie de la caserne.",
 		"metal": 125, "essence": 0, "hp": 450, "size": 2, "build": 14.0,

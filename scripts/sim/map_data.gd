@@ -60,7 +60,8 @@ static func from_grid(g: GameGrid) -> String:
 	for y in g.height:
 		var row := ""
 		for x in g.width:
-			row += SYMBOL_OF[g.get_cell(Vector2i(x, y))]
+			var c := Vector2i(x, y)
+			row += "b" if g.base2_cells.has(c) and g.get_cell(c) == GameGrid.Cell.EMPTY else SYMBOL_OF[g.get_cell(c)]
 		rows.append(row)
 	return "\n".join(rows)
 
@@ -129,4 +130,9 @@ static func validate(g: GameGrid) -> Array[String]:
 				if pf.find_path_to_adjacent(start[0], [m] as Array[Vector2i]).is_empty():
 					issues.append("Le métal (%d, %d) est inaccessible" % [m.x, m.y])
 					break
+		if not g.base2_cells.is_empty():
+			if g.base2_cells.size() != 9:
+				issues.append("La base du joueur 2 doit faire 3x3")
+			elif pf.find_path_to_adjacent(start[0] if not start.is_empty() else g.base_cells[0], g.base2_cells).is_empty():
+				issues.append("La base du joueur 2 n'est pas reliée à la base principale")
 	return issues

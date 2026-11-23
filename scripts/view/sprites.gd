@@ -117,6 +117,7 @@ static var PRODUCER_LOOK := {
 	"forge": [W_BARRACKS, Color(1.15, 0.8, 0.6)],
 	"research": [W_FACTORY, Color(0.85, 0.75, 1.15)],
 	"lab": [W_HOUSE, Color(0.75, 1.1, 0.9)],
+	"hq": [W_BASE, Color(1.0, 0.85, 0.75)],
 }
 ## Les tourelles Wenrexa pointent vers le bas : décalage de rotation.
 const W_ANGLE_OFFSET := -PI / 2.0

@@ -11,6 +11,7 @@ const TOOLS := [
 	{"id": "E", "name": "ESSENCE", "color": Color("ffa63d")},
 	{"id": "B", "name": "BASE 3x3", "color": Color("22d3ee")},
 	{"id": "S", "name": "APPARITION", "color": Color("f87171")},
+	{"id": "b", "name": "BASE J2", "color": Color("fbbf24")},
 	{"id": "~", "name": "EAU", "color": Color("1e90d6")},
 	{"id": "=", "name": "ROUTE", "color": Color("3b3f46")},
 	{"id": "T", "name": "RAILS", "color": Color("8a6a4a")},
@@ -176,15 +177,15 @@ func _set_char(r: Array[String], c: Vector2i, ch: String) -> void:
 	r[c.y] = line.substr(0, c.x) + ch + line.substr(c.x + 1)
 
 
-func _stamp_base(r: Array[String], center: Vector2i) -> void:
+func _stamp_base(r: Array[String], center: Vector2i, ch := "B") -> void:
 	for y in r.size():
-		r[y] = r[y].replace("B", ".")
+		r[y] = r[y].replace(ch, ".")
 	var w := r[0].length()
 	var cx := clampi(center.x, 1, w - 2)
 	var cy := clampi(center.y, 1, r.size() - 2)
 	for dy in range(-1, 2):
 		for dx in range(-1, 2):
-			_set_char(r, Vector2i(cx + dx, cy + dy), "B")
+			_set_char(r, Vector2i(cx + dx, cy + dy), ch)
 
 
 func _begin_stroke() -> void:
@@ -203,8 +204,8 @@ func _end_stroke() -> void:
 
 func _paint(c: Vector2i, refresh := true) -> void:
 	_last_paint = c
-	if tool == "B":
-		_stamp_base(rows, c)
+	if tool == "B" or tool == "b":
+		_stamp_base(rows, c, tool)
 	else:
 		var r := brush - 1
 		for dy in range(-r, r + 1):
@@ -213,7 +214,7 @@ func _paint(c: Vector2i, refresh := true) -> void:
 				if cc.y < 0 or cc.y >= rows.size() or cc.x < 0 or cc.x >= rows[0].length():
 					continue
 				var cur := rows[cc.y][cc.x]
-				if cur == "B" and tool != ".":
+				if (cur == "B" or cur == "b") and tool != ".":
 					continue # on ne peint pas par-dessus la base (gomme exceptée)
 				var ch := tool
 				# Ponts automatiques : route ou rails sur l'eau (et l'inverse)
@@ -232,7 +233,7 @@ func _paint(c: Vector2i, refresh := true) -> void:
 
 ## Peint toutes les cases entre deux points (un glissé rapide ne laisse pas de trous).
 func _paint_line(a: Vector2i, b: Vector2i) -> void:
-	if tool == "B":
+	if tool == "B" or tool == "b":
 		_paint(b)
 		_last_paint = b
 		return
@@ -640,6 +641,13 @@ class _GridOverlay extends Node2D:
 			var c := (Vector2(sp) + Vector2(0.5, 0.5)) * t
 			draw_circle(c, t * 0.42, Color(Ui.RED, 0.35))
 			draw_arc(c, t * 0.42, 0, TAU, 24, Ui.RED, 3.0)
+		if not g.base2_cells.is_empty():
+			var r2 := Rect2(Vector2(g.base2_cells[0]) * t, Vector2.ZERO)
+			for b in g.base2_cells:
+				r2 = r2.merge(Rect2(Vector2(b) * t, Vector2(t, t)))
+			draw_rect(r2, Color(1.0, 0.75, 0.15, 0.25))
+			draw_rect(r2.grow(2), Color(1.0, 0.75, 0.15), false, 3.0)
+			draw_string(ThemeDB.fallback_font, r2.get_center() + Vector2(-18, 10), "J2", HORIZONTAL_ALIGNMENT_CENTER, 36, 30, Color(1.0, 0.8, 0.2))
 		if not g.base_cells.is_empty():
 			var r := Rect2(Vector2(g.base_cells[0]) * t, Vector2.ZERO)
 			for b in g.base_cells:

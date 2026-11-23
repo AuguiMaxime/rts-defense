@@ -35,6 +35,10 @@ static func from_layout(layout: String) -> GameGrid:
 			push_error("MapLoader : la ligne %d fait %d cases au lieu de %d" % [y, line.length(), w])
 		for x in mini(line.length(), w):
 			var ch := line[x]
+			if ch == "b":
+				# 2e base (coop) : case libre, mémorisée pour le joueur 2
+				grid.base2_cells.append(Vector2i(x, y))
+				continue
 			if not SYMBOLS.has(ch):
 				push_error("MapLoader : symbole inconnu '%s' en (%d, %d)" % [ch, x, y])
 				continue
