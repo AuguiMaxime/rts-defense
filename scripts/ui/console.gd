@@ -349,6 +349,10 @@ func _queue_row(producer_id: int) -> void:
 	_rally_btn.add_theme_font_size_override("font_size", 13)
 	_rally_btn.pressed.connect(func() -> void: game.toggle_rally_mode())
 	_info_box.add_child(_rally_btn)
+	# Les bâtiments de recherche ne forment pas d'unités : pas de ralliement.
+	var ps: BuildSite = (game.world as GameWorld).site_by_id(producer_id) if producer_id != GameWorld.BASE_ID else null
+	if ps != null and (Content.PRODUCTION[ps.kind].produces as Array).is_empty():
+		_rally_btn.visible = false
 
 
 static func unit_icon(type_name: String) -> Texture2D:
@@ -466,7 +470,7 @@ func _rally_text(p: Producer) -> String:
 		_rally_btn.theme_type_variation = "PrimaryButton" if on else ""
 	if not p.busy():
 		return "File vide"
-	return "%s : %.1f s" % [Content.UNITS[p.queue[0]].name, p.current_time() - p.progress]
+	return "%s : %.1f s" % [Producer.item_name(p.queue[0]), p.current_time() - p.progress]
 
 
 func _update_queue(p: Producer) -> void:
@@ -474,10 +478,17 @@ func _update_queue(p: Producer) -> void:
 		var b := _queue_slots[i]
 		var img: TextureRect = b.get_node("Img")
 		if i < p.queue.size():
-			img.texture = unit_icon(p.queue[i])
+			var it: String = p.queue[i]
+			if Producer.is_research(it):
+				img.texture = null
+				b.text = str(Content.RESEARCH[Producer.research_id(it)].icon).substr(1) + str(Producer.research_level(it))
+			else:
+				img.texture = unit_icon(it)
+				b.text = ""
 			b.modulate = Color(1, 1, 1)
 		else:
 			img.texture = null
+			b.text = ""
 			b.modulate = Color(1, 1, 1, 0.35)
 	if _queue_bar != null:
 		_queue_bar.value = p.ratio() * 100.0

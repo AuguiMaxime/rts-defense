@@ -41,6 +41,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"w": workers,
 		"u": units,
 		"dl": w.deposit_left,
+		"up": w.upgrades,
 		"ob": w.objectives.map(func(o: Dictionary) -> Array: return [o.state, o.destroyed]),
 		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
@@ -94,6 +95,10 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 			old.alive = false
 	w.workers = workers
 
+	if snap.has("up") and snap.up != w.upgrades:
+		w.upgrades = snap.up
+		Research.levels = w.upgrades
+		Research.version += 1
 	if snap.has("ob"):
 		var ob: Array = snap.ob
 		for i in mini(ob.size(), w.objectives.size()):

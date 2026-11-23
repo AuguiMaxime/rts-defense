@@ -550,6 +550,8 @@ func card_actions() -> Array:
 				if s.is_producer():
 					for t in Content.PRODUCTION[s.kind].produces:
 						out.append(_unit_action(_best_producer(t), t))
+					for rid in Content.PRODUCTION[s.kind].get("researches", []):
+						out.append(_research_action(s, rid))
 				if s.is_tower() and s.level < BuildSite.MAX_LEVEL:
 					var uc := s.upgrade_cost()
 					out.append({"id": "upgrade", "icon": "#▲", "label": "AMÉLIORER" if sel_sites.size() == 1 else "AMÉL. ×%d" % sel_sites.size(),
@@ -602,6 +604,13 @@ func card_actions() -> Array:
 					seen[passive] = true
 					out.append({"id": passive, "icon": "#✦", "label": "CRITIQUE", "cost": "PASSIF", "cost_color": Ui.GOLD,
 							"call": func() -> void: hud.flash("Passif : le premier tir sur chaque cible est critique (x3)", Ui.GOLD)})
+			if not sel_units.is_empty():
+				var holding := sel_units.all(func(x: Unit) -> bool: return x.order == Unit.Order.HOLD)
+				out.append({"id": "hold", "icon": "#◉", "label": "TENIR", "active": holding,
+						"cost": "POSTÉ" if holding else "", "cost_color": Ui.GOLD,
+						"call": func() -> void:
+							issue({"t": "hold", "u": sel_units.map(func(x: Unit) -> int: return x.id)})
+							hud.flash("Position tenue : les unités ne bougent plus et tirent sur ce qui passe à portée", Ui.GOLD)})
 			if out.size() < Console.CARD_COLS * Console.CARD_ROWS:
 				out.append({"id": "stop", "icon": "#■", "label": "STOP",
 						"call": func() -> void:
@@ -622,9 +631,17 @@ func _tower_list() -> Array[String]:
 
 func _build_action(kind: String) -> Dictionary:
 	var b := Content.building(kind)
-	var icon: Variant = Sprites.TOWER_LOOK[kind].turret if Content.is_tower(kind) else \
-			("pop" if kind == "house" else (Sprites.SOLDIER_GREEN if kind == "barracks" else Sprites.TANK_GREEN))
-	return {"id": kind, "icon": icon, "tint": Sprites.TOWER_LOOK[kind].tint if Content.is_tower(kind) else Color(1, 1, 1),
+	var icon: Variant = "pop"
+	var tint := Color(1, 1, 1)
+	if Content.is_tower(kind):
+		icon = Sprites.TOWER_LOOK[kind].turret
+		tint = Sprites.TOWER_LOOK[kind].tint
+	elif kind == "house":
+		icon = Sprites.W_HOUSE
+	elif Sprites.PRODUCER_LOOK.has(kind):
+		icon = Sprites.PRODUCER_LOOK[kind][0]
+		tint = Sprites.PRODUCER_LOOK[kind][1]
+	return {"id": kind, "icon": icon, "tint": tint,
 			"label": str(b.name).to_upper(), "cost": _cost_text(b.metal, b.essence),
 			"enabled": _affordable(b.metal, b.essence), "active": build_kind == kind,
 			"call": func() -> void:
@@ -655,6 +672,23 @@ func _ability_action(ab: String) -> Dictionary:
 					return
 				issue({"t": "ability", "u": ready.map(func(x: Unit) -> int: return x.id), "a": ab})
 				hud.flash("%s : %s" % [d.name, d.desc], Ui.GREEN)}
+
+
+func _research_action(s: BuildSite, rid: String) -> Dictionary:
+	var d: Dictionary = Content.RESEARCH[rid]
+	var lvl := world.research_next_level(rid)
+	var done := int(world.upgrades.get(rid, 0))
+	var maxed := lvl > Content.RESEARCH_MAX
+	var reason := world.can_research(s.id, rid)
+	return {"id": "r_" + rid, "icon": d.icon, "label": "%s %d/%d" % [d.short, done, Content.RESEARCH_MAX],
+			"cost": "MAX" if maxed else _cost_text(Content.RESEARCH_METAL[lvl - 1], Content.RESEARCH_ESSENCE[lvl - 1]),
+			"cost_color": Ui.GOLD if maxed else Ui.METAL, "enabled": reason == "",
+			"call": func() -> void:
+				var r := issue({"t": "research", "p": s.id, "r": rid})
+				if r != "":
+					hud.flash(r, Ui.RED)
+				else:
+					hud.flash("%s niv. %d : %s" % [d.name, lvl, d.desc], Ui.GREEN)}
 
 
 func _unit_action(producer_id: int, t: String) -> Dictionary:

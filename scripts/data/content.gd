@@ -57,7 +57,7 @@ const TOWERS := {
 }
 
 const TOWER_ORDER: Array[String] = ["gun", "cannon", "missile", "laser", "flame", "sniper_tower", "tesla", "cryo", "stun"]
-const BUILDING_ORDER: Array[String] = ["house", "barracks", "factory"]
+const BUILDING_ORDER: Array[String] = ["house", "barracks", "factory", "forge", "research", "lab"]
 
 const HOUSE := {"name": "Habitat", "desc": "+5 de population max.", "metal": 60, "essence": 0, "hp": 150, "pop": 5, "size": 1, "build": 6.0}
 const BASE_POP := 10
@@ -74,7 +74,39 @@ const PRODUCTION := {
 		"metal": 200, "essence": 60, "hp": 650, "size": 2, "build": 18.0,
 		"produces": ["tank", "aa_mech", "heavy_tank"],
 	},
+	"forge": {
+		"name": "Forge", "desc": "Recherche des améliorations pour l'infanterie de la caserne.",
+		"metal": 125, "essence": 0, "hp": 450, "size": 2, "build": 14.0,
+		"produces": [], "researches": ["inf_weapons", "inf_armor", "inf_health"],
+	},
+	"research": {
+		"name": "Centre de recherche", "desc": "Recherche des améliorations pour les unités de l'usine.",
+		"metal": 150, "essence": 50, "hp": 450, "size": 2, "build": 16.0,
+		"produces": [], "researches": ["mech_weapons", "mech_armor", "mech_engines"],
+	},
+	"lab": {
+		"name": "Labo", "desc": "Recherche des améliorations pour toutes les tourelles.",
+		"metal": 150, "essence": 75, "hp": 400, "size": 2, "build": 16.0,
+		"produces": [], "researches": ["tw_damage", "tw_range", "tw_rate"],
+	},
 }
+
+## Recherches : 3 niveaux, coût et durée par niveau.
+const RESEARCH := {
+	"inf_weapons": {"name": "Armes d'infanterie", "short": "ARMES", "desc": "+15 % de dégâts de l'infanterie par niveau", "icon": "#⚔"},
+	"inf_armor": {"name": "Armure d'infanterie", "short": "ARMURE", "desc": "+1 d'armure à l'infanterie par niveau", "icon": "#⛨"},
+	"inf_health": {"name": "Combinaisons renforcées", "short": "SANTÉ", "desc": "+10 % de PV max à l'infanterie par niveau", "icon": "#✚"},
+	"mech_weapons": {"name": "Canons de véhicules", "short": "CANONS", "desc": "+15 % de dégâts des véhicules par niveau", "icon": "#⚔"},
+	"mech_armor": {"name": "Blindage de véhicules", "short": "BLINDAGE", "desc": "+2 d'armure aux véhicules par niveau", "icon": "#⛨"},
+	"mech_engines": {"name": "Moteurs", "short": "MOTEURS", "desc": "+10 % de vitesse des véhicules par niveau", "icon": "#»"},
+	"tw_damage": {"name": "Munitions avancées", "short": "MUNITIONS", "desc": "+10 % de dégâts des tourelles par niveau", "icon": "#✹"},
+	"tw_range": {"name": "Optiques", "short": "PORTÉE", "desc": "+0,3 case de portée des tourelles par niveau", "icon": "#◎"},
+	"tw_rate": {"name": "Servomoteurs", "short": "CADENCE", "desc": "-8 % de temps entre deux tirs par niveau", "icon": "#≋"},
+}
+const RESEARCH_MAX := 3
+const RESEARCH_METAL: Array[int] = [100, 175, 250]
+const RESEARCH_ESSENCE: Array[int] = [50, 100, 150]
+const RESEARCH_TIME: Array[float] = [25.0, 35.0, 45.0]
 const BUILD_ORDER: Array[String] = TOWER_ORDER + BUILDING_ORDER
 
 ## Ce que forme la base.

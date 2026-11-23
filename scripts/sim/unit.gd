@@ -2,7 +2,7 @@ class_name Unit
 extends RefCounted
 ## Unité de combat du joueur (soldat, grenadier, sniper, char, mécha AA). Position en cases.
 
-enum Order { GUARD, MOVE, ATTACK, AMOVE } # AMOVE = déplacement offensif (attaque en chemin)
+enum Order { GUARD, MOVE, ATTACK, AMOVE, HOLD } # AMOVE = déplacement offensif (attaque en chemin)
 
 const AGGRO_EXTRA := 3.0 # repère les ennemis un peu au-delà de sa portée
 const LEASH := 7.0 # ne s'éloigne pas plus de son poste en mode garde
@@ -40,7 +40,7 @@ static func create(type_name: String, at: Vector2) -> Unit:
 	u.type = type_name
 	u.pos = at
 	u.guard_pos = at
-	u.max_hp = Content.UNITS[type_name].hp
+	u.max_hp = roundi(Content.UNITS[type_name].hp * Research.hp_mult(type_name))
 	u.hp = u.max_hp
 	return u
 
@@ -51,7 +51,7 @@ func stats() -> Dictionary:
 
 ## Statistiques effectives (pouvoir actif, mode siège).
 func eff() -> Dictionary:
-	var st: Dictionary = stats()
+	var st: Dictionary = Research.apply_unit(type, stats())
 	if buff_time <= 0.0 and not sieged:
 		return st
 	var e := st.duplicate()

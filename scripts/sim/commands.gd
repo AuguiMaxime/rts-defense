@@ -91,6 +91,13 @@ static func apply(world: GameWorld, cmd: Dictionary) -> String:
 			if reason != "":
 				return reason
 			world.queue_unit(int(cmd.p), cmd.u)
+		"research":
+			var reason := world.can_research(int(cmd.p), str(cmd.r))
+			if reason != "":
+				return reason
+			world.queue_research(int(cmd.p), str(cmd.r))
+		"hold":
+			world.command_hold(us)
 		"cancel":
 			world.cancel_queue(int(cmd.p), int(cmd.i))
 		"rally":

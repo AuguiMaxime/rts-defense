@@ -30,6 +30,8 @@ var record_net_events := false
 var net_events: Array[Dictionary] = []
 ## Gisements : quantité restante par case ; cases épuisées (dans l'ordre).
 var deposit_left := {}
+## Recherches terminées : id -> niveau (partagé avec Research.levels).
+var upgrades := {}
 var depleted: Array[Vector2i] = []
 var metal := Balance.START_METAL
 var essence := Balance.START_ESSENCE
@@ -88,6 +90,8 @@ func _init(g: GameGrid, config := {}) -> void:
 	waves.total = config.get("waves", Balance.WAVE_COUNT)
 	waves.difficulty = config.get("difficulty", 1.0)
 	waves.interval = config.get("wave_interval", Balance.WAVE_INTERVAL)
+	Research.levels = upgrades
+	Research.version += 1
 	for c in g.metal_deposits:
 		deposit_left[c] = Balance.METAL_PER_DEPOSIT
 	for c in g.essence_deposits:
@@ -375,14 +379,86 @@ func queue_unit(producer_id: int, type_name: String) -> bool:
 	return true
 
 
+## Prochain niveau d'une recherche, en comptant celles déjà en file.
+func research_next_level(rid: String) -> int:
+	var lvl := int(upgrades.get(rid, 0))
+	for p in _all_producers():
+		for it in p.queue:
+			if Producer.is_research(it) and Producer.research_id(it) == rid:
+				lvl = maxi(lvl, Producer.research_level(it))
+	return lvl + 1
+
+
+func _all_producers() -> Array[Producer]:
+	var out: Array[Producer] = [base_producer]
+	for s in sites:
+		if s.producer != null:
+			out.append(s.producer)
+	return out
+
+
+func can_research(producer_id: int, rid: String) -> String:
+	var s := site_by_id(producer_id)
+	if s == null or not s.built or s.producer == null:
+		return "Bâtiment indisponible"
+	if not Content.PRODUCTION[s.kind].get("researches", []).has(rid):
+		return "Ce bâtiment ne fait pas cette recherche"
+	var lvl := research_next_level(rid)
+	if lvl > Content.RESEARCH_MAX:
+		return "Niveau maximum atteint"
+	if s.producer.queue.size() >= Producer.MAX_QUEUE:
+		return "File pleine (%d max)" % Producer.MAX_QUEUE
+	if metal < Content.RESEARCH_METAL[lvl - 1]:
+		return "Pas assez de métal (%d)" % Content.RESEARCH_METAL[lvl - 1]
+	if essence < Content.RESEARCH_ESSENCE[lvl - 1]:
+		return "Pas assez d'essence (%d)" % Content.RESEARCH_ESSENCE[lvl - 1]
+	return ""
+
+
+func queue_research(producer_id: int, rid: String) -> bool:
+	if can_research(producer_id, rid) != "":
+		return false
+	var lvl := research_next_level(rid)
+	metal -= Content.RESEARCH_METAL[lvl - 1]
+	essence -= Content.RESEARCH_ESSENCE[lvl - 1]
+	site_by_id(producer_id).producer.queue.append("r:%s:%d" % [rid, lvl])
+	return true
+
+
+func _finish_research(item: String) -> void:
+	var rid := Producer.research_id(item)
+	var lvl := Producer.research_level(item)
+	upgrades[rid] = maxi(int(upgrades.get(rid, 0)), lvl)
+	Research.version += 1
+	if rid == "inf_health":
+		# Les unités déjà formées profitent aussi du bonus de PV.
+		for u in units:
+			var target := roundi(Content.UNITS[u.type].hp * Research.hp_mult(u.type))
+			if target > u.max_hp:
+				u.hp += target - u.max_hp
+				u.max_hp = target
+	_emit({"type": "research", "id": rid, "level": lvl})
+
+
 func cancel_queue(producer_id: int, index: int) -> bool:
 	var p := producer_by_id(producer_id)
 	if p == null or index < 0 or index >= p.queue.size():
 		return false
-	var d: Dictionary = Content.UNITS[p.queue[index]]
+	var it := p.queue[index]
+	var d := Producer.item_cost(it)
 	metal += d.metal
 	essence += d.essence
 	p.queue.remove_at(index)
+	# Annuler une recherche annule aussi les niveaux suivants en file derrière elle.
+	if Producer.is_research(it):
+		var rid := Producer.research_id(it)
+		for k in range(p.queue.size() - 1, index - 1, -1):
+			var nx := p.queue[k]
+			if Producer.is_research(nx) and Producer.research_id(nx) == rid and Producer.research_level(nx) > Producer.research_level(it):
+				var c2 := Producer.item_cost(nx)
+				metal += c2.metal
+				essence += c2.essence
+				p.queue.remove_at(k)
 	if index == 0:
 		p.progress = 0.0
 	return true
@@ -411,6 +487,9 @@ func _tick_producer(p: Producer, producer_id: int, delta: float) -> void:
 		return
 	var type_name: String = p.queue.pop_front()
 	p.progress = 0.0
+	if Producer.is_research(type_name):
+		_finish_research(type_name)
+		return
 	var spot := _spawn_spot(producer_id, p)
 	if type_name == "worker":
 		var w := _spawn_worker(spot)
@@ -606,8 +685,8 @@ func _tick_unit(u: Unit, delta: float) -> void:
 	if st.targets == "none":
 		_tick_medic(u, st, delta)
 		return
-	if u.sieged:
-		_tick_sieged(u, st)
+	if u.sieged or u.order == Unit.Order.HOLD:
+		_tick_sieged(u, st) # immobile : tire sur ce qui est à portée
 		return
 	if u.target != null and u.target.hp <= 0:
 		u.target = null
@@ -823,9 +902,16 @@ func _separate_units() -> void:
 			var l := d.length()
 			if l < 0.6 and l > 0.0001:
 				var push := d / l * (0.6 - l) * 0.5
-				if pathfinder.is_free(Vector2i((a.pos + push).floor())):
+				# Une unité qui tient sa position (ou en siège) ne se laisse pas pousser.
+				var a_fixed := a.order == Unit.Order.HOLD or a.sieged
+				var b_fixed := b.order == Unit.Order.HOLD or b.sieged
+				if a_fixed and not b_fixed:
+					push = Vector2.ZERO
+					if pathfinder.is_free(Vector2i((b.pos - d / l * (0.6 - l)).floor())):
+						b.pos -= d / l * (0.6 - l)
+				if not a_fixed and pathfinder.is_free(Vector2i((a.pos + push).floor())):
 					a.pos += push
-				if pathfinder.is_free(Vector2i((b.pos - push).floor())):
+				if not b_fixed and pathfinder.is_free(Vector2i((b.pos - push).floor())):
 					b.pos -= push
 
 
@@ -968,8 +1054,8 @@ func _remove_site(s: BuildSite) -> void:
 	if s.producer != null:
 		# Ce qui était en file est remboursé.
 		for t in s.producer.queue:
-			metal += int(Content.UNITS[t].metal)
-			essence += int(Content.UNITS[t].essence)
+			metal += int(Producer.item_cost(t).metal)
+			essence += int(Producer.item_cost(t).essence)
 		s.producer.queue.clear()
 	for c in s.cells():
 		pathfinder.set_solid(c, false)
@@ -1203,6 +1289,16 @@ func set_auto_repair(ws: Array, on: bool) -> void:
 
 
 ## Déplace un groupe en formation : chaque unité vise une case libre autour du point touché.
+## TENIR LA POSITION : l'unité ne bouge plus du tout, elle tire seulement sur ce qui est à portée.
+func command_hold(us: Array) -> void:
+	for u: Unit in us:
+		if u != null and u.alive:
+			u.order = Unit.Order.HOLD
+			u.target = null
+			u.path.clear()
+			u.guard_pos = u.pos
+
+
 func command_units_move(us: Array, c: Vector2i) -> void:
 	var spots := _formation_cells(c, us.size(), us)
 	var i := 0

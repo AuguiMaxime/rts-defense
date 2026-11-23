@@ -213,9 +213,17 @@ func _draw_plate(r: Rect2, mod := Color(1, 1, 1)) -> void:
 func _draw_producer(s: BuildSite, r: Rect2) -> void:
 	var c := r.get_center()
 	var busy := s.producer != null and s.producer.busy()
-	var tex: Texture2D = Sprites.W_BARRACKS if s.kind == "barracks" else Sprites.W_FACTORY
+	var look: Array = Sprites.PRODUCER_LOOK.get(s.kind, [Sprites.W_BARRACKS, Color(1, 1, 1)])
+	var tex: Texture2D = look[0]
 	draw_texture_rect(tex, Rect2(r.position + Vector2(5, 7), r.size), false, Color(0, 0, 0, 0.35))
-	draw_texture_rect(tex, r, false)
+	draw_texture_rect(tex, r, false, look[1])
+	if s.kind in ["forge", "research", "lab"]:
+		# Emblème du bâtiment de recherche
+		var em: String = {"forge": "⚒", "research": "⚛", "lab": "⚗"}[s.kind]
+		var col: Color = {"forge": Color(1.0, 0.6, 0.25), "research": Color(0.75, 0.55, 1.0), "lab": Color(0.4, 1.0, 0.6)}[s.kind]
+		draw_circle(c, 15, Color(0.05, 0.07, 0.1, 0.85))
+		draw_arc(c, 15, 0, TAU, 24, col, 2.0)
+		draw_string(ThemeDB.fallback_font, c + Vector2(-9, 7), em, HORIZONTAL_ALIGNMENT_CENTER, 18, 20, col)
 	if busy and s.kind == "factory":
 		for k in 2:
 			var ch := r.position + Vector2(30 + k * 68, 22)

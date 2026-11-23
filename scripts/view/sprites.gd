@@ -110,6 +110,14 @@ const W_BASE := preload("res://assets/gen/base.png")
 const W_BARRACKS := preload("res://assets/gen/barracks.png")
 const W_FACTORY := preload("res://assets/gen/factory.png")
 const W_HOUSE := preload("res://assets/gen/house.png")
+## Bâtiments de production / recherche : [texture, teinte] (provisoire pour forge, centre de recherche, labo).
+static var PRODUCER_LOOK := {
+	"barracks": [W_BARRACKS, Color(1, 1, 1)],
+	"factory": [W_FACTORY, Color(1, 1, 1)],
+	"forge": [W_BARRACKS, Color(1.15, 0.8, 0.6)],
+	"research": [W_FACTORY, Color(0.85, 0.75, 1.15)],
+	"lab": [W_HOUSE, Color(0.75, 1.1, 0.9)],
+}
 ## Les tourelles Wenrexa pointent vers le bas : décalage de rotation.
 const W_ANGLE_OFFSET := -PI / 2.0
 

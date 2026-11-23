@@ -42,6 +42,8 @@ func _init() -> void:
 	_test_finite_deposits()
 	_test_group_move()
 	_test_objectives()
+	_test_research()
+	_test_hold()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -757,3 +759,62 @@ func _test_objectives() -> void:
 	_run(w2, 15.0)
 	_check(w2.objectives[0].state == "done", "convoi détruit = objectif réussi (%s)" % w2.objectives[0].state)
 	_check(w2.metal >= m0 + 200 and w2.stats.objectives_done == 1, "récompense versée")
+
+
+func _test_research() -> void:
+	print("Recherches")
+	var world := GameWorld.new(MapLoader.from_layout("S...........\n............\n............\n............\n.......BBB..\n.......BBB..\n.M.....BBB..\n............"))
+	world.waves.timer = 9999
+	world.metal = 5000
+	world.essence = 5000
+	var forge := _built(world, "forge", Vector2i(2, 0))
+	var lab := _built(world, "lab", Vector2i(5, 0))
+	_check(forge.producer != null, "la forge peut lancer des recherches")
+	var sol := _add_unit(world, "soldier", Vector2(4.5, 7.5))
+	var dmg0: int = sol.eff().damage
+	_check(world.queue_research(forge.id, "inf_weapons"), "recherche lancée (coût payé)")
+	_check(world.queue_research(forge.id, "inf_weapons") and world.research_next_level("inf_weapons") == 3, "le niveau 2 se met en file derrière")
+	_check(world.can_research(forge.id, "tw_range") != "", "la forge ne fait pas les recherches du labo")
+	_run(world, 26.0)
+	_check(int(world.upgrades.get("inf_weapons", 0)) == 1 and sol.eff().damage > dmg0, "armes niv. 1 : +dégâts (%d -> %d)" % [dmg0, sol.eff().damage])
+	var m := world.metal
+	world.cancel_queue(forge.id, 0)
+	_check(world.metal == m + Content.RESEARCH_METAL[1], "annuler rembourse")
+	var gun := _built(world, "gun", Vector2i(9, 1))
+	var r0: float = gun.stats().range
+	world.queue_research(lab.id, "tw_range")
+	_run(world, 26.0)
+	_check(gun.stats().range > r0, "labo : portée des tourelles augmentée")
+	world.queue_research(forge.id, "inf_health")
+	var hp0 := sol.max_hp
+	_run(world, 26.0)
+	_check(sol.max_hp > hp0, "santé : les unités existantes gagnent des PV max")
+	for i in 3:
+		world.upgrades["mech_armor"] = 3
+	var res := _built(world, "research", Vector2i(2, 3))
+	_check(world.can_research(res.id, "mech_armor") == "Niveau maximum atteint", "pas plus de 3 niveaux")
+
+
+func _test_hold() -> void:
+	print("Tenir la position")
+	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	world.waves.timer = 9999
+	world.workers.clear()
+	var u := _add_unit(world, "soldier", Vector2(1.5, 2.5))
+	world.command_hold([u])
+	var p0 := u.pos
+	world.spawn_enemy("normal", Vector2i(5, 2), 1.0)
+	var e := world.enemies[0]
+	e.speed = 0.0
+	e.max_hp = 9999
+	e.hp = 9999
+	_run(world, 4.0)
+	_check(u.pos.distance_to(p0) < 0.05, "elle ne poursuit pas l'ennemi hors de portée")
+	var other := _add_unit(world, "soldier", u.pos + Vector2(0.1, 0.0))
+	_run(world, 1.0)
+	_check(u.pos.distance_to(p0) < 0.05, "elle ne se laisse pas pousser par ses voisines")
+	e.pos = Vector2(3.5, 2.5)
+	_run(world, 2.0)
+	_check(e.hp < 9999, "elle tire sur ce qui passe à portée")
+	world.command_units_move([u], Vector2i(0, 4))
+	_check(u.order == Unit.Order.MOVE, "un ordre de déplacement la libère")

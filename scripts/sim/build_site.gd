@@ -27,6 +27,7 @@ const MAX_LEVEL := 3
 
 var _stats_cache := {}
 var _stats_level := 0
+var _stats_version := -1
 
 
 func _init(k := "gun") -> void:
@@ -69,13 +70,15 @@ func contains(c: Vector2i) -> bool:
 
 ## Caractéristiques au niveau actuel : +35 % de dégâts, +10 % de portée, +25 % de PV par niveau.
 func stats() -> Dictionary:
-	if _stats_level != level:
+	if _stats_level != level or _stats_version != Research.version:
+		_stats_version = Research.version
 		_stats_cache = Content.building(kind).duplicate()
 		if is_tower():
 			var k := level - 1
 			_stats_cache.damage = roundi(_stats_cache.damage * (1.0 + 0.35 * k))
 			_stats_cache.range = _stats_cache.range * (1.0 + 0.10 * k)
 			_stats_cache.hp = roundi(_stats_cache.hp * (1.0 + 0.25 * k))
+			Research.apply_tower(_stats_cache)
 		_stats_level = level
 	return _stats_cache
 

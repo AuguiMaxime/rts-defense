@@ -137,8 +137,18 @@ func _build_top_bar() -> void:
 	right.add_child(right_top)
 	row = right_top
 
+	# Petit bouton pour masquer / réafficher la base et les vagues
+	_fold_btn = Ui.button("▸", false, Vector2(40, 40))
+	_fold_btn.add_theme_font_size_override("font_size", 18)
+	_fold_btn.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_fold_btn.tooltip_text = "Masquer / afficher la base et les vagues"
+	_fold_btn.pressed.connect(_toggle_fold)
+	row.add_child(_fold_btn)
+	_blocks.append(_fold_btn)
+
 	# Base + pause + vitesse
 	var base := Ui.panel(Vector2(210, 0))
+	_base_panel = base
 	base.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.88), Color(Ui.CYAN, 0.35), 2, 8, 0.12))
 	var bv := Ui.vbox(6)
 	var bt := Ui.hbox(8)
@@ -175,6 +185,7 @@ func _build_top_bar() -> void:
 
 	# Vague
 	var wave := Ui.panel(Vector2(0, 0))
+	_wave_panel = wave
 	wave.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.88), Color(Ui.RED, 0.45), 2, 8, 0.12))
 	var wv := Ui.vbox(4)
 	var wt := Ui.hbox(10)
@@ -419,6 +430,20 @@ func pulse_card(id: String, _t: float = 0.0) -> void:
 
 
 var _obj_panel: PanelContainer
+var _fold_btn: Button
+var _base_panel: PanelContainer
+var _wave_panel: PanelContainer
+var _folded := false
+
+
+func _toggle_fold() -> void:
+	_folded = not _folded
+	_fold_btn.text = "◂" if _folded else "▸"
+	_base_panel.visible = not _folded
+	_wave_panel.visible = not _folded
+	if _folded:
+		_obj_panel.visible = false
+	Sfx.play("click", -6.0)
 var _obj_box: VBoxContainer
 var _obj_key := ""
 
@@ -427,7 +452,7 @@ var _obj_key := ""
 func _update_objectives(w: GameWorld) -> void:
 	if w.objectives.is_empty():
 		return
-	_obj_panel.visible = true
+	_obj_panel.visible = not _folded
 	var key := ""
 	for o in w.objectives:
 		key += "%s%d|" % [o.state, o.destroyed]
