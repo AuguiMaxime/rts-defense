@@ -15,6 +15,7 @@ const TOOLS := [
 	{"id": "~", "name": "EAU", "color": Color("1e90d6")},
 	{"id": "=", "name": "ROUTE", "color": Color("3b3f46")},
 	{"id": "T", "name": "RAILS", "color": Color("8a6a4a")},
+	{"id": "W", "name": "MUR", "color": Color("5a6270")},
 ]
 const OBJECTIVE_DEFAULT_WAVE := {"train": 3, "convoy": 6, "boat": 9}
 
@@ -43,6 +44,31 @@ var _diff_spin: SpinBox
 var _interval_spin: SpinBox
 var _status: Label
 var _open_layer: Control
+## Onglets : "terrain" (peindre le sol), "objects" (poser des objets), "mission" (règles)
+var mode := "terrain"
+var _tab_buttons := {}
+var _left_terrain: PanelContainer
+var _left_objects: PanelContainer
+var _left_mission: PanelContainer
+var obj_tool := "structure:e_tower_gun"
+var obj_hold := false
+var obj_level := 1
+var obj_block := false
+var _palette_buttons := {}
+var _opt_buttons := {}
+var _mission_type_buttons := {}
+var _m_rows := {}
+var _m_time: SpinBox
+var _m_count: SpinBox
+var _m_need: SpinBox
+var _m_start: SpinBox
+var _m_gap: SpinBox
+var _m_kind_buttons := {}
+var _m_waves_btn: Button
+var _m_brief: TextEdit
+var _m_type := "waves"
+var _m_kind := "convoy"
+var _m_waves := true
 
 
 func _ready() -> void:
@@ -66,10 +92,17 @@ func _ready() -> void:
 	_build_ui()
 
 	camera.tapped.connect(func(p: Vector2) -> void:
+		if mode == "objects":
+			_object_tap(Vector2i((p / TILE).floor()))
+			return
+		if mode != "terrain":
+			return
 		_begin_stroke()
 		_paint(Vector2i((p / TILE).floor()))
 		_end_stroke())
 	camera.selection_updated.connect(func(a: Vector2, b: Vector2) -> void:
+		if mode != "terrain":
+			return
 		var start := _last_paint if _stroke_open else Vector2i((a / TILE).floor())
 		_begin_stroke()
 		_paint_line(start, Vector2i((b / TILE).floor())))
@@ -118,6 +151,7 @@ func _load(m: MapData) -> void:
 	_waves_spin.set_value_no_signal(data.waves)
 	_diff_spin.set_value_no_signal(data.difficulty)
 	_interval_spin.set_value_no_signal(data.interval)
+	_load_mission_ui()
 	_refresh(true)
 	_fit_camera()
 	_highlight()
@@ -140,17 +174,10 @@ func _refresh(full_check := false) -> void:
 
 
 func _validate() -> void:
-	_issues = MapData.validate(grid)
-	var warn := ""
-	for o in data.objectives:
-		var need: Callable = {"train": grid.is_rail, "convoy": grid.is_road, "boat": grid.is_water}[o.type]
-		var any := false
-		for y in grid.height:
-			for x in grid.width:
-				if need.call(Vector2i(x, y)):
-					any = true
-		if not any:
-			warn += "\n⚠ %s sans %s" % [Balance.OBJECTIVES[o.type].name, {"train": "rails", "convoy": "route", "boat": "eau"}[o.type]]
+	if data == null or grid == null:
+		return
+	_issues = MapData.validate(grid, _mission_dict())
+	var warn := _mission_warnings()
 	if _issues.is_empty():
 		_status.text = "✔ Carte valide · %d x %d · %d apparition(s) · %d métal · %d essence" % [
 				grid.width, grid.height, grid.spawn_points.size(), grid.metal_deposits.size(), grid.essence_deposits.size()] + warn
@@ -166,6 +193,7 @@ func _sync_data() -> void:
 	data.waves = int(_waves_spin.value)
 	data.difficulty = _diff_spin.value
 	data.interval = _interval_spin.value
+	data.mission = _mission_dict()
 
 
 # --- Peinture ----------------------------------------------------------------------
@@ -318,8 +346,14 @@ func _build_ui() -> void:
 		Ui.goto("menu"))
 	th.add_child(back)
 	th.add_child(Ui.title("ÉDITEUR", 18, Ui.CYAN))
+	for pair in [["terrain", "TERRAIN"], ["objects", "OBJETS"], ["mission", "MISSION"]]:
+		var tb := _small_button(pair[1], 100)
+		var md: String = pair[0]
+		tb.pressed.connect(func() -> void: _set_mode(md))
+		_tab_buttons[md] = tb
+		th.add_child(tb)
 	_name_edit = LineEdit.new()
-	_name_edit.custom_minimum_size = Vector2(190, 44)
+	_name_edit.custom_minimum_size = Vector2(170, 44)
 	_name_edit.add_theme_font_size_override("font_size", 20)
 	_name_edit.placeholder_text = "Nom de la carte"
 	th.add_child(_name_edit)
@@ -418,6 +452,12 @@ func _build_ui() -> void:
 	lv.add_child(zh)
 	left.add_child(lv)
 	mid.add_child(left)
+	_left_terrain = left
+	_left_objects = _build_object_panel()
+	mid.add_child(_left_objects)
+	_left_mission = _build_mission_panel()
+	mid.add_child(_left_mission)
+	_set_mode("terrain")
 
 	var gap := Ui.spacer()
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE # sinon il avale les touchers sur la carte
@@ -558,6 +598,8 @@ func _test() -> void:
 	copy.waves = data.waves
 	copy.difficulty = data.difficulty
 	copy.interval = data.interval
+	copy.mission = data.mission.duplicate(true)
+	copy.entities = data.entities.duplicate(true)
 	copy.objectives = data.objectives.duplicate(true)
 	Ui.play_custom(copy)
 
@@ -617,8 +659,336 @@ func _open_entry(list: VBoxContainer, text: String, on_open: Callable) -> void:
 
 
 ## Quadrillage + repères (base, apparitions) pour peindre précisément.
+# --- Onglets ------------------------------------------------------------------------
+
+func _set_mode(m: String) -> void:
+	mode = m
+	_left_terrain.visible = m == "terrain"
+	_left_objects.visible = m == "objects"
+	_left_mission.visible = m == "mission"
+	for k in _tab_buttons:
+		(_tab_buttons[k] as Button).theme_type_variation = "PrimaryButton" if k == m else ""
+
+
+# --- Objets ------------------------------------------------------------------------
+
+## Palette : [identifiant "genre:type", libellé]
+func _palette() -> Array:
+	var cats := []
+	var structs := []
+	for k in Balance.ENEMY_STRUCTURES:
+		structs.append(["structure:" + k, str(Balance.ENEMY_STRUCTURES[k].name).to_upper()])
+	cats.append(["ENNEMIS · STRUCTURES", structs])
+	var foes := []
+	for k in Balance.ENEMIES:
+		foes.append(["enemy:" + k, k.to_upper()])
+	cats.append(["ENNEMIS · UNITÉS (EN GARDE)", foes])
+	var towers := []
+	for k in Content.TOWER_ORDER:
+		towers.append(["ally_tower:" + k, str(Content.TOWERS[k].name).to_upper()])
+	cats.append(["ALLIÉS · TOURELLES", towers])
+	var allies := []
+	for k in Content.UNITS:
+		if k not in ["worker", "escort_truck", "commander"]:
+			allies.append(["ally_unit:" + k, str(Content.UNITS[k].name).to_upper()])
+	cats.append(["ALLIÉS · UNITÉS", allies])
+	cats.append(["MISSION", [["vip:commander", "VIP À ESCORTER"], ["escortee:", "CONVOI ALLIÉ"], ["waypoint:", "POINT DE PASSAGE"],
+			["zone:goal", "ZONE D'ARRIVÉE"], ["zone:capture", "ZONE DE PRISE"]]])
+	var decos := []
+	for f in DirAccess.get_files_at("res://assets/deco"):
+		var fname := f.trim_suffix(".import")
+		if fname.ends_with(".png") and not decos.any(func(x: Array) -> bool: return x[0] == "deco:" + fname.get_basename()):
+			decos.append(["deco:" + fname.get_basename(), fname.get_basename().to_upper()])
+	cats.append(["DÉCOR (dossier assets/deco)", decos])
+	return cats
+
+
+func _build_object_panel() -> PanelContainer:
+	var p := _panel()
+	p.custom_minimum_size = Vector2(300, 0)
+	var v := Ui.vbox(6)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(290, 410)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var list := Ui.vbox(4)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var er := _small_button("✖ GOMME OBJETS", 0)
+	er.custom_minimum_size.y = 36
+	er.pressed.connect(func() -> void:
+		obj_tool = "erase"
+		_highlight_objects())
+	_palette_buttons["erase"] = er
+	list.add_child(er)
+	for cat in _palette():
+		list.add_child(Ui.label(cat[0], 12, Ui.GOLD, true))
+		var g := GridContainer.new()
+		g.columns = 2
+		g.add_theme_constant_override("h_separation", 4)
+		g.add_theme_constant_override("v_separation", 4)
+		for it in cat[1]:
+			var b := _small_button(it[1], 136)
+			b.custom_minimum_size.y = 34
+			b.add_theme_font_size_override("font_size", 10)
+			b.clip_text = true
+			var id: String = it[0]
+			b.pressed.connect(func() -> void:
+				obj_tool = id
+				_highlight_objects())
+			_palette_buttons[id] = b
+			g.add_child(b)
+		list.add_child(g)
+	scroll.add_child(list)
+	v.add_child(scroll)
+	var opts := Ui.hbox(4)
+	for o in [["hold", "IMMOBILE"], ["lvl", "NIV 1"], ["block", "BLOQUE"]]:
+		var b := _small_button(o[1], 0)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size.y = 34
+		b.add_theme_font_size_override("font_size", 10)
+		var key: String = o[0]
+		b.pressed.connect(func() -> void:
+			match key:
+				"hold":
+					obj_hold = not obj_hold
+				"lvl":
+					obj_level = obj_level % 3 + 1
+				"block":
+					obj_block = not obj_block
+			_highlight_objects())
+		_opt_buttons[key] = b
+		opts.add_child(b)
+	v.add_child(opts)
+	v.add_child(Ui.label("Toucher = poser · gomme = retirer\nIMMOBILE : unités · NIV : tourelles · BLOQUE : décor", 11, Ui.MUTED))
+	p.add_child(v)
+	_highlight_objects.call_deferred()
+	return p
+
+
+func _highlight_objects() -> void:
+	for id in _palette_buttons:
+		(_palette_buttons[id] as Button).theme_type_variation = "PrimaryButton" if id == obj_tool else ""
+	if _opt_buttons.has("hold"):
+		(_opt_buttons.hold as Button).theme_type_variation = "PrimaryButton" if obj_hold else ""
+		(_opt_buttons.block as Button).theme_type_variation = "PrimaryButton" if obj_block else ""
+		(_opt_buttons.lvl as Button).text = "NIV %d" % obj_level
+
+
+## Cases couvertes par un objet (les structures font 1, 2 ou 3 cases de côté).
+static func entity_cells(e: Dictionary) -> Array[Vector2i]:
+	var c := Vector2i(int(e.cell[0]), int(e.cell[1]))
+	var size := 1
+	if e.kind == "structure" and Balance.ENEMY_STRUCTURES.has(e.type):
+		size = int(Balance.ENEMY_STRUCTURES[e.type].size)
+	var out: Array[Vector2i] = []
+	for dy in size:
+		for dx in size:
+			out.append(c + Vector2i(dx, dy))
+	return out
+
+
+func _object_tap(c: Vector2i) -> void:
+	if not grid.is_inside(c):
+		return
+	# Un objet déjà là : la gomme le retire, sinon on le remplace.
+	for i in range(data.entities.size() - 1, -1, -1):
+		if entity_cells(data.entities[i]).has(c):
+			data.entities.remove_at(i)
+			if obj_tool == "erase":
+				_validate()
+				return
+	if obj_tool == "erase":
+		return
+	var parts := obj_tool.split(":")
+	var e := {"kind": parts[0], "cell": [c.x, c.y]}
+	match parts[0]:
+		"structure", "enemy", "ally_tower", "ally_unit", "vip":
+			e.type = parts[1]
+		"zone":
+			e.role = parts[1]
+			e.radius = 2.5
+		"deco":
+			e.sprite = parts[1]
+			e.block = obj_block
+		"waypoint":
+			e.order = data.entities.filter(func(x: Dictionary) -> bool: return x.kind == "waypoint").size()
+	if parts[0] in ["enemy", "ally_unit"]:
+		e.hold = obj_hold
+	if parts[0] == "ally_tower":
+		e.level = obj_level
+	if parts[0] in ["vip", "escortee"]:
+		# Un seul VIP / convoi allié par carte
+		data.entities = data.entities.filter(func(x: Dictionary) -> bool: return x.kind != parts[0])
+	data.entities.append(e)
+	_validate()
+
+
+# --- Mission ------------------------------------------------------------------------
+
+func _build_mission_panel() -> PanelContainer:
+	var p := _panel()
+	p.custom_minimum_size = Vector2(300, 0)
+	p.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	var v := Ui.vbox(5)
+	v.add_child(Ui.label("TYPE DE MISSION", 13, Ui.GOLD, true))
+	var tg := GridContainer.new()
+	tg.columns = 2
+	tg.add_theme_constant_override("h_separation", 4)
+	tg.add_theme_constant_override("v_separation", 4)
+	for t in Mission.TYPES:
+		var b := _small_button(str(Mission.TYPE_NAMES[t]).to_upper(), 136)
+		b.custom_minimum_size.y = 34
+		b.add_theme_font_size_override("font_size", 10)
+		var tt: String = t
+		b.pressed.connect(func() -> void:
+			_m_type = tt
+			_mission_ui_refresh())
+		_mission_type_buttons[t] = b
+		tg.add_child(b)
+	v.add_child(tg)
+	var grid_box := GridContainer.new()
+	grid_box.columns = 2
+	grid_box.add_theme_constant_override("v_separation", 4)
+	_m_time = _spin(10, 3600, 10, 300)
+	_m_count = _spin(1, 20, 1, 3)
+	_m_need = _spin(1, 20, 1, 3)
+	_m_start = _spin(0, 600, 5, 20)
+	_m_gap = _spin(5, 300, 5, 40)
+	for row in [["time", "Durée (s)", _m_time], ["count", "Nb de convois", _m_count], ["need", "À détruire", _m_need],
+			["start", "Départ (s)", _m_start], ["gap", "Écart (s)", _m_gap]]:
+		var l := Ui.label(row[1], 14)
+		var sp: SpinBox = row[2]
+		sp.custom_minimum_size = Vector2(110, 36)
+		sp.value_changed.connect(func(_x: float) -> void: _validate())
+		grid_box.add_child(l)
+		grid_box.add_child(sp)
+		_m_rows[row[0]] = [l, sp]
+	v.add_child(grid_box)
+	var kh := Ui.hbox(4)
+	for pair in [["train", "TRAIN"], ["convoy", "CAMIONS"], ["boat", "BATEAU"]]:
+		var b := _small_button(pair[1], 0)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size.y = 32
+		b.add_theme_font_size_override("font_size", 10)
+		var k: String = pair[0]
+		b.pressed.connect(func() -> void:
+			_m_kind = k
+			_mission_ui_refresh())
+		_m_kind_buttons[k] = b
+		kh.add_child(b)
+	v.add_child(kh)
+	_m_rows["kind"] = [kh]
+	_m_waves_btn = _small_button("VAGUES ENNEMIES : OUI", 0)
+	_m_waves_btn.custom_minimum_size.y = 34
+	_m_waves_btn.add_theme_font_size_override("font_size", 11)
+	_m_waves_btn.pressed.connect(func() -> void:
+		_m_waves = not _m_waves
+		_mission_ui_refresh())
+	v.add_child(_m_waves_btn)
+	v.add_child(Ui.label("BRIEFING", 13, Ui.GOLD, true))
+	_m_brief = TextEdit.new()
+	_m_brief.custom_minimum_size = Vector2(280, 90)
+	_m_brief.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_m_brief.placeholder_text = "Texte affiché au début de la mission"
+	_m_brief.add_theme_font_size_override("font_size", 14)
+	v.add_child(_m_brief)
+	p.add_child(v)
+	return p
+
+
+func _load_mission_ui() -> void:
+	var m: Dictionary = data.mission
+	_m_type = str(m.get("type", "waves"))
+	_m_time.set_value_no_signal(float(m.get("time", 300)))
+	_m_count.set_value_no_signal(float(m.get("convoy_count", 3)))
+	_m_need.set_value_no_signal(float(m.get("convoy_need", 3)))
+	_m_start.set_value_no_signal(float(m.get("convoy_start", 20)))
+	_m_gap.set_value_no_signal(float(m.get("convoy_interval", 40)))
+	_m_kind = str(m.get("convoy_kind", "convoy"))
+	_m_waves = Mission.new(m).waves_enabled()
+	_m_brief.text = str(m.get("briefing", ""))
+	_mission_ui_refresh()
+
+
+func _mission_ui_refresh() -> void:
+	for t in _mission_type_buttons:
+		(_mission_type_buttons[t] as Button).theme_type_variation = "PrimaryButton" if t == _m_type else ""
+	for k in _m_kind_buttons:
+		(_m_kind_buttons[k] as Button).theme_type_variation = "PrimaryButton" if k == _m_kind else ""
+	var show := {
+		"time": _m_type in ["survive", "capture"],
+		"count": _m_type == "convoy", "need": _m_type == "convoy", "start": _m_type == "convoy",
+		"gap": _m_type == "convoy", "kind": _m_type == "convoy",
+	}
+	for k in _m_rows:
+		for n in _m_rows[k]:
+			(n as Control).visible = show.get(k, false)
+	(_m_rows.time[0] as Label).text = "Durée (s)" if _m_type == "survive" else "Tenir chaque zone (s)"
+	if _m_type == "waves":
+		_m_waves = true
+	_m_waves_btn.text = "VAGUES ENNEMIES : %s" % ("OUI" if _m_waves else "NON")
+	_m_waves_btn.disabled = _m_type == "waves"
+	_validate()
+
+
+func _mission_dict() -> Dictionary:
+	if _m_brief == null:
+		return data.mission if data != null else {}
+	var m := {"type": _m_type, "waves_enabled": _m_waves, "briefing": _m_brief.text.strip_edges()}
+	match _m_type:
+		"survive", "capture":
+			m.time = int(_m_time.value)
+		"convoy":
+			m.convoy_kind = _m_kind
+			m.convoy_count = int(_m_count.value)
+			m.convoy_need = mini(int(_m_need.value), int(_m_count.value))
+			m.convoy_start = _m_start.value
+			m.convoy_interval = _m_gap.value
+	return m
+
+
+func _mission_warnings() -> String:
+	var w := ""
+	var kinds := {}
+	for e in data.entities:
+		kinds[e.kind + ":" + str(e.get("type", e.get("role", "")))] = true
+		kinds[e.kind] = true
+	match _m_type:
+		"destroy_base":
+			if not kinds.has("structure:e_hq"):
+				w += "\n⚠ Pose une BASE ENNEMIE (onglet Objets)"
+		"escort":
+			if not kinds.has("vip") or not kinds.has("zone:goal"):
+				w += "\n⚠ Il faut un VIP et une ZONE D'ARRIVÉE"
+		"escort_defend":
+			if not kinds.has("escortee") or not kinds.has("waypoint"):
+				w += "\n⚠ Il faut un CONVOI ALLIÉ et des POINTS DE PASSAGE"
+		"capture":
+			if not kinds.has("zone:capture"):
+				w += "\n⚠ Pose au moins une ZONE DE PRISE"
+		"convoy":
+			var need: Callable = {"train": grid.is_rail, "convoy": grid.is_road, "boat": grid.is_water}[_m_kind]
+			var any := false
+			for y in grid.height:
+				for x in grid.width:
+					if need.call(Vector2i(x, y)):
+						any = true
+			if not any:
+				w += "\n⚠ Les convois ont besoin de %s" % {"train": "rails", "convoy": "route", "boat": "eau"}[_m_kind]
+	for o in data.objectives:
+		var need: Callable = {"train": grid.is_rail, "convoy": grid.is_road, "boat": grid.is_water}[o.type]
+		var any := false
+		for y in grid.height:
+			for x in grid.width:
+				if need.call(Vector2i(x, y)):
+					any = true
+		if not any:
+			w += "\n⚠ %s sans %s" % [Balance.OBJECTIVES[o.type].name, {"train": "rails", "convoy": "route", "boat": "eau"}[o.type]]
+	return w
+
+
 class _GridOverlay extends Node2D:
 	var editor: Node2D
+	var _tex_cache := {}
 
 	func _ready() -> void:
 		z_index = 5
@@ -648,8 +1018,85 @@ class _GridOverlay extends Node2D:
 			draw_rect(r2, Color(1.0, 0.75, 0.15, 0.25))
 			draw_rect(r2.grow(2), Color(1.0, 0.75, 0.15), false, 3.0)
 			draw_string(ThemeDB.fallback_font, r2.get_center() + Vector2(-18, 10), "J2", HORIZONTAL_ALIGNMENT_CENTER, 36, 30, Color(1.0, 0.8, 0.2))
+		_draw_entities(t)
 		if not g.base_cells.is_empty():
 			var r := Rect2(Vector2(g.base_cells[0]) * t, Vector2.ZERO)
 			for b in g.base_cells:
 				r = r.merge(Rect2(Vector2(b) * t, Vector2(t, t)))
 			draw_rect(r.grow(2), Ui.CYAN, false, 3.0)
+
+
+	func _draw_entities(t: float) -> void:
+		var d: MapData = editor.data
+		if d == null:
+			return
+		var font := ThemeDB.fallback_font
+		var wps: Array = []
+		for e: Dictionary in d.entities:
+			var c := Vector2(int(e.cell[0]), int(e.cell[1]))
+			var center := (c + Vector2(0.5, 0.5)) * t
+			match str(e.kind):
+				"structure":
+					var def: Dictionary = Balance.ENEMY_STRUCTURES.get(e.type, {})
+					var sz := float(def.get("size", 1)) * t
+					var r := Rect2(c * t, Vector2(sz, sz))
+					var tex: Texture2D = Sprites.W_BASE if def.get("look", "") == "hq" else (Sprites.W_BARRACKS if def.get("look", "") in ["barracks", "bunker"] else null)
+					if tex == null and Sprites.TOWER_LOOK.has(def.get("look", "")):
+						draw_texture_rect(Sprites.TOWER_LOOK[def.look].base, r, false, Color(1, 0.5, 0.45))
+						tex = Sprites.TOWER_LOOK[def.look].turret
+						var k := r.size.x * 0.9
+						draw_texture_rect(tex, Rect2(r.get_center() - Vector2(k, k) / 2, Vector2(k, k)), false, Color(1, 0.6, 0.55))
+					elif tex != null:
+						draw_texture_rect(tex, r, false, Color(1, 0.5, 0.45))
+					else:
+						draw_texture_rect(Sprites.ENEMY_LOOK.siege.tex, r, false)
+					draw_rect(r, Color(1, 0.2, 0.2), false, 3.0)
+				"enemy":
+					var lk: Dictionary = Sprites.ENEMY_LOOK.get(e.type, {})
+					if not lk.is_empty():
+						draw_texture_rect(lk.tex, Rect2(center - Vector2(28, 28), Vector2(56, 56)), false)
+					draw_arc(center, t * 0.45, 0, TAU, 20, Color(1, 0.25, 0.2), 2.5)
+					if e.get("hold", false):
+						draw_string(font, center + Vector2(-6, -18), "■", HORIZONTAL_ALIGNMENT_CENTER, 12, 14, Color(1, 0.4, 0.3))
+				"ally_tower":
+					var tl: Dictionary = Sprites.TOWER_LOOK.get(e.type, {})
+					if not tl.is_empty():
+						draw_texture_rect(tl.base, Rect2(c * t, Vector2(t, t)), false)
+						draw_texture_rect(tl.turret, Rect2(center - Vector2(t, t) * 0.45, Vector2(t, t) * 0.9), false)
+					draw_rect(Rect2(c * t, Vector2(t, t)), Ui.GREEN, false, 2.5)
+					draw_string(font, c * t + Vector2(4, 16), "N%d" % int(e.get("level", 1)), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Ui.GREEN)
+				"ally_unit", "vip":
+					var ul: Dictionary = Sprites.UNIT_LOOK.get(e.get("type", "soldier"), {})
+					if not ul.is_empty():
+						draw_texture_rect(ul.tex, Rect2(center - Vector2(26, 26), Vector2(52, 52)), false, ul.tint)
+					draw_arc(center, t * 0.45, 0, TAU, 20, Ui.GOLD if e.kind == "vip" else Ui.GREEN, 2.5)
+					if e.kind == "vip":
+						draw_string(font, center + Vector2(-20, -24), "VIP", HORIZONTAL_ALIGNMENT_CENTER, 40, 16, Ui.GOLD)
+				"escortee":
+					draw_rect(Rect2(center - Vector2(22, 16), Vector2(44, 32)), Color(0.3, 0.6, 0.4))
+					draw_arc(center, t * 0.5, 0, TAU, 20, Ui.GREEN, 3.0)
+					draw_string(font, center + Vector2(-30, -26), "CONVOI", HORIZONTAL_ALIGNMENT_CENTER, 60, 14, Ui.GREEN)
+				"waypoint":
+					wps.append([int(e.get("order", 0)), center])
+				"zone":
+					var rad := float(e.get("radius", 2.5)) * t
+					var col := Ui.GREEN if e.role == "goal" else Ui.GOLD
+					draw_circle(center, rad, Color(col, 0.12))
+					draw_arc(center, rad, 0, TAU, 40, col, 3.0)
+					draw_string(font, center + Vector2(-50, 6), "ARRIVÉE" if e.role == "goal" else "PRISE", HORIZONTAL_ALIGNMENT_CENTER, 100, 18, col)
+				"deco":
+					var sp := str(e.get("sprite", ""))
+					if not _tex_cache.has(sp):
+						_tex_cache[sp] = UnitsView.deco_texture(sp)
+					var tex2: Texture2D = _tex_cache[sp]
+					if tex2 != null:
+						draw_texture_rect(tex2, Rect2(c * t, Vector2(t, t)), false)
+					if e.get("block", false):
+						draw_rect(Rect2(c * t, Vector2(t, t)), Color(1, 1, 1, 0.5), false, 2.0)
+		wps.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		for i in wps.size():
+			if i > 0:
+				draw_dashed_line(wps[i - 1][1], wps[i][1], Color(Ui.GREEN, 0.7), 3.0, 12.0)
+			draw_circle(wps[i][1], 14, Color(0.1, 0.3, 0.15))
+			draw_arc(wps[i][1], 14, 0, TAU, 20, Ui.GREEN, 2.5)
+			draw_string(font, wps[i][1] + Vector2(-10, 6), str(i + 1), HORIZONTAL_ALIGNMENT_CENTER, 20, 16, Ui.GREEN)

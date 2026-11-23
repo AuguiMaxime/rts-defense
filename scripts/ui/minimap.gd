@@ -28,6 +28,8 @@ func setup(g: Node) -> void:
 					col = Ui.RED
 				GameGrid.Cell.BASE:
 					col = Ui.CYAN
+				GameGrid.Cell.WALL:
+					col = Color("5a6270")
 				GameGrid.Cell.WATER:
 					col = Color("1e6fa8")
 				GameGrid.Cell.ROAD, GameGrid.Cell.BRIDGE:

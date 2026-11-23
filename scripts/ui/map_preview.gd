@@ -29,6 +29,8 @@ func _draw() -> void:
 					col = Ui.ESSENCE
 				GameGrid.Cell.SPAWN:
 					col = Ui.RED
+				GameGrid.Cell.WALL:
+					col = Color("5a6270")
 				GameGrid.Cell.WATER:
 					col = Color("1e6fa8")
 				GameGrid.Cell.ROAD, GameGrid.Cell.BRIDGE:

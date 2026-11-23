@@ -7,7 +7,7 @@ const SYMBOL_OF := {
 	GameGrid.Cell.EMPTY: ".", GameGrid.Cell.ROCK: "#", GameGrid.Cell.BASE: "B",
 	GameGrid.Cell.METAL: "M", GameGrid.Cell.ESSENCE: "E", GameGrid.Cell.SPAWN: "S",
 	GameGrid.Cell.WATER: "~", GameGrid.Cell.ROAD: "=", GameGrid.Cell.RAIL: "T",
-	GameGrid.Cell.BRIDGE: "H", GameGrid.Cell.RAIL_BRIDGE: "Y",
+	GameGrid.Cell.BRIDGE: "H", GameGrid.Cell.RAIL_BRIDGE: "Y", GameGrid.Cell.WALL: "W",
 }
 ## Dossier des cartes de l'éditeur : dans le projet quand on lance depuis Godot (pour les versionner),
 ## sinon dans les données de l'appli.
@@ -22,6 +22,9 @@ var difficulty := 1.0
 var interval := 30.0
 ## Objectifs bonus : [{"type": "train" | "convoy" | "boat", "wave": n}]
 var objectives: Array = []
+## Mission (voir Mission) et entités posées dans l'éditeur.
+var mission: Dictionary = {}
+var entities: Array = []
 var path := "" # fichier d'origine
 
 
@@ -37,8 +40,13 @@ static func load_from(p: String) -> MapData:
 		m.NAME = script.NAME
 		m.GROUND = script.GROUND
 		m.LAYOUT = script.LAYOUT
-		if script.get_script_constant_map().has("OBJECTIVES"):
+		var consts: Dictionary = script.get_script_constant_map()
+		if consts.has("OBJECTIVES"):
 			m.objectives = script.OBJECTIVES.duplicate(true)
+		if consts.has("MISSION"):
+			m.mission = script.MISSION.duplicate(true)
+		if consts.has("ENTITIES"):
+			m.entities = script.ENTITIES.duplicate(true)
 		return m
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
 	if not parsed is Dictionary:
@@ -52,6 +60,8 @@ static func load_from(p: String) -> MapData:
 	m.difficulty = float(parsed.get("difficulty", m.difficulty))
 	m.interval = float(parsed.get("interval", m.interval))
 	m.objectives = parsed.get("objectives", [])
+	m.mission = parsed.get("mission", {})
+	m.entities = parsed.get("entities", [])
 	return m
 
 
@@ -71,7 +81,8 @@ func to_dict() -> Dictionary:
 	for line in LAYOUT.split("\n"):
 		if line.strip_edges() != "":
 			rows.append(line.strip_edges())
-	return {"name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives, "layout": rows}
+	return {"name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives,
+			"mission": mission, "entities": entities, "layout": rows}
 
 
 func save_to(p: String) -> Error:
@@ -109,11 +120,12 @@ static func list_custom() -> Array[String]:
 
 
 ## Problèmes qui empêchent de jouer la carte (liste vide = carte valide).
-static func validate(g: GameGrid) -> Array[String]:
+static func validate(g: GameGrid, mission := {}) -> Array[String]:
 	var issues: Array[String] = []
+	var needs_spawn := Mission.new(mission).waves_enabled()
 	if g.base_cells.size() != 9:
 		issues.append("Il faut une base (3x3)")
-	if g.spawn_points.is_empty():
+	if g.spawn_points.is_empty() and needs_spawn:
 		issues.append("Il faut au moins un point d'apparition")
 	if g.metal_deposits.is_empty():
 		issues.append("Il faut au moins un gisement de métal")

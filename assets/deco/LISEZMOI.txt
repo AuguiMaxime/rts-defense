@@ -1,0 +1,1 @@
+Décor de l'éditeur de missions : chaque PNG déposé ici devient un objet de décor posable.

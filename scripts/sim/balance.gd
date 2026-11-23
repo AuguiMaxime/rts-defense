@@ -49,6 +49,18 @@ const ENEMIES := {
 	"siege": {"hp": 170, "speed": 0.6, "damage": 18, "range": 2.6, "cooldown": 2.8, "armor": 4, "flying": false},
 	"mothership": {"hp": 900, "speed": 0.45, "damage": 30, "range": 3.0, "cooldown": 1.4, "armor": 3, "flying": true},
 }
+## Structures et unités ennemies posées dans l'éditeur de missions.
+## size = côté en cases (bloque le passage) ; spawn = type d'ennemi produit toutes les spawn_every secondes.
+const ENEMY_STRUCTURES := {
+	"e_tower_gun": {"name": "Tourelle ennemie", "hp": 300, "speed": 0.0, "damage": 10, "range": 4.5, "cooldown": 0.6, "armor": 2, "flying": false, "size": 1, "look": "gun"},
+	"e_tower_cannon": {"name": "Canon ennemi", "hp": 400, "speed": 0.0, "damage": 30, "range": 5.0, "cooldown": 1.8, "armor": 3, "flying": false, "size": 1, "look": "cannon"},
+	"e_tower_missile": {"name": "Lance-missiles ennemi", "hp": 300, "speed": 0.0, "damage": 18, "range": 6.0, "cooldown": 1.2, "armor": 2, "flying": false, "size": 1, "look": "missile"},
+	"e_tower_laser": {"name": "Laser ennemi", "hp": 280, "speed": 0.0, "damage": 22, "range": 5.0, "cooldown": 0.9, "armor": 2, "flying": false, "size": 1, "look": "laser"},
+	"e_siege_tank": {"name": "Char ennemi en siège", "hp": 350, "speed": 0.0, "damage": 35, "range": 8.0, "cooldown": 3.0, "armor": 5, "flying": false, "size": 1, "look": "siege"},
+	"e_bunker": {"name": "Bunker ennemi", "hp": 650, "speed": 0.0, "damage": 12, "range": 4.0, "cooldown": 0.8, "armor": 4, "flying": false, "size": 2, "look": "bunker"},
+	"e_barracks": {"name": "Caserne ennemie", "hp": 800, "speed": 0.0, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 3, "flying": false, "size": 2, "look": "barracks", "spawn": "normal", "spawn_every": 30.0},
+	"e_hq": {"name": "Base ennemie", "hp": 2500, "speed": 0.0, "damage": 20, "range": 4.5, "cooldown": 1.5, "armor": 4, "flying": false, "size": 3, "look": "hq", "spawn": "armored", "spawn_every": 45.0},
+}
 ## Objectifs bonus (neutres : ne combattent pas, suivent la voie ferrée / la route / l'eau).
 const OBJECTIVE_ENTITIES := {
 	"train": {"hp": 700, "speed": 1.7, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 3, "flying": false},

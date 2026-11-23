@@ -74,6 +74,8 @@ func _draw() -> void:
 				GameGrid.Cell.SPAWN:
 					draw_texture_rect(Sprites.SCORCH, r.grow(24), false, Color(1, 1, 1, 0.9))
 					draw_arc(r.get_center(), TILE * 0.42, 0, TAU, 40, COLOR_SPAWN, 3.0)
+				GameGrid.Cell.WALL:
+					_draw_wall(c, r)
 				GameGrid.Cell.WATER:
 					_draw_water(c, r)
 				GameGrid.Cell.ROAD:
@@ -108,6 +110,25 @@ func _draw() -> void:
 func _tiled(tex: Texture2D, c: Vector2i, r: Rect2, mod := Color(1, 1, 1)) -> void:
 	var n := tex.get_width() / 2.0
 	draw_texture_rect_region(tex, r, Rect2((c.x % 2) * n, (c.y % 2) * n, n, n), mod)
+
+
+## Mur : bloc métallique, raccordé à ses voisins.
+func _draw_wall(c: Vector2i, r: Rect2) -> void:
+	var ctr := r.get_center()
+	var dark := Color(0.14, 0.16, 0.2)
+	var mid := Color(0.3, 0.34, 0.4)
+	draw_rect(Rect2(ctr - Vector2(18, 18) + Vector2(4, 6), Vector2(36, 36)), Color(0, 0, 0, 0.3))
+	for i in 4:
+		var nb: Vector2i = c + DIRS[i]
+		if grid.get_cell(nb) == GameGrid.Cell.WALL:
+			draw_set_transform(ctr, i * PI / 2.0)
+			draw_rect(Rect2(-14, -32, 28, 32), dark)
+			draw_rect(Rect2(-10, -32, 20, 32), mid)
+			draw_line(Vector2(0, -32), Vector2(0, -6), Color(0.3, 0.9, 1.0, 0.6), 2.0)
+			draw_set_transform(Vector2.ZERO)
+	draw_rect(Rect2(ctr - Vector2(18, 18), Vector2(36, 36)), dark)
+	draw_rect(Rect2(ctr - Vector2(14, 14), Vector2(28, 28)), mid)
+	draw_rect(Rect2(ctr - Vector2(6, 6), Vector2(12, 12)), Color(0.3, 0.9, 1.0, 0.7))
 
 
 ## Eau + berges (rochers et herbe) du côté des cases de terre.

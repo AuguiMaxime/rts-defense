@@ -32,6 +32,9 @@ var net_events: Array[Dictionary] = []
 var deposit_left := {}
 ## Base du joueur 2 (coop), ou null.
 var hq_site: BuildSite = null
+## Mission (type, règles de victoire, entités posées dans l'éditeur).
+var mission: Mission
+var time := 0.0 # secondes de jeu écoulées
 ## Recherches terminées : id -> niveau (partagé avec Research.levels).
 var upgrades := {}
 var depleted: Array[Vector2i] = []
@@ -104,6 +107,7 @@ func _init(g: GameGrid, config := {}) -> void:
 					"total": int(Balance.OBJECTIVES[o.type].count)})
 	for i in config.get("start_workers", Balance.START_WORKERS):
 		_spawn_worker()
+	mission = Mission.new(config.get("mission", {}), config.get("entities", []))
 	# Coop : la 2e base est posée là où la carte la prévoit, avec 3 ouvriers.
 	if config.get("coop", false) and grid.base2_cells.size() == 9:
 		var tl := grid.base2_cells[0]
@@ -122,6 +126,7 @@ func _init(g: GameGrid, config := {}) -> void:
 			var spots := pathfinder.free_cells_around(hq.cells())
 			if not spots.is_empty():
 				_spawn_worker(spots[randi() % spots.size()])
+	mission.setup(self)
 
 
 # --- Avancement du temps -------------------------------------------------
@@ -129,8 +134,10 @@ func _init(g: GameGrid, config := {}) -> void:
 func tick(delta: float) -> void:
 	if state != State.PLAYING:
 		return
+	time += delta
 	waves.tick(delta, self)
 	_tick_objectives(delta)
+	mission.tick(self, delta)
 	if orbital_cooldown > 0.0:
 		orbital_cooldown = maxf(0.0, orbital_cooldown - delta)
 	if _flow_dirty:
@@ -159,8 +166,12 @@ func tick(delta: float) -> void:
 	if base_hp <= 0:
 		base_hp = 0
 		state = State.LOST
-	elif waves.finished() and not enemies.any(func(x: Enemy) -> bool: return not x.neutral):
-		state = State.WON
+	else:
+		match mission.result(self):
+			"won":
+				state = State.WON
+			"lost":
+				state = State.LOST
 
 
 ## Reprend la partie après une victoire, en waves infinies.
@@ -272,7 +283,8 @@ func _longest_route(check: Callable) -> Array[Vector2]:
 func _tick_objectives(delta: float) -> void:
 	for i in objectives.size():
 		var o := objectives[i]
-		if o.state == "pending" and waves.wave >= o.wave:
+		var ready: bool = time >= float(o.time) if o.has("time") else waves.wave >= int(o.wave)
+		if o.state == "pending" and ready:
 			var route := objective_route(o.type)
 			if route.size() < 4:
 				o.state = "failed"
@@ -587,8 +599,9 @@ func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
 	var best_d := r * r
 	var best_n: Enemy = null
 	var best_nd := r * r
-	var b0 := Vector2i(int(maxf(0.0, center.x - r)) / BUCKET, int(maxf(0.0, center.y - r)) / BUCKET)
-	var b1 := Vector2i(int(center.x + r) / BUCKET, int(center.y + r) / BUCKET)
+	var rr := r + 1.5 # les grosses structures comptent depuis leur bord
+	var b0 := Vector2i(int(maxf(0.0, center.x - rr)) / BUCKET, int(maxf(0.0, center.y - rr)) / BUCKET)
+	var b1 := Vector2i(int(center.x + rr) / BUCKET, int(center.y + rr) / BUCKET)
 	for by in range(b0.y, b1.y + 1):
 		for bx in range(b0.x, b1.x + 1):
 			var list: Variant = _buckets.get(Vector2i(bx, by))
@@ -598,6 +611,8 @@ func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
 				if not _can_hit(st, e):
 					continue
 				var d := center.distance_squared_to(e.pos)
+				if e.radius > 0.0:
+					d = pow(maxf(0.0, sqrt(d) - e.radius), 2.0)
 				if e.neutral:
 					# Objectif bonus : seulement s'il n'y a pas d'ennemi hostile à portée.
 					if d <= best_nd:
@@ -673,7 +688,7 @@ func _tick_tower(s: BuildSite, delta: float) -> void:
 	var center := s.center()
 	var t := s.target
 	# On garde la cible tant qu'elle est vivante et à portée ; sinon on cherche (au plus 5 fois par seconde).
-	if t == null or t.hp <= 0 or center.distance_squared_to(t.pos) > st.range * st.range:
+	if t == null or t.hp <= 0 or center.distance_to(t.pos) - t.radius > st.range:
 		t = null
 		if s.retarget_timer <= 0.0:
 			s.retarget_timer = 0.2
@@ -690,6 +705,8 @@ func _tick_tower(s: BuildSite, delta: float) -> void:
 
 
 func _tick_unit(u: Unit, delta: float) -> void:
+	if u.locked:
+		return # véhicule allié piloté par la mission
 	if u.ability_cd > 0.0:
 		u.ability_cd -= delta
 	if u.buff_time > 0.0:
@@ -733,7 +750,7 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			if u.target == null and u.retarget_timer <= 0.0:
 				u.retarget_timer = 0.3
 				u.target = _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA)
-			if u.target != null and u.pos.distance_to(u.target.pos) > rng + Unit.AGGRO_EXTRA + 2.0:
+			if u.target != null and u.pos.distance_to(u.target.pos) - u.target.radius > rng + Unit.AGGRO_EXTRA + 2.0:
 				u.target = null
 			if u.target == null:
 				var dd := u.pos.distance_to(u.dest)
@@ -771,7 +788,7 @@ func _tick_unit(u: Unit, delta: float) -> void:
 	if u.target != null:
 		u.stuck_pos = Vector2.INF # en combat : la détection de blocage repart de zéro
 		u.stuck_t = 0.0
-		var d := u.pos.distance_to(u.target.pos)
+		var d := u.pos.distance_to(u.target.pos) - u.target.radius
 		if d <= rng:
 			u.path.clear()
 			u.aim_angle = (u.target.pos - u.pos).angle()
@@ -830,7 +847,7 @@ func _unit_shoot(u: Unit, st: Dictionary) -> void:
 func _tick_sieged(u: Unit, st: Dictionary) -> void:
 	u.path.clear()
 	var rng: float = st.range
-	if u.target != null and (u.target.hp <= 0 or u.pos.distance_to(u.target.pos) > rng):
+	if u.target != null and (u.target.hp <= 0 or u.pos.distance_to(u.target.pos) - u.target.radius > rng):
 		u.target = null
 	if u.target == null and u.retarget_timer <= 0.0:
 		u.retarget_timer = 0.3
@@ -963,6 +980,9 @@ func _tick_enemy(e: Enemy, delta: float) -> void:
 	if e.neutral:
 		_tick_neutral(e, delta)
 		return
+	if e.mode != "march":
+		_tick_placed_enemy(e, delta)
+		return
 	e.attack_timer -= delta
 	e.retarget_timer -= delta
 	if e.retarget_timer <= 0.0:
@@ -982,11 +1002,82 @@ func _tick_enemy(e: Enemy, delta: float) -> void:
 	e.pos += dir * e.speed * (e.slow_mult if e.slow_timer > 0.0 else 1.0) * delta
 
 
+## Ennemi posé par l'éditeur de missions : structure fixe ("static") ou garde ("guard").
+func _tick_placed_enemy(e: Enemy, delta: float) -> void:
+	e.attack_timer -= delta
+	e.retarget_timer -= delta
+	e.repath_timer -= delta
+	# Casernes et bases ennemies : produisent des ennemis qui marchent sur la base du joueur.
+	var def: Dictionary = Balance.ENEMY_STRUCTURES.get(e.type, {})
+	if def.has("spawn"):
+		e.spawn_timer -= delta
+		if e.spawn_timer <= 0.0:
+			e.spawn_timer = float(def.spawn_every)
+			var spots := pathfinder.free_cells_around(_structure_cells(e))
+			if not spots.is_empty():
+				spawn_enemy(def.spawn, spots[_rng.randi() % spots.size()], waves.hp_scale())
+	if e.attack_range <= 0.0:
+		return
+	var aggro := e.attack_range if e.mode == "static" else e.attack_range + 4.0
+	if e.retarget_timer <= 0.0:
+		e.retarget_timer = 0.3
+		_pick_target(e, aggro + e.radius)
+	var dist := _target_distance(e) - e.radius
+	if e.target_kind != Enemy.Target.NONE:
+		e.aim_angle = (_target_pos(e) - e.pos).angle()
+	if e.target_kind != Enemy.Target.NONE and dist <= e.attack_range:
+		if e.attack_timer <= 0.0:
+			e.attack_timer = e.cooldown
+			_enemy_attack(e)
+		return
+	if e.mode == "static":
+		return
+	# Garde : poursuit sa cible sans trop s'éloigner, sinon revient à son poste.
+	var goal := e.guard_pos
+	if e.target_kind != Enemy.Target.NONE and e.pos.distance_to(e.guard_pos) < 9.0:
+		goal = _target_pos(e)
+	if e.pos.distance_to(goal) < 0.4:
+		return
+	if e.path.is_empty() or e.repath_timer <= 0.0:
+		e.repath_timer = 0.6
+		e.path = _path_toward(Vector2i(e.pos.floor()), Vector2i(goal.floor()))
+	if e.path.is_empty():
+		return
+	var t := Vector2(e.path[0]) + Vector2(0.5, 0.5)
+	var step := e.speed * (e.slow_mult if e.slow_timer > 0.0 else 1.0) * delta
+	var d := e.pos.distance_to(t)
+	if d <= step or d < 0.3:
+		e.path.remove_at(0)
+	else:
+		e.facing = (t - e.pos) / d
+		e.pos += e.facing * step
+
+
+func _target_pos(e: Enemy) -> Vector2:
+	match e.target_kind:
+		Enemy.Target.BASE:
+			return base_center()
+		Enemy.Target.WORKER, Enemy.Target.UNIT:
+			return e.target_ref.pos
+		Enemy.Target.SITE:
+			return (e.target_ref as BuildSite).center()
+	return e.pos
+
+
+func _structure_cells(e: Enemy) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var tl := Vector2i((e.pos - Vector2(e.size, e.size) * 0.5).round())
+	for dy in maxi(1, e.size):
+		for dx in maxi(1, e.size):
+			out.append(tl + Vector2i(dx, dy))
+	return out
+
+
 ## Cible la plus proche à portée : ouvrier, unité, bâtiment ou base.
-func _pick_target(e: Enemy) -> void:
+func _pick_target(e: Enemy, reach := -1.0) -> void:
 	e.target_kind = Enemy.Target.NONE
 	e.target_ref = null
-	var best_d := e.attack_range
+	var best_d := e.attack_range if reach < 0.0 else reach
 	var d := _dist_to_rect(e.pos, _base_rect)
 	if d <= best_d:
 		best_d = d
@@ -1051,6 +1142,11 @@ func _enemy_attack(e: Enemy) -> void:
 func _remove_dead() -> void:
 	for e in enemies:
 		if e.hp <= 0:
+			for x in enemies:
+				if x.hp <= 0 and x.is_structure():
+					for c in _structure_cells(x):
+						pathfinder.set_solid(c, false)
+					_flow_dirty = true
 			enemies = enemies.filter(func(x: Enemy) -> bool: return x.hp > 0)
 			break
 	for w in workers.filter(func(x: Worker) -> bool: return x.hp <= 0):
@@ -1579,6 +1675,8 @@ func unit_at(p: Vector2, radius := 0.55) -> Unit:
 	var best: Unit = null
 	var best_d := radius
 	for u in units:
+		if u.locked:
+			continue
 		var d := u.pos.distance_to(p)
 		if d <= best_d:
 			best = u
@@ -1608,7 +1706,7 @@ func workers_in_rect(r: Rect2) -> Array[Worker]:
 func units_in_rect(r: Rect2) -> Array[Unit]:
 	var result: Array[Unit] = []
 	for u in units:
-		if r.has_point(u.pos):
+		if r.has_point(u.pos) and not u.locked:
 			result.append(u)
 	return result
 

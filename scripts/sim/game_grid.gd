@@ -4,7 +4,7 @@ extends RefCounted
 ## Simulation pure : aucune dépendance à l'affichage, pour pouvoir tourner
 ## plus tard côté serveur en multijoueur.
 
-enum Cell { EMPTY, ROCK, BASE, METAL, ESSENCE, SPAWN, WATER, ROAD, RAIL, BRIDGE, RAIL_BRIDGE }
+enum Cell { EMPTY, ROCK, BASE, METAL, ESSENCE, SPAWN, WATER, ROAD, RAIL, BRIDGE, RAIL_BRIDGE, WALL }
 
 const CELL_NAMES := {
 	Cell.EMPTY: "Terrain libre",
@@ -18,6 +18,7 @@ const CELL_NAMES := {
 	Cell.RAIL: "Voie ferrée",
 	Cell.BRIDGE: "Pont routier",
 	Cell.RAIL_BRIDGE: "Pont ferroviaire",
+	Cell.WALL: "Mur",
 }
 
 var width := 0

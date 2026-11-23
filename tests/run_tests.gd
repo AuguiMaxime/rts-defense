@@ -46,6 +46,7 @@ func _init() -> void:
 	_test_hold()
 	_test_coop_base()
 	_test_chain_build()
+	_test_missions()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -342,7 +343,7 @@ func _test_all_maps() -> void:
 	print("Toutes les maps")
 	for l in Content.LEVELS:
 		var map := MapData.load_from(l.map)
-		var world := GameWorld.new(MapLoader.from_layout(map.LAYOUT), {"waves": l.waves})
+		var world := GameWorld.new(MapLoader.from_layout(map.LAYOUT), {"waves": l.waves, "mission": map.mission, "entities": map.entities})
 		_check(world.grid.base_cells.size() == 9 and world.enemies_can_reach_base() and world.workers.size() == 3,
 				"map %d « %s » valide (%d spawns)" % [l.id, map.NAME, world.grid.spawn_points.size()])
 
@@ -523,7 +524,7 @@ func _test_map_data() -> void:
 	print("Cartes de l'éditeur")
 	for l in Content.LEVELS:
 		var md := MapData.load_from(l.map)
-		_check(MapData.validate(MapLoader.from_layout(md.LAYOUT)).is_empty(), "carte intégrée « %s » valide" % md.NAME)
+		_check(MapData.validate(MapLoader.from_layout(md.LAYOUT), md.mission).is_empty(), "carte intégrée « %s » valide" % md.NAME)
 	var m := MapData.new()
 	m.NAME = "Test éditeur"
 	m.LAYOUT = TEST_MAP
@@ -534,6 +535,12 @@ func _test_map_data() -> void:
 	var back := MapData.load_from(p)
 	_check(back.NAME == "Test éditeur" and back.waves == 7 and is_equal_approx(back.difficulty, 1.3), "relecture des réglages")
 	_check(MapData.from_grid(MapLoader.from_layout(back.LAYOUT)) == MapData.from_grid(MapLoader.from_layout(TEST_MAP)), "plan identique")
+	DirAccess.remove_absolute(p)
+	m.mission = {"type": "escort", "briefing": "Test"}
+	m.entities = [{"kind": "vip", "type": "commander", "cell": [2, 2]}, {"kind": "zone", "role": "goal", "cell": [5, 5], "radius": 2.5}]
+	m.save_to(p)
+	var back2 := MapData.load_from(p)
+	_check(back2.mission.get("type") == "escort" and back2.entities.size() == 2, "mission et objets enregistrés puis relus")
 	DirAccess.remove_absolute(p)
 	var closed := MapLoader.from_layout("#####\n#B.S#\n#####")
 	_check(not MapData.validate(closed).is_empty(), "carte invalide détectée")
@@ -858,3 +865,92 @@ func _test_chain_build() -> void:
 	_run(world, 60.0)
 	var built := world.sites.filter(func(x: BuildSite) -> bool: return x.built).size()
 	_check(placed >= 3 and built == placed, "un seul ouvrier enchaîne les %d chantiers voisins (%d construits)" % [placed, built])
+
+
+const MISSION_MAP := """
+S.........................
+..........................
+..........................
+..........................
+..........................
+...BBB....................
+...BBB....................
+...BBB....................
+.M........................
+..........................
+"""
+
+
+func _mission_world(mission: Dictionary, ents: Array) -> GameWorld:
+	return GameWorld.new(MapLoader.from_layout(MISSION_MAP), {"mission": mission, "entities": ents})
+
+
+func _test_missions() -> void:
+	print("Missions")
+	# Structures et gardes ennemis
+	var w := _mission_world({"type": "destroy_base"}, [
+		{"kind": "structure", "type": "e_hq", "cell": [20, 3]},
+		{"kind": "structure", "type": "e_tower_gun", "cell": [15, 6]},
+		{"kind": "enemy", "type": "normal", "cell": [18, 8]},
+	])
+	_check(w.enemies.size() == 3 and not w.pathfinder.is_free(Vector2i(21, 4)), "base, tourelle et garde ennemis posés (la base bloque le passage)")
+	_check(w.waves.timer == INF, "pas de vagues si la mission ne les demande pas")
+	var u := _add_unit(w, "soldier", Vector2(15.5, 9.5))
+	_run(w, 3.0)
+	_check(u.hp < u.max_hp, "la tourelle ennemie tire sur l'unité à portée")
+	var guard := w.enemies.filter(func(e: Enemy) -> bool: return e.type == "normal")
+	_check(not guard.is_empty() and guard[0].pos.distance_to(Vector2(18.5, 8.5)) < 9.0, "le garde reste près de son poste")
+	_check(w.mission.result(w) == "", "mission en cours tant que la base ennemie tient")
+	for e in w.enemies:
+		if e.type == "e_hq":
+			e.hp = 0
+	_run(w, 0.2)
+	_check(w.state == GameWorld.State.WON, "base ennemie détruite = victoire")
+	_check(w.pathfinder.is_free(Vector2i(21, 4)), "ses cases redeviennent praticables")
+	# Survie
+	var ws := _mission_world({"type": "survive", "time": 20, "waves_enabled": false}, [])
+	_run(ws, 21.0)
+	_check(ws.state == GameWorld.State.WON, "survie : victoire au bout du chrono")
+	# Escorte
+	var we := _mission_world({"type": "escort"}, [
+		{"kind": "vip", "type": "commander", "cell": [8, 6]},
+		{"kind": "zone", "role": "goal", "cell": [20, 6], "radius": 2},
+	])
+	_check(we.mission.vip != null, "unité VIP posée")
+	we.command_units_move([we.mission.vip], Vector2i(20, 6))
+	_run(we, 12.0)
+	_check(we.state == GameWorld.State.WON, "escorte : VIP arrivé = victoire")
+	var we2 := _mission_world({"type": "escort"}, [
+		{"kind": "vip", "type": "commander", "cell": [8, 6]},
+		{"kind": "zone", "role": "goal", "cell": [20, 6], "radius": 2},
+	])
+	we2.mission.vip.hp = 0
+	_run(we2, 0.2)
+	_check(we2.state == GameWorld.State.LOST, "escorte : VIP perdu = défaite")
+	# Convoi allié à protéger
+	var wd := _mission_world({"type": "escort_defend"}, [
+		{"kind": "escortee", "cell": [7, 2]},
+		{"kind": "waypoint", "order": 0, "cell": [14, 2]},
+		{"kind": "waypoint", "order": 1, "cell": [14, 8]},
+		{"kind": "waypoint", "order": 2, "cell": [22, 8]},
+	])
+	_check(wd.mission.escortee != null and wd.unit_at(wd.mission.escortee.pos) == null, "convoi allié posé et non sélectionnable")
+	_run(wd, 40.0)
+	_check(wd.state == GameWorld.State.WON, "convoi allié arrivé au bout du trajet = victoire")
+	# Prise de position
+	var wc := _mission_world({"type": "capture", "time": 5}, [
+		{"kind": "zone", "role": "capture", "cell": [12, 6], "radius": 2},
+		{"kind": "ally_unit", "type": "soldier", "cell": [12, 6], "hold": true},
+	])
+	_run(wc, 6.0)
+	_check(wc.state == GameWorld.State.WON, "prise de position tenue 5 s = victoire")
+	# Convois en objectif principal
+	var conv_map := "S.........................\n..........................\n==========================\n..........................\n...BBB....................\n...BBB....................\n...BBB....................\n.M........................"
+	var wv := GameWorld.new(MapLoader.from_layout(conv_map), {"mission": {"type": "convoy", "convoy_kind": "convoy", "convoy_count": 2, "convoy_need": 2, "convoy_start": 1, "convoy_interval": 5}})
+	_check(wv.objectives.size() == 2, "2 convois programmés")
+	_run(wv, 30.0)
+	_check(wv.state == GameWorld.State.LOST, "convois non détruits = défaite")
+	# Alliés posés
+	var wa := _mission_world({"type": "waves"}, [{"kind": "ally_tower", "type": "cannon", "cell": [10, 4], "level": 2}])
+	_check(wa.sites.size() == 1 and wa.sites[0].built and wa.sites[0].level == 2, "tourelle alliée déjà construite au niveau 2")
+	_check(wa.metal == Balance.START_METAL, "sans coûter de métal")

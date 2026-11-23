@@ -77,6 +77,9 @@ func _ready() -> void:
 	hud.setup(self)
 	units_view.shake.connect(camera.add_shake)
 	units_view.base_hit.connect(hud.flash_damage)
+	if world.mission.type != "waves" or str(world.mission.data.get("briefing", "")) != "":
+		if not coop:
+			hud.show_briefing(map_script.NAME, Mission.TYPE_NAMES[world.mission.type], str(world.mission.data.get("briefing", "")), world.mission.objective_text(world))
 	if level.id == 1 and not survival and not coop and not Save.data.get("tutorial_done", false):
 		tutorial = Tutorial.new()
 		tutorial.theme = Ui.theme
@@ -100,6 +103,8 @@ func _build_config() -> Dictionary:
 		"laser": Save.owns("tower_laser"),
 		"objectives": [] if survival else map_script.objectives,
 		"coop": Net.online,
+		"mission": {} if survival else map_script.mission,
+		"entities": [] if survival else map_script.entities,
 	}
 	var used: Array[String] = []
 	if Net.is_client():
@@ -271,7 +276,7 @@ func _clear_selection() -> void:
 
 ## Bouton « ARMÉE » : sélectionne toutes les unités de combat.
 func select_army() -> void:
-	var army: Array = world.units.filter(func(x: Unit) -> bool: return x.alive)
+	var army: Array = world.units.filter(func(x: Unit) -> bool: return x.alive and not x.locked)
 	if army.is_empty():
 		hud.flash("Aucune unité de combat : forme-en à la base ou à la caserne", Ui.MUTED)
 		return

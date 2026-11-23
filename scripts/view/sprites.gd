@@ -53,6 +53,8 @@ const UNIT_LOOK := {
 	"tank": {"tex": preload("res://assets/gen/tank_hull.png"), "size": 76, "tint": Color(1, 1, 1), "rot": PI / 2.0,
 			"turret": preload("res://assets/gen/tank_turret.png"), "turret_size": 88},
 	"aa_mech": {"tex": preload("res://assets/gen/mech_turret.png"), "size": 70, "tint": Color(1, 1, 1), "rot": PI / 2.0},
+	"commander": {"tex": preload("res://assets/gen/u_soldier.png"), "size": 64, "tint": Color(1.25, 1.1, 0.7), "rot": PI / 2.0},
+	"escort_truck": {"tex": preload("res://assets/gen/tank_hull.png"), "size": 70, "tint": Color(0.7, 1.0, 0.75), "rot": PI / 2.0},
 	"heavy_tank": {"tex": preload("res://assets/gen/htank_hull.png"), "size": 92, "tint": Color(1, 1, 1), "rot": PI / 2.0,
 			"turret": preload("res://assets/gen/htank_turret.png"), "turret_size": 96},
 }

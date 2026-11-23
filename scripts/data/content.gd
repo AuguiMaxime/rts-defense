@@ -157,6 +157,14 @@ const UNITS := {
 		"hp": 190, "speed": 1.8, "damage": 16, "range": 5.5, "delay": 0.5, "armor": 2, "targets": "air", "splash": 0.0,
 		"ability": "salvo",
 	},
+	"commander": {
+		"name": "Commandant", "desc": "Unité à escorter. Sa perte fait échouer la mission.", "metal": 0, "essence": 0, "time": 1.0, "pop": 0,
+		"hp": 260, "speed": 2.0, "damage": 14, "range": 3.5, "delay": 0.8, "armor": 2, "targets": "both", "splash": 0.0,
+	},
+	"escort_truck": {
+		"name": "Convoi allié", "desc": "Véhicule allié à protéger jusqu'au bout de son trajet.", "metal": 0, "essence": 0, "time": 1.0, "pop": 0,
+		"hp": 600, "speed": 0.9, "damage": 0, "range": 0.0, "delay": 1.0, "armor": 3, "targets": "none", "splash": 0.0,
+	},
 	"heavy_tank": {
 		"name": "Mastodonte", "desc": "Char lourd : énorme blindage, obus dévastateurs. Mode siège. Sol uniquement.", "metal": 250, "essence": 125, "time": 16.0, "pop": 4,
 		"hp": 480, "speed": 1.2, "damage": 55, "range": 5.0, "delay": 2.0, "armor": 6, "targets": "ground", "splash": 1.0,
@@ -231,6 +239,7 @@ const LEVELS: Array[Dictionary] = [
 	{"id": 4, "map": "res://maps/map_04.gd", "waves": 16, "difficulty": 1.35, "interval": 26.0},
 	{"id": 5, "map": "res://maps/map_05.gd", "waves": 16, "difficulty": 1.5, "interval": 22.0},
 	{"id": 6, "map": "res://maps/map_06.gd", "waves": 12, "difficulty": 1.2, "interval": 28.0},
+	{"id": 7, "map": "res://maps/map_07.gd", "waves": 8, "difficulty": 1.0, "interval": 40.0},
 ]
 
 

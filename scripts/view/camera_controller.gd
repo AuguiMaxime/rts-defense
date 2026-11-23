@@ -60,6 +60,9 @@ func _process(delta: float) -> void:
 		offset = Vector2.ZERO
 		_shake = 0.0
 	var dir := Vector2.ZERO
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return # on tape du texte : les touches ne déplacent pas la caméra
 	if Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_Q):
 		dir.x -= 1
 	if Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D):

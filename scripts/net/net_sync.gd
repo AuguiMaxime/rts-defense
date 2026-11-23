@@ -4,7 +4,8 @@ extends RefCounted
 ## Formats compacts (tableaux) pour limiter la taille des paquets.
 
 const ENEMY_TYPES: Array[String] = ["normal", "fast", "armored", "flying", "boss",
-		"swarmer", "spitter", "brute", "shell", "siege", "mothership", "train", "truck", "boat"]
+		"swarmer", "spitter", "brute", "shell", "siege", "mothership", "train", "truck", "boat",
+		"e_tower_gun", "e_tower_cannon", "e_tower_missile", "e_tower_laser", "e_siege_tank", "e_bunker", "e_barracks", "e_hq"]
 
 static func _prod(p: Producer) -> Array:
 	if p == null:
@@ -42,6 +43,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"u": units,
 		"dl": w.deposit_left,
 		"up": w.upgrades,
+		"ms": [w.mission.zones.map(func(z: Dictionary) -> Array: return [z.progress, z.captured]), w.mission.escort_i, w.time],
 		"ob": w.objectives.map(func(o: Dictionary) -> Array: return [o.state, o.destroyed]),
 		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
@@ -95,6 +97,13 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 			old.alive = false
 	w.workers = workers
 
+	if snap.has("ms"):
+		var zs: Array = snap.ms[0]
+		for i in mini(zs.size(), w.mission.zones.size()):
+			w.mission.zones[i].progress = zs[i][0]
+			w.mission.zones[i].captured = zs[i][1]
+		w.mission.escort_i = snap.ms[1]
+		w.time = snap.ms[2]
 	if snap.has("up") and snap.up != w.upgrades:
 		w.upgrades = snap.up
 		Research.levels = w.upgrades

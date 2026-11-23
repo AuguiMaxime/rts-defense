@@ -30,6 +30,16 @@ var neutral := false
 var route: Array[Vector2] = []
 var route_i := 0
 var objective := -1 # index de l'objectif dans GameWorld.objectives
+## Comportement : "march" (vague : marche vers la base), "guard" (posé : défend sa zone),
+## "static" (structure ou unité qui tient sa position : ne bouge jamais).
+var mode := "march"
+var guard_pos := Vector2.ZERO
+var radius := 0.0 # demi-taille pour les grosses structures (portée mesurée au bord)
+var size := 0 # côté en cases d'une structure (0 = pas une structure)
+var path: Array[Vector2i] = []
+var repath_timer := 0.0
+var spawn_timer := 0.0
+var aim_angle := 0.0
 var visual_offset := Vector2.ZERO # petit décalage pour ne pas tous se superposer à l'écran
 
 
@@ -38,7 +48,7 @@ func is_boss() -> bool:
 
 
 static func create(type_name: String, at: Vector2, hp_scale: float) -> Enemy:
-	var d: Dictionary = Balance.ENEMIES[type_name] if Balance.ENEMIES.has(type_name) else Balance.OBJECTIVE_ENTITIES[type_name]
+	var d: Dictionary = Balance.ENEMIES.get(type_name, Balance.OBJECTIVE_ENTITIES.get(type_name, Balance.ENEMY_STRUCTURES.get(type_name, {})))
 	var e := Enemy.new()
 	e.type = type_name
 	e.pos = at
@@ -51,4 +61,13 @@ static func create(type_name: String, at: Vector2, hp_scale: float) -> Enemy:
 	e.armor = d.armor
 	e.flying = d.flying
 	e.neutral = Balance.OBJECTIVE_ENTITIES.has(type_name)
+	if Balance.ENEMY_STRUCTURES.has(type_name):
+		e.mode = "static"
+		e.size = int(d.size)
+		e.radius = d.size * 0.5
+		e.spawn_timer = float(d.get("spawn_every", 0.0))
 	return e
+
+
+func is_structure() -> bool:
+	return size > 0

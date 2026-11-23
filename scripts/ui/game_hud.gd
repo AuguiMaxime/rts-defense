@@ -436,6 +436,38 @@ var _wave_panel: PanelContainer
 var _folded := false
 
 
+## Écran de briefing au début d'une mission (met le jeu en pause jusqu'à « COMMENCER »).
+func show_briefing(title: String, kind: String, text: String, objective: String) -> void:
+	var layer := Control.new()
+	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(layer)
+	var dim := ColorRect.new()
+	dim.color = Color(Ui.BG, 0.82)
+	layer.add_child(dim)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var center := CenterContainer.new()
+	layer.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var p := Ui.panel(Vector2(620, 0), true)
+	var v := Ui.vbox(10)
+	v.add_child(Ui.label("BRIEFING · %s" % kind.to_upper(), 16, Ui.CYAN, true))
+	v.add_child(Ui.title(title.to_upper(), 28))
+	if text != "":
+		var t := Ui.label(text, 18, Ui.TEXT)
+		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		t.custom_minimum_size = Vector2(560, 0)
+		v.add_child(t)
+	v.add_child(Ui.label("◆ " + objective, 18, Ui.GOLD, true))
+	var go := Ui.button("COMMENCER", true, Vector2(0, 62))
+	go.pressed.connect(func() -> void:
+		layer.queue_free()
+		game.set_paused(false))
+	v.add_child(go)
+	p.add_child(v)
+	center.add_child(p)
+	game.set_paused(true)
+
+
 func _toggle_fold() -> void:
 	_folded = not _folded
 	_fold_btn.text = "◂" if _folded else "▸"
@@ -446,45 +478,53 @@ func _toggle_fold() -> void:
 	Sfx.play("click", -6.0)
 var _obj_box: VBoxContainer
 var _obj_key := ""
+var _obj_states: Array[String] = []
 
 
 ## Objectifs bonus de la mission (sous le panneau des vagues).
 func _update_objectives(w: GameWorld) -> void:
-	if w.objectives.is_empty():
+	var main_mission := w.mission != null and w.mission.type != "waves"
+	_wave_panel.visible = not _folded and (w.mission == null or w.mission.waves_enabled())
+	if w.objectives.is_empty() and not main_mission:
 		return
 	_obj_panel.visible = not _folded
-	var key := ""
+	var key := w.mission.objective_text(w) if main_mission else ""
 	for o in w.objectives:
 		key += "%s%d|" % [o.state, o.destroyed]
 	if key == _obj_key:
 		return
 	# Annonce des changements d'état
-	if _obj_key != "":
-		var old := _obj_key.split("|")
-		for i in w.objectives.size():
-			var o: Dictionary = w.objectives[i]
-			var def: Dictionary = Balance.OBJECTIVES[o.type]
-			if i < old.size() and not old[i].begins_with(o.state):
-				match o.state:
-					"active":
-						flash("★ OBJECTIF BONUS : %s !" % def.name, Ui.GOLD)
-						Sfx.play("wave", -6.0)
-					"done":
-						flash("★ Objectif réussi : +%d métal  +%d essence" % [def.metal, def.essence], Ui.GREEN)
-						Sfx.play("victory", -6.0)
-					"failed":
-						flash("Objectif raté : la cible s'est échappée", Ui.RED)
+	for i in w.objectives.size():
+		var o: Dictionary = w.objectives[i]
+		var def: Dictionary = Balance.OBJECTIVES[o.type]
+		var prev: String = _obj_states[i] if i < _obj_states.size() else "pending"
+		if prev != o.state:
+			match o.state:
+				"active":
+					flash(("⚠ %s : la cible arrive !" if o.get("main", false) else "★ OBJECTIF BONUS : %s !") % def.name, Ui.GOLD)
+					Sfx.play("wave", -6.0)
+				"done":
+					flash("★ Cible détruite : +%d métal  +%d essence" % [def.metal, def.essence], Ui.GREEN)
+					Sfx.play("victory", -6.0)
+				"failed":
+					flash("La cible s'est échappée", Ui.RED)
+	_obj_states.assign(w.objectives.map(func(o: Dictionary) -> String: return o.state))
 	_obj_key = key
 	for c in _obj_box.get_children():
 		c.queue_free()
-	_obj_box.add_child(Ui.label("★ OBJECTIFS BONUS", 13, Ui.GOLD, true))
-	for o in w.objectives:
+	if main_mission:
+		_obj_box.add_child(Ui.label("◆ MISSION : %s" % str(Mission.TYPE_NAMES[w.mission.type]).to_upper(), 13, Ui.CYAN, true))
+		_obj_box.add_child(Ui.label(w.mission.objective_text(w), 14, Ui.TEXT))
+	var bonus := w.objectives.filter(func(o: Dictionary) -> bool: return not o.get("main", false))
+	if not bonus.is_empty():
+		_obj_box.add_child(Ui.label("★ OBJECTIFS BONUS", 13, Ui.GOLD, true))
+	for o in bonus:
 		var def: Dictionary = Balance.OBJECTIVES[o.type]
 		var txt: String = def.name
 		var col := Ui.MUTED
 		match o.state:
 			"pending":
-				txt += "  ·  vague %d" % o.wave
+				txt += ("  ·  à %d s" % int(o.time)) if o.has("time") else ("  ·  vague %d" % o.wave)
 			"active":
 				txt += "  ·  %d/%d" % [o.destroyed, o.total] if o.total > 1 else "  ·  EN COURS"
 				col = Ui.GOLD

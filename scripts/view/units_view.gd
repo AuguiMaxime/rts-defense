@@ -96,6 +96,7 @@ func _draw() -> void:
 		if left > 0 and left < mx:
 			var r := Rect2(Vector2(c) * TILE + Vector2(8, TILE + 4), Vector2(TILE - 16, 0))
 			_draw_bar(r, float(left) / mx, MapView.COLOR_METAL if world.grid.get_cell(c) == GameGrid.Cell.METAL else MapView.COLOR_ESSENCE, 5.0)
+	_draw_mission_layer()
 	for s in world.sites:
 		_draw_site(s)
 	for w in world.workers:
@@ -237,7 +238,90 @@ func _draw_producer(s: BuildSite, r: Rect2) -> void:
 		draw_arc(r.position + Vector2(r.size.x - 18, 18), 11, -PI / 2, -PI / 2 + TAU * s.producer.ratio(), 20, Color(0.4, 1.0, 0.45), 3.0)
 
 
+var _deco_cache := {}
+
+
+static func deco_texture(name: String) -> Texture2D:
+	var p := "res://assets/deco/%s.png" % name
+	return load(p) if ResourceLoader.exists(p) else null
+
+
+## Décor, zones et trajet du convoi allié (sous les unités).
+func _draw_mission_layer() -> void:
+	var m: Mission = world.mission
+	if m == null:
+		return
+	for d in m.decos:
+		if not _deco_cache.has(d.sprite):
+			_deco_cache[d.sprite] = deco_texture(d.sprite)
+		var tex: Texture2D = _deco_cache[d.sprite]
+		if tex != null:
+			var r := Rect2(Vector2(d.cell) * TILE, Vector2(TILE, TILE))
+			var k := float(tex.get_height()) / tex.get_width()
+			draw_texture_rect(tex, Rect2(r.position + Vector2(0, TILE * (1.0 - k)), Vector2(TILE, TILE * k)).grow(4), false)
+	for z in m.zones:
+		var c: Vector2 = z.pos * TILE
+		var rad: float = z.radius * TILE
+		if z.role == "goal":
+			draw_circle(c, rad, Color(0.3, 1.0, 0.45, 0.10))
+			draw_arc(c, rad, _anim, _anim + TAU, 48, Color(0.3, 1.0, 0.45, 0.8), 3.0)
+			draw_string(ThemeDB.fallback_font, c + Vector2(-40, 8), "ARRIVÉE", HORIZONTAL_ALIGNMENT_CENTER, 80, 20, Color(0.3, 1.0, 0.45))
+		else:
+			var col := Color(0.3, 1.0, 0.45) if z.captured else Color(1.0, 0.8, 0.2)
+			draw_circle(c, rad, Color(col, 0.10))
+			draw_arc(c, rad, 0, TAU, 48, Color(col, 0.7), 3.0)
+			var k: float = 1.0 if z.captured else z.progress / maxf(1.0, float(m.data.get("time", 30.0)))
+			draw_arc(c, rad - 8, -PI / 2, -PI / 2 + TAU * k, 48, col, 6.0)
+			draw_line(c + Vector2(0, 18), c + Vector2(0, -26), Color(0.9, 0.9, 0.9), 3.0)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -26), c + Vector2(22, -19 + sin(_anim * 6.0) * 2), c + Vector2(0, -12)]), col)
+	if m.escortee != null and m.escortee.alive and m.escort_i < m.escort_route.size():
+		var prev := m.escortee.pos * TILE
+		for i in range(m.escort_i, m.escort_route.size()):
+			var q := (Vector2(m.escort_route[i]) + Vector2(0.5, 0.5)) * TILE
+			draw_dashed_line(prev, q, Color(0.3, 1.0, 0.45, 0.5), 3.0, 12.0)
+			draw_circle(q, 6, Color(0.3, 1.0, 0.45, 0.8))
+			prev = q
+
+
+## Structures ennemies posées (tourelles, bunker, caserne, base).
+func _draw_structure(e: Enemy) -> void:
+	var def: Dictionary = Balance.ENEMY_STRUCTURES[e.type]
+	var p := e.pos * TILE
+	var sz := float(e.size) * TILE
+	var r := Rect2(p - Vector2(sz, sz) * 0.5, Vector2(sz, sz))
+	var red := Color(1.0, 0.55, 0.5)
+	match str(def.look):
+		"gun", "cannon", "missile", "laser":
+			var look: Dictionary = Sprites.TOWER_LOOK[def.look]
+			draw_texture_rect(look.base, r, false, Color(1.0, 0.5, 0.45))
+			var sc: float = look.scale
+			var tex: Texture2D = look.turret
+			draw_set_transform(p, e.aim_angle + look.rot, Vector2(sc, sc))
+			draw_texture(tex, -look.pivot, Color(1.0, 0.6, 0.55))
+			draw_set_transform(Vector2.ZERO)
+		"siege":
+			var lk: Dictionary = Sprites.ENEMY_LOOK.siege
+			draw_set_transform(p, e.aim_angle + lk.rot)
+			draw_texture_rect(lk.tex, Rect2(-43, -43, 86, 86), false)
+			draw_set_transform(Vector2.ZERO)
+			for i in 4:
+				var a := PI / 4.0 + i * PI / 2.0
+				draw_line(p + Vector2.from_angle(a) * 26, p + Vector2.from_angle(a) * 40, Color(0.5, 0.2, 0.2), 5.0)
+		"bunker", "barracks":
+			draw_texture_rect(Sprites.W_BARRACKS, Rect2(r.position + Vector2(5, 7), r.size), false, Color(0, 0, 0, 0.35))
+			draw_texture_rect(Sprites.W_BARRACKS if def.look == "barracks" else Sprites.W_FACTORY, r, false, red)
+		"hq":
+			draw_texture_rect(Sprites.W_BASE, Rect2(r.position + Vector2(6, 9), r.size), false, Color(0, 0, 0, 0.35))
+			draw_texture_rect(Sprites.W_BASE, r.grow(4), false, Color(1.0, 0.45, 0.4))
+	draw_rect(r.grow(2), Color(1.0, 0.25, 0.2, 0.5), false, 2.0)
+	if e.hp < e.max_hp or e.size >= 2:
+		_draw_bar(Rect2(r.position + Vector2(4, -8), Vector2(r.size.x - 8, 0)), float(e.hp) / e.max_hp, COLOR_ENEMY_BAR, 6.0)
+
+
 func _draw_unit(u: Unit) -> void:
+	if u.type == "escort_truck":
+		_draw_escortee(u)
+		return
 	var look: Dictionary = Sprites.UNIT_LOOK[u.type]
 	var p := u.pos * TILE
 	var size: float = look.size
@@ -277,6 +361,9 @@ func _draw_unit(u: Unit) -> void:
 			draw_arc(p, Content.SIEGE_RANGE * TILE, 0, TAU, 96, Color(1.0, 0.7, 0.2, 0.45), 2.0)
 	if u.hp < u.max_hp:
 		_draw_bar(Rect2(p - Vector2(20, ring + 4), Vector2(40, 0)), float(u.hp) / u.max_hp)
+	if u.vip:
+		draw_arc(p, ring + 6, 0, TAU, 32, Color(1.0, 0.8, 0.2, 0.6 + 0.3 * sin(_anim * 5.0)), 3.0)
+		draw_string(ThemeDB.fallback_font, p + Vector2(-8, -ring - 10), "★", HORIZONTAL_ALIGNMENT_CENTER, 16, 20, Color(1.0, 0.8, 0.2))
 
 
 func _draw_corners(r: Rect2, color: Color) -> void:
@@ -377,7 +464,22 @@ func _draw_box(at: Vector2, ang: float, sz: Vector2, col: Color, ridges: bool) -
 	draw_set_transform(Vector2.ZERO)
 
 
+func _draw_escortee(u: Unit) -> void:
+	var p := u.pos * TILE
+	var ang := u.facing.angle()
+	draw_arc(p, 34, 0, TAU, 32, Color(0.3, 1.0, 0.45, 0.6), 2.5)
+	_draw_box(p - u.facing * 10, ang, Vector2(40, 30), Color(0.28, 0.4, 0.3), true)
+	draw_set_transform(p, ang)
+	draw_rect(Rect2(12, -14, 18, 28), Color(0.2, 0.24, 0.28))
+	draw_rect(Rect2(22, -12, 6, 24), Color(0.35, 0.9, 1.0, 0.8))
+	draw_set_transform(Vector2.ZERO)
+	_draw_bar(Rect2(p - Vector2(30, 34), Vector2(60, 0)), float(u.hp) / u.max_hp, Color(0.3, 1.0, 0.45), 7.0)
+
+
 func _draw_enemy(e: Enemy) -> void:
+	if e.is_structure():
+		_draw_structure(e)
+		return
 	if e.neutral:
 		_draw_neutral(e)
 		return

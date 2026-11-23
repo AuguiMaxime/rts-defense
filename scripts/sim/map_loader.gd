@@ -14,6 +14,7 @@ const SYMBOLS := {
 	"T": GameGrid.Cell.RAIL,
 	"H": GameGrid.Cell.BRIDGE,
 	"Y": GameGrid.Cell.RAIL_BRIDGE,
+	"W": GameGrid.Cell.WALL,
 }
 
 
