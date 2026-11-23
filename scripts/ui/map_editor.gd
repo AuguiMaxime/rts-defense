@@ -48,7 +48,8 @@ func _ready() -> void:
 	map_view = MapView.new()
 	add_child(map_view)
 	camera = CameraController.new()
-	camera.min_zoom = 0.25
+	camera.min_zoom = 0.1
+	camera.free_pan = true
 	add_child(camera)
 	var overlay := _GridOverlay.new()
 	overlay.editor = self
@@ -132,7 +133,7 @@ func _fit_camera() -> void:
 func _refresh(full_check := false) -> void:
 	grid = MapLoader.from_layout("\n".join(rows))
 	map_view.setup(grid, data.GROUND)
-	camera.set_bounds(Rect2(Vector2.ZERO, Vector2(grid.width, grid.height) * TILE).grow(TILE * 3))
+	camera.set_bounds(Rect2(Vector2.ZERO, Vector2(grid.width, grid.height) * TILE).grow(TILE * 2))
 	if full_check:
 		_validate()
 
@@ -399,6 +400,21 @@ func _build_ui() -> void:
 	var undo := _small_button("↶ ANNULER", 150)
 	undo.pressed.connect(_undo_last)
 	lv.add_child(undo)
+	# Zoom et recadrage (utile au doigt)
+	var zh := Ui.hbox(4)
+	for z in [["−", 0.8], ["+", 1.25]]:
+		var zb := _small_button(z[0], 46)
+		zb.custom_minimum_size.y = 40
+		var f: float = z[1]
+		zb.pressed.connect(func() -> void: camera._zoom_at(camera.zoom.x * f, get_viewport_rect().size * 0.5))
+		zh.add_child(zb)
+	var fit := _small_button("CADRER", 54)
+	fit.custom_minimum_size.y = 40
+	fit.add_theme_font_size_override("font_size", 11)
+	fit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fit.pressed.connect(_fit_camera)
+	zh.add_child(fit)
+	lv.add_child(zh)
 	left.add_child(lv)
 	mid.add_child(left)
 

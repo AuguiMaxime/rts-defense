@@ -183,8 +183,15 @@ func _zoom_at(z: float, screen_pos: Vector2) -> void:
 	_clamp()
 
 
+## Éditeur : la caméra peut aller jusqu'aux bords de la carte (pour la sortir de sous les panneaux).
+var free_pan := false
+
+
 func _clamp() -> void:
 	if bounds.size == Vector2.ZERO:
+		return
+	if free_pan:
+		position = position.clamp(bounds.position, bounds.end)
 		return
 	var half := get_viewport_rect().size * 0.5 / zoom.x
 	var p := position
