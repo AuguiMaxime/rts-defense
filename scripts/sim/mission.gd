@@ -3,24 +3,25 @@ extends RefCounted
 ## Mission d'une carte : type, paramètres, entités posées dans l'éditeur, et règles de victoire.
 ##
 ## Types :
-##   waves          défense classique : survivre à toutes les vagues
-##   survive        tenir `time` secondes
+##   waves          défense : survivre à toutes les vagues (et garder en vie les bâtiments à défendre)
+##   survive        tenir `time` secondes ; la base détruite = défaite
 ##   destroy_base   détruire toutes les bases ennemies (structures "e_hq")
-##   convoy         détruire `need` convois sur `count` (train, camions ou bateau)
+##   convoy         détruire `convoy_need` convois ennemis sur `convoy_count`
 ##   escort         amener l'unité VIP dans la zone d'arrivée
-##   escort_defend  protéger le véhicule allié jusqu'au bout de son trajet (points de passage)
-##   capture        tenir toutes les zones de prise `time` secondes chacune
+##   escort_defend  faire arriver `convoy_need` convois alliés sur `convoy_count` au bout de leur trajet
+##   capture        tenir chaque zone de prise le temps indiqué sur la zone
 ##
 ## Entités (liste de dictionnaires, toutes avec "kind" et "cell") :
 ##   structure  {type}                    structure ennemie (Balance.ENEMY_STRUCTURES)
 ##   enemy      {type, hold}              unité ennemie en garde (hold = ne bouge pas)
 ##   ally_tower {type, level}             tourelle alliée déjà construite
 ##   ally_unit  {type, hold}              unité alliée déjà présente
+##   defend     {type}                    bâtiment allié à défendre (détruit = défaite, cible prioritaire des ennemis)
 ##   vip        {type}                    unité à escorter (mission escort)
-##   escortee   {}                        véhicule allié à protéger (mission escort_defend)
-##   waypoint   {order}                   trajet du véhicule allié
-##   zone       {role, radius}            "goal" (arrivée) ou "capture"
-##   deco       {sprite, block}           décor (block = bloque le passage)
+##   escortee   {}                        point de départ des convois alliés (optionnel)
+##   waypoint   {order, pause}            trajet des convois (alliés ou ennemis selon la mission), pause en secondes
+##   zone       {role, radius, time}      "goal" (arrivée) ou "capture" (time = secondes à tenir)
+##   deco       {sprite, block, rot}      décor ; taille lue dans le nom du fichier (nom_2x2) ; rot = quarts de tour
 
 const TYPES := ["waves", "survive", "destroy_base", "convoy", "escort", "escort_defend", "capture"]
 const TYPE_NAMES := {
@@ -34,13 +35,21 @@ var type := "waves"
 var data := {}
 var entities: Array = []
 ## État
-var zones: Array[Dictionary] = [] # {pos, radius, role, progress, captured}
+var zones: Array[Dictionary] = [] # {pos, radius, role, progress, captured, time}
 var vip: Unit = null
-var escortee: Unit = null
-var escort_route: Array[Vector2i] = []
-var escort_i := 0
-var decos: Array[Dictionary] = []
+var decos: Array[Dictionary] = [] # {sprite, cell, size, base, rot, block}
 var convoy_total := 0
+## Trajet tracé dans l'éditeur (points de passage dans l'ordre) et pauses à chaque point.
+var route_cells: Array[Vector2i] = []
+var route_pauses: Array[float] = []
+## Convois ennemis : trajet détaillé case par case et pauses (index du trajet -> secondes).
+var foe_route: Array[Vector2] = []
+var foe_pauses := {}
+## Convois alliés : {uid, at, i, pause, state ("wait", "go", "arrived", "dead")}
+var convoys: Array[Dictionary] = []
+var convoy_spawn := Vector2i(-1, -1)
+## Bâtiments à défendre (ids des chantiers).
+var defend_ids: Array[int] = []
 
 
 func _init(d: Dictionary = {}, ents: Array = []) -> void:
@@ -60,6 +69,25 @@ func waves_enabled() -> bool:
 	return type == "waves" or bool(data.get("waves_enabled", type == "survive"))
 
 
+## Taille d'un décor d'après son nom de fichier : "hangar_2x2" -> (2, 2), sinon 1x1.
+static func deco_size(sprite: String) -> Vector2i:
+	var rx := RegEx.create_from_string("_(\\d)x(\\d)$")
+	var m := rx.search(sprite)
+	if m == null:
+		return Vector2i.ONE
+	return Vector2i(clampi(int(m.get_string(1)), 1, 8), clampi(int(m.get_string(2)), 1, 8))
+
+
+## Emprise d'un décor une fois pivoté (quarts de tour).
+static func deco_footprint(sprite: String, rot: int) -> Vector2i:
+	var s := deco_size(sprite)
+	return Vector2i(s.y, s.x) if rot % 2 == 1 else s
+
+
+static func _cell_of(ent: Dictionary) -> Vector2i:
+	return Vector2i(int(ent.cell[0]), int(ent.cell[1])) if ent.cell is Array else Vector2i(ent.cell)
+
+
 func setup(w: GameWorld) -> void:
 	if not waves_enabled():
 		w.waves.timer = INF
@@ -67,7 +95,7 @@ func setup(w: GameWorld) -> void:
 		w.waves.infinite = true # les vagues continuent jusqu'à la fin du chrono
 	var waypoints: Array = []
 	for ent: Dictionary in entities:
-		var c := Vector2i(int(ent.cell[0]), int(ent.cell[1])) if ent.cell is Array else Vector2i(ent.cell)
+		var c := _cell_of(ent)
 		var at := Vector2(c) + Vector2(0.5, 0.5)
 		match str(ent.get("kind", "")):
 			"structure":
@@ -92,24 +120,18 @@ func setup(w: GameWorld) -> void:
 				e.id = w._next_enemy_id
 				w._next_enemy_id += 1
 				w.enemies.append(e)
-			"ally_tower":
-				# Posée gratuitement : on avance le coût puis on le retire avec place().
-				var cost := Content.building(ent.type)
-				w.metal += int(cost.metal)
-				w.essence += int(cost.essence)
-				if w.can_place(ent.type, c) != "":
-					w.metal -= int(cost.metal)
-					w.essence -= int(cost.essence)
+			"ally_tower", "defend":
+				var s := _place_free(w, str(ent.get("type", "")), c)
+				if s == null:
 					continue
-				var s := w.place(ent.type, c)
-				if s != null:
+				if ent.kind == "ally_tower":
 					s.level = clampi(int(ent.get("level", 1)), 1, BuildSite.MAX_LEVEL)
-					s.work_done = s.work_needed
-					w._finish_site(s)
 					s.max_hp = int(s.stats().hp)
 					s.hp = s.max_hp
-			"ally_unit", "vip", "escortee":
-				var t := str(ent.get("type", "soldier")) if ent.kind != "escortee" else "escort_truck"
+				else:
+					defend_ids.append(s.id)
+			"ally_unit", "vip":
+				var t := str(ent.get("type", "soldier"))
 				if not Content.UNITS.has(t):
 					continue
 				var u := Unit.create(t, at)
@@ -121,61 +143,220 @@ func setup(w: GameWorld) -> void:
 				if ent.kind == "vip":
 					u.vip = true
 					vip = u
-				elif ent.kind == "escortee":
-					u.locked = true
-					escortee = u
+			"escortee":
+				convoy_spawn = c
 			"waypoint":
-				waypoints.append([int(ent.get("order", waypoints.size())), c])
+				waypoints.append([int(ent.get("order", waypoints.size())), c, float(ent.get("pause", 0.0))])
 			"zone":
 				zones.append({"pos": at, "radius": float(ent.get("radius", 2.5)), "role": str(ent.get("role", "capture")),
-						"progress": 0.0, "captured": false})
+						"progress": 0.0, "captured": false, "time": float(ent.get("time", data.get("time", 30.0)))})
 			"deco":
-				decos.append({"sprite": str(ent.get("sprite", "")), "cell": c, "block": bool(ent.get("block", false))})
+				var sp := str(ent.get("sprite", ""))
+				var rot := int(ent.get("rot", 0)) % 4
+				var fp := deco_footprint(sp, rot)
+				decos.append({"sprite": sp, "cell": c, "size": fp, "base": deco_size(sp), "rot": rot, "block": bool(ent.get("block", false))})
 				if ent.get("block", false):
-					w.pathfinder.set_solid(c, true)
+					for dy in fp.y:
+						for dx in fp.x:
+							if w.grid.is_inside(c + Vector2i(dx, dy)):
+								w.pathfinder.set_solid(c + Vector2i(dx, dy), true)
 					w._flow_dirty = true
 	waypoints.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 	for wp in waypoints:
-		escort_route.append(wp[1])
+		route_cells.append(wp[1])
+		route_pauses.append(wp[2])
+	var count := int(data.get("convoy_count", 3 if type == "convoy" else 1))
+	var start := float(data.get("convoy_start", 20.0 if type == "convoy" else 0.0))
+	var gap := float(data.get("convoy_interval", 40.0))
 	if type == "convoy":
 		var kind := str(data.get("convoy_kind", "convoy"))
-		convoy_total = int(data.get("convoy_count", 3))
-		var start := float(data.get("convoy_start", 20.0))
-		var gap := float(data.get("convoy_interval", 40.0))
+		convoy_total = count
+		var custom := route_cells.size() >= 2
+		if custom:
+			_build_foe_route(w, kind)
 		for i in convoy_total:
 			w.objectives.append({"type": kind, "wave": 0, "time": start + gap * i, "state": "pending", "destroyed": 0,
-					"total": int(Balance.OBJECTIVES[kind].count), "main": true})
+					"total": int(Balance.OBJECTIVES[kind].count), "main": true, "custom": custom})
+	elif type == "escort_defend":
+		if convoy_spawn.x < 0 and not route_cells.is_empty():
+			convoy_spawn = route_cells[0]
+		convoy_total = count
+		for i in convoy_total:
+			convoys.append({"uid": -1, "at": start + gap * i, "i": 0, "pause": 0.0, "state": "wait"})
+
+
+## Pose un bâtiment allié déjà construit, sans le faire payer.
+func _place_free(w: GameWorld, kind: String, c: Vector2i) -> BuildSite:
+	if kind == "" or (not Content.TOWERS.has(kind) and kind != "house" and not Content.PRODUCTION.has(kind)):
+		return null
+	var cost := Content.building(kind)
+	w.metal += int(cost.metal)
+	w.essence += int(cost.essence)
+	var s := w.place(kind, c)
+	if s == null:
+		w.metal -= int(cost.metal)
+		w.essence -= int(cost.essence)
+		return null
+	s.work_done = s.work_needed
+	w._finish_site(s)
+	s.max_hp = int(s.stats().hp) if s.is_tower() else int(Content.building(kind).hp)
+	s.hp = s.max_hp
+	return s
+
+
+## Trajet case par case des convois ennemis : chaque tronçon suit les rails (train), l'eau (bateau)
+## ou le sol libre (camions) ; à défaut, une ligne droite.
+func _build_foe_route(w: GameWorld, kind: String) -> void:
+	var ok: Callable
+	match kind:
+		"train":
+			ok = w.grid.is_rail
+		"boat":
+			ok = w.grid.is_water
+		_:
+			ok = func(c: Vector2i) -> bool: return w.grid.is_road(c) or w.pathfinder.is_free(c)
+	var cells: Array[Vector2i] = [route_cells[0]]
+	foe_pauses.clear()
+	if route_pauses[0] > 0.0:
+		foe_pauses[0] = route_pauses[0]
+	for k in range(1, route_cells.size()):
+		var seg := _bfs(w, route_cells[k - 1], route_cells[k], ok)
+		if seg.is_empty():
+			seg = _line(route_cells[k - 1], route_cells[k])
+		cells.append_array(seg)
+		if route_pauses[k] > 0.0:
+			foe_pauses[cells.size() - 1] = route_pauses[k]
+	foe_route.clear()
+	for c in cells:
+		foe_route.append(Vector2(c) + Vector2(0.5, 0.5))
+
+
+## Plus court chemin (4 directions) de a à b sur les cases acceptées par ok ; sans a, avec b.
+static func _bfs(w: GameWorld, a: Vector2i, b: Vector2i, ok: Callable) -> Array[Vector2i]:
+	var prev := {a: a}
+	var q: Array[Vector2i] = [a]
+	var head := 0
+	while head < q.size():
+		var c := q[head]
+		head += 1
+		if c == b:
+			var out: Array[Vector2i] = []
+			while c != a:
+				out.push_front(c)
+				c = prev[c]
+			return out
+		for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			var n: Vector2i = c + d
+			if w.grid.is_inside(n) and not prev.has(n) and (n == b or ok.call(n)):
+				prev[n] = c
+				q.append(n)
+	return []
+
+
+static func _line(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var c := a
+	while c != b:
+		var d := b - c
+		if absi(d.x) >= absi(d.y):
+			c.x += signi(d.x)
+		else:
+			c.y += signi(d.y)
+		out.append(c)
+	return out
 
 
 func tick(w: GameWorld, delta: float) -> void:
-	# Véhicule allié à protéger : suit ses points de passage.
-	if escortee != null and escortee.alive and escort_i < escort_route.size():
-		var goal := escort_route[escort_i]
-		if escortee.cell() == goal or escortee.pos.distance_to(Vector2(goal) + Vector2(0.5, 0.5)) < 0.6:
-			escort_i += 1
-		elif escortee.path.is_empty() or escortee.repath_timer <= 0.0:
-			escortee.repath_timer = 1.0
-			escortee.path = w._path_toward(escortee.cell(), goal)
-		escortee.repath_timer -= delta
-		w._follow_path(escortee, ESCORTEE_SPEED, delta)
+	_tick_convoys(w, delta)
 	# Zones de prise de position : des alliés dedans et aucun ennemi hostile.
 	for z in zones:
 		if z.role != "capture" or z.captured:
 			continue
 		var r2: float = z.radius * z.radius
-		var mine := w.units.any(func(u: Unit) -> bool: return u.alive and u.pos.distance_squared_to(z.pos) <= r2)
+		var mine := w.units.any(func(u: Unit) -> bool: return u.alive and not u.locked and u.pos.distance_squared_to(z.pos) <= r2)
 		var theirs := w.enemies.any(func(e: Enemy) -> bool: return e.hp > 0 and not e.neutral and e.pos.distance_squared_to(z.pos) <= r2)
 		if mine and not theirs:
 			z.progress += delta
-			if z.progress >= float(data.get("time", 30.0)):
+			if z.progress >= float(z.time):
 				z.captured = true
 				w._emit({"type": "zone_captured", "pos": z.pos})
 		elif theirs:
 			z.progress = maxf(0.0, z.progress - delta * 0.5)
 
 
+## Convois alliés : départ à l'heure prévue, trajet de point en point, pauses, arrivée.
+func _tick_convoys(w: GameWorld, delta: float) -> void:
+	for cv in convoys:
+		match str(cv.state):
+			"wait":
+				if w.time >= float(cv.at) and convoy_spawn.x >= 0:
+					var u := Unit.create("escort_truck", Vector2(convoy_spawn) + Vector2(0.5, 0.5))
+					u.id = w._next_unit_id
+					w._next_unit_id += 1
+					u.locked = true
+					w.units.append(u)
+					cv.uid = u.id
+					cv.state = "go"
+					cv.i = 1 if (not route_cells.is_empty() and route_cells[0] == convoy_spawn) else 0
+					if cv.i == 1 and route_pauses[0] > 0.0:
+						cv.pause = route_pauses[0]
+					w._emit({"type": "convoy_start", "pos": u.pos})
+			"go":
+				var u := w.unit_by_id(int(cv.uid))
+				if u == null or not u.alive:
+					cv.state = "dead"
+					continue
+				if float(cv.pause) > 0.0:
+					cv.pause = float(cv.pause) - delta
+					continue
+				if int(cv.i) >= route_cells.size():
+					cv.state = "arrived"
+					u.alive = false
+					w.units.erase(u)
+					w._emit({"type": "convoy_arrived", "pos": u.pos})
+					continue
+				var goal := route_cells[int(cv.i)]
+				if u.cell() == goal or u.pos.distance_to(Vector2(goal) + Vector2(0.5, 0.5)) < 0.6:
+					cv.pause = route_pauses[int(cv.i)]
+					cv.i = int(cv.i) + 1
+					u.path.clear()
+					continue
+				if u.path.is_empty() or u.repath_timer <= 0.0:
+					u.repath_timer = 1.0
+					u.path = w._path_toward(u.cell(), goal)
+				u.repath_timer -= delta
+				w._follow_path(u, ESCORTEE_SPEED, delta)
+
+
+## Cibles prioritaires des ennemis : convois alliés en route, puis bâtiments à défendre.
+func focus_targets(w: GameWorld) -> Array:
+	var out: Array = []
+	for cv in convoys:
+		if cv.state == "go":
+			var u := w.unit_by_id(int(cv.uid))
+			if u != null and u.alive:
+				out.append(u)
+	if not out.is_empty():
+		return out
+	for id in defend_ids:
+		var s := w.site_by_id(id)
+		if s != null and s.alive:
+			out.append(s)
+	return out
+
+
+func _defend_lost(w: GameWorld) -> bool:
+	for id in defend_ids:
+		var s := w.site_by_id(id)
+		if s == null or not s.alive:
+			return true
+	return false
+
+
 ## "won", "lost" ou "" tant que la mission continue (la perte de la base est gérée par le monde).
 func result(w: GameWorld) -> String:
+	if _defend_lost(w):
+		return "lost"
 	match type:
 		"waves":
 			if w.waves.finished() and not w.enemies.any(func(x: Enemy) -> bool: return not x.neutral and x.mode == "march"):
@@ -204,12 +385,15 @@ func result(w: GameWorld) -> String:
 				if z.role == "goal" and vip.pos.distance_to(z.pos) <= z.radius:
 					return "won"
 		"escort_defend":
-			if escortee == null:
+			if convoys.is_empty():
 				return ""
-			if not escortee.alive:
-				return "lost"
-			if escort_i >= escort_route.size():
+			var need := mini(int(data.get("convoy_need", convoy_total)), convoy_total)
+			var arrived := convoys.filter(func(c: Dictionary) -> bool: return c.state == "arrived").size()
+			var dead := convoys.filter(func(c: Dictionary) -> bool: return c.state == "dead").size()
+			if arrived >= need:
 				return "won"
+			if dead > convoy_total - need:
+				return "lost"
 		"capture":
 			var caps := zones.filter(func(z: Dictionary) -> bool: return z.role == "capture")
 			if not caps.is_empty() and caps.all(func(z: Dictionary) -> bool: return z.captured):
@@ -219,25 +403,40 @@ func result(w: GameWorld) -> String:
 
 ## Texte de l'objectif principal (HUD).
 func objective_text(w: GameWorld) -> String:
+	var extra := ""
+	if not defend_ids.is_empty():
+		var names: Array[String] = []
+		for id in defend_ids:
+			var s := w.site_by_id(id)
+			if s != null:
+				names.append(str(Content.building(s.kind).name))
+		extra = "\nDéfendre : %s (détruit = défaite)" % ", ".join(names)
 	match type:
 		"waves":
-			return "Survivre aux %d vagues" % w.waves.total
+			return "Survivre aux %d vagues" % w.waves.total + extra
 		"survive":
 			var left := maxf(0.0, float(data.get("time", 300.0)) - w.time)
-			return "Tenir encore %d:%02d" % [int(left) / 60, int(left) % 60]
+			return "Tenir encore %d:%02d — base détruite = défaite" % [int(left) / 60, int(left) % 60] + extra
 		"destroy_base":
 			var n := w.enemies.filter(func(x: Enemy) -> bool: return x.type == "e_hq" and x.hp > 0).size()
-			return "Détruire la base ennemie (%d restante%s)" % [n, "s" if n > 1 else ""]
+			return "Détruire la base ennemie (%d restante%s)" % [n, "s" if n > 1 else ""] + extra
 		"convoy":
 			var main := w.objectives.filter(func(o: Dictionary) -> bool: return o.get("main", false))
 			var done := main.filter(func(o: Dictionary) -> bool: return o.state == "done").size()
-			return "Détruire les convois : %d/%d" % [done, int(data.get("convoy_need", convoy_total))]
+			return "Détruire les convois : %d/%d" % [done, int(data.get("convoy_need", convoy_total))] + extra
 		"escort":
-			return "Amener l'unité escortée dans la zone d'arrivée"
+			return "Amener l'unité escortée dans la zone d'arrivée" + extra
 		"escort_defend":
-			return "Protéger le convoi allié : étape %d/%d" % [mini(escort_i + 1, escort_route.size()), escort_route.size()]
+			var arrived := convoys.filter(func(c: Dictionary) -> bool: return c.state == "arrived").size()
+			var need := mini(int(data.get("convoy_need", convoy_total)), convoy_total)
+			var txt := "Protéger le convoi allié : %d/%d arrivé%s" % [arrived, need, "s" if need > 1 else ""]
+			var waiting := convoys.filter(func(c: Dictionary) -> bool: return c.state == "wait")
+			if not waiting.is_empty() and not convoys.any(func(c: Dictionary) -> bool: return c.state == "go"):
+				var t := maxf(0.0, float(waiting[0].at) - w.time)
+				txt += "\nProchain départ dans %d s" % int(ceilf(t))
+			return txt + extra
 		"capture":
 			var caps := zones.filter(func(z: Dictionary) -> bool: return z.role == "capture")
 			var done := caps.filter(func(z: Dictionary) -> bool: return z.captured).size()
-			return "Prendre les positions : %d/%d" % [done, caps.size()]
-	return ""
+			return "Prendre les positions : %d/%d" % [done, caps.size()] + extra
+	return extra.strip_edges()

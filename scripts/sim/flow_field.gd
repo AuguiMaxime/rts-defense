@@ -22,12 +22,17 @@ func _init(g: GameGrid, pf: Pathfinder) -> void:
 	_next.resize(g.width * g.height)
 
 
-func rebuild() -> void:
+## goals : cases d'arrivée (par défaut, les cases collées à la base).
+func rebuild(goals: Array[Vector2i] = []) -> void:
 	_dist.fill(UNREACHABLE)
 	_next.fill(-1)
-	# Parcours en largeur depuis les cases collées à la base (coût 1 par case).
+	# Parcours en largeur depuis les cases d'arrivée (coût 1 par case).
 	var frontier: Array[Vector2i] = []
-	for c in pathfinder.free_cells_around(grid.base_cells):
+	if goals.is_empty():
+		goals = pathfinder.free_cells_around(grid.base_cells)
+	for c in goals:
+		if not grid.is_inside(c) or _dist[_idx(c)] == 0.0:
+			continue
 		_dist[_idx(c)] = 0.0
 		frontier.append(c)
 	var head := 0

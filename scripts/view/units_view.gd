@@ -241,9 +241,31 @@ func _draw_producer(s: BuildSite, r: Rect2) -> void:
 var _deco_cache := {}
 
 
+## Dessine un décor de base.x × base.y cases, pivoté de rot quarts de tour, posé à partir de la case cell.
+static func draw_deco(ci: CanvasItem, tex: Texture2D, cell: Vector2i, base: Vector2i, rot: int, t: float, tint := Color.WHITE) -> void:
+	if tex == null:
+		return
+	var fp := Vector2(base.y, base.x) if rot % 2 == 1 else Vector2(base)
+	var center := (Vector2(cell) + fp * 0.5) * t
+	var box := Vector2(base) * t
+	# L'image garde ses proportions dans son emprise, légèrement débordante pour éviter les jours.
+	var k := minf(box.x / tex.get_width(), box.y / tex.get_height()) * 1.08
+	var sz := Vector2(tex.get_width(), tex.get_height()) * k
+	ci.draw_set_transform(center, rot * PI / 2.0)
+	ci.draw_texture_rect(tex, Rect2(-sz * 0.5, sz), false, tint)
+	ci.draw_set_transform(Vector2.ZERO)
+
+
 static func deco_texture(name: String) -> Texture2D:
 	var p := "res://assets/deco/%s.png" % name
-	return load(p) if ResourceLoader.exists(p) else null
+	if ResourceLoader.exists(p):
+		return load(p)
+	# PNG ajouté sans passer par l'import de Godot : lu directement.
+	if FileAccess.file_exists(p):
+		var img := Image.load_from_file(p)
+		if img != null and not img.is_empty():
+			return ImageTexture.create_from_image(img)
+	return null
 
 
 ## Décor, zones et trajet du convoi allié (sous les unités).
@@ -254,11 +276,7 @@ func _draw_mission_layer() -> void:
 	for d in m.decos:
 		if not _deco_cache.has(d.sprite):
 			_deco_cache[d.sprite] = deco_texture(d.sprite)
-		var tex: Texture2D = _deco_cache[d.sprite]
-		if tex != null:
-			var r := Rect2(Vector2(d.cell) * TILE, Vector2(TILE, TILE))
-			var k := float(tex.get_height()) / tex.get_width()
-			draw_texture_rect(tex, Rect2(r.position + Vector2(0, TILE * (1.0 - k)), Vector2(TILE, TILE * k)).grow(4), false)
+		draw_deco(self, _deco_cache[d.sprite], d.cell, d.base, d.rot, float(TILE))
 	for z in m.zones:
 		var c: Vector2 = z.pos * TILE
 		var rad: float = z.radius * TILE
@@ -274,13 +292,31 @@ func _draw_mission_layer() -> void:
 			draw_arc(c, rad - 8, -PI / 2, -PI / 2 + TAU * k, 48, col, 6.0)
 			draw_line(c + Vector2(0, 18), c + Vector2(0, -26), Color(0.9, 0.9, 0.9), 3.0)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -26), c + Vector2(22, -19 + sin(_anim * 6.0) * 2), c + Vector2(0, -12)]), col)
-	if m.escortee != null and m.escortee.alive and m.escort_i < m.escort_route.size():
-		var prev := m.escortee.pos * TILE
-		for i in range(m.escort_i, m.escort_route.size()):
-			var q := (Vector2(m.escort_route[i]) + Vector2(0.5, 0.5)) * TILE
+	# Trajet restant de chaque convoi allié en route.
+	for cv in m.convoys:
+		if cv.state != "go":
+			continue
+		var u := world.unit_by_id(int(cv.uid))
+		if u == null:
+			continue
+		var prev := u.pos * TILE
+		for i in range(int(cv.i), m.route_cells.size()):
+			var q := (Vector2(m.route_cells[i]) + Vector2(0.5, 0.5)) * TILE
 			draw_dashed_line(prev, q, Color(0.3, 1.0, 0.45, 0.5), 3.0, 12.0)
 			draw_circle(q, 6, Color(0.3, 1.0, 0.45, 0.8))
 			prev = q
+	# Trajet des convois ennemis tracé dans l'éditeur.
+	if m.foe_route.size() >= 2:
+		for i in range(1, m.foe_route.size()):
+			draw_line(m.foe_route[i - 1] * TILE, m.foe_route[i] * TILE, Color(1.0, 0.35, 0.3, 0.18), 6.0)
+	# Bâtiments à défendre.
+	for id in m.defend_ids:
+		var s := world.site_by_id(id)
+		if s == null:
+			continue
+		var r := Rect2(s.rect().position * TILE, s.rect().size * TILE).grow(6)
+		draw_rect(r, Color(1.0, 0.8, 0.2, 0.55 + 0.35 * sin(_anim * 4.0)), false, 4.0)
+		draw_string(ThemeDB.fallback_font, Vector2(r.get_center().x - 100, r.position.y - 6), "★ À DÉFENDRE", HORIZONTAL_ALIGNMENT_CENTER, 200, 18, Color(1.0, 0.85, 0.3))
 
 
 ## Structures ennemies posées (tourelles, bunker, caserne, base).

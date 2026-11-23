@@ -54,6 +54,16 @@ var obj_tool := "structure:e_tower_gun"
 var obj_hold := false
 var obj_level := 1
 var obj_block := false
+var obj_rot := 0
+var obj_pause := 0.0
+var obj_ztime := 30.0
+var obj_zrad := 2.5
+const PAUSES := [0.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0]
+const ZONE_TIMES := [10.0, 15.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0]
+const ZONE_RADII := [1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
+var _m_hint: Label
+var _m_place_btn: Button
+var _m_place_tool := ""
 var _palette_buttons := {}
 var _opt_buttons := {}
 var _mission_type_buttons := {}
@@ -692,8 +702,12 @@ func _palette() -> Array:
 		if k not in ["worker", "escort_truck", "commander"]:
 			allies.append(["ally_unit:" + k, str(Content.UNITS[k].name).to_upper()])
 	cats.append(["ALLIÉS · UNITÉS", allies])
-	cats.append(["MISSION", [["vip:commander", "VIP À ESCORTER"], ["escortee:", "CONVOI ALLIÉ"], ["waypoint:", "POINT DE PASSAGE"],
+	cats.append(["MISSION", [["vip:commander", "VIP À ESCORTER"], ["escortee:", "DÉPART CONVOI ALLIÉ"], ["waypoint:", "POINT DE PASSAGE"],
 			["zone:goal", "ZONE D'ARRIVÉE"], ["zone:capture", "ZONE DE PRISE"]]])
+	var defend := []
+	for k in Content.BUILDING_ORDER:
+		defend.append(["defend:" + k, str(Content.building(k).name).to_upper()])
+	cats.append(["MISSION · BÂTIMENT À DÉFENDRE", defend])
 	var decos := []
 	for f in DirAccess.get_files_at("res://assets/deco"):
 		var fname := f.trim_suffix(".import")
@@ -740,7 +754,8 @@ func _build_object_panel() -> PanelContainer:
 	scroll.add_child(list)
 	v.add_child(scroll)
 	var opts := Ui.hbox(4)
-	for o in [["hold", "IMMOBILE"], ["lvl", "NIV 1"], ["block", "BLOQUE"]]:
+	for o in [["hold", "IMMOBILE"], ["lvl", "NIV 1"], ["block", "BLOQUE"], ["rot", "PIVOTER"], ["pause", "PAUSE 0 s"],
+			["ztime", "TENIR 30 s"], ["zrad", "RAYON 2.5"]]:
 		var b := _small_button(o[1], 0)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.custom_minimum_size.y = 34
@@ -754,11 +769,19 @@ func _build_object_panel() -> PanelContainer:
 					obj_level = obj_level % 3 + 1
 				"block":
 					obj_block = not obj_block
+				"rot":
+					obj_rot = (obj_rot + 1) % 4
+				"pause":
+					obj_pause = PAUSES[(PAUSES.find(obj_pause) + 1) % PAUSES.size()]
+				"ztime":
+					obj_ztime = ZONE_TIMES[(ZONE_TIMES.find(obj_ztime) + 1) % ZONE_TIMES.size()]
+				"zrad":
+					obj_zrad = ZONE_RADII[(ZONE_RADII.find(obj_zrad) + 1) % ZONE_RADII.size()]
 			_highlight_objects())
 		_opt_buttons[key] = b
 		opts.add_child(b)
 	v.add_child(opts)
-	v.add_child(Ui.label("Toucher = poser · gomme = retirer\nIMMOBILE : unités · NIV : tourelles · BLOQUE : décor", 11, Ui.MUTED))
+	v.add_child(Ui.label("Toucher = poser · gomme = retirer\nRetoucher un objet avec le même outil = lui appliquer les réglages", 11, Ui.MUTED))
 	p.add_child(v)
 	_highlight_objects.call_deferred()
 	return p
@@ -771,25 +794,72 @@ func _highlight_objects() -> void:
 		(_opt_buttons.hold as Button).theme_type_variation = "PrimaryButton" if obj_hold else ""
 		(_opt_buttons.block as Button).theme_type_variation = "PrimaryButton" if obj_block else ""
 		(_opt_buttons.lvl as Button).text = "NIV %d" % obj_level
+		(_opt_buttons.rot as Button).text = "PIVOTER %d°" % (obj_rot * 90)
+		(_opt_buttons.pause as Button).text = "PAUSE %d s" % int(obj_pause)
+		(_opt_buttons.ztime as Button).text = "TENIR %d s" % int(obj_ztime)
+		(_opt_buttons.zrad as Button).text = "RAYON %s" % str(obj_zrad)
+		# Seuls les réglages utiles à l'outil choisi sont affichés.
+		var kind := obj_tool.split(":")[0]
+		var show := {
+			"hold": kind in ["enemy", "ally_unit"], "lvl": kind == "ally_tower",
+			"block": kind == "deco", "rot": kind == "deco", "pause": kind == "waypoint",
+			"ztime": obj_tool == "zone:capture", "zrad": kind == "zone",
+		}
+		for k in _opt_buttons:
+			(_opt_buttons[k] as Button).visible = show.get(k, false)
 
 
 ## Cases couvertes par un objet (les structures font 1, 2 ou 3 cases de côté).
 static func entity_cells(e: Dictionary) -> Array[Vector2i]:
 	var c := Vector2i(int(e.cell[0]), int(e.cell[1]))
-	var size := 1
+	var size := Vector2i.ONE
 	if e.kind == "structure" and Balance.ENEMY_STRUCTURES.has(e.type):
-		size = int(Balance.ENEMY_STRUCTURES[e.type].size)
+		size = Vector2i.ONE * int(Balance.ENEMY_STRUCTURES[e.type].size)
+	elif e.kind == "defend":
+		size = Vector2i.ONE * int(Content.building(str(e.type)).get("size", 1))
+	elif e.kind == "deco":
+		size = Mission.deco_footprint(str(e.get("sprite", "")), int(e.get("rot", 0)))
 	var out: Array[Vector2i] = []
-	for dy in size:
-		for dx in size:
+	for dy in size.y:
+		for dx in size.x:
 			out.append(c + Vector2i(dx, dy))
 	return out
+
+
+## Identifiant d'outil de la palette correspondant à un objet posé.
+static func entity_tool(e: Dictionary) -> String:
+	return str(e.kind) + ":" + str(e.get("type", e.get("role", e.get("sprite", ""))))
+
+
+## Applique les réglages courants de l'éditeur à un objet.
+func _apply_options(e: Dictionary) -> void:
+	match str(e.kind):
+		"enemy", "ally_unit":
+			e.hold = obj_hold
+		"ally_tower":
+			e.level = obj_level
+		"deco":
+			e.block = obj_block
+			e.rot = obj_rot
+		"waypoint":
+			e.pause = obj_pause
+		"zone":
+			e.radius = obj_zrad
+			if e.role == "capture":
+				e.time = obj_ztime
 
 
 func _object_tap(c: Vector2i) -> void:
 	if not grid.is_inside(c):
 		return
-	# Un objet déjà là : la gomme le retire, sinon on le remplace.
+	# Le même objet déjà là : on lui applique les réglages (pause, durée, rotation…).
+	if obj_tool != "erase":
+		for e2: Dictionary in data.entities:
+			if entity_cells(e2).has(c) and entity_tool(e2) == obj_tool:
+				_apply_options(e2)
+				_validate()
+				return
+	# Un autre objet déjà là : la gomme le retire, sinon on le remplace.
 	for i in range(data.entities.size() - 1, -1, -1):
 		if entity_cells(data.entities[i]).has(c):
 			data.entities.remove_at(i)
@@ -801,20 +871,26 @@ func _object_tap(c: Vector2i) -> void:
 	var parts := obj_tool.split(":")
 	var e := {"kind": parts[0], "cell": [c.x, c.y]}
 	match parts[0]:
-		"structure", "enemy", "ally_tower", "ally_unit", "vip":
+		"structure", "enemy", "ally_tower", "ally_unit", "vip", "defend":
 			e.type = parts[1]
 		"zone":
 			e.role = parts[1]
-			e.radius = 2.5
 		"deco":
 			e.sprite = parts[1]
-			e.block = obj_block
 		"waypoint":
-			e.order = data.entities.filter(func(x: Dictionary) -> bool: return x.kind == "waypoint").size()
-	if parts[0] in ["enemy", "ally_unit"]:
-		e.hold = obj_hold
-	if parts[0] == "ally_tower":
-		e.level = obj_level
+			var orders := data.entities.filter(func(x: Dictionary) -> bool: return x.kind == "waypoint").map(
+					func(x: Dictionary) -> int: return int(x.get("order", 0)))
+			e.order = (int(orders.max()) + 1) if not orders.is_empty() else 0
+	_apply_options(e)
+	# Un objet qui déborde de la carte n'est pas posé.
+	for cc in entity_cells(e):
+		if not grid.is_inside(cc):
+			Ui.toast("Ne rentre pas dans la carte ici", Ui.RED)
+			return
+	# Les objets recouverts par un gros objet sont remplacés.
+	var covered := entity_cells(e)
+	data.entities = data.entities.filter(func(x: Dictionary) -> bool:
+		return not entity_cells(x).any(func(cc: Vector2i) -> bool: return covered.has(cc)))
 	if parts[0] in ["vip", "escortee"]:
 		# Un seul VIP / convoi allié par carte
 		data.entities = data.entities.filter(func(x: Dictionary) -> bool: return x.kind != parts[0])
@@ -884,6 +960,18 @@ func _build_mission_panel() -> PanelContainer:
 		_m_waves = not _m_waves
 		_mission_ui_refresh())
 	v.add_child(_m_waves_btn)
+	_m_hint = Ui.label("", 12, Ui.MUTED)
+	_m_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_m_hint.custom_minimum_size.x = 280
+	v.add_child(_m_hint)
+	_m_place_btn = _small_button("", 0)
+	_m_place_btn.custom_minimum_size.y = 36
+	_m_place_btn.add_theme_font_size_override("font_size", 11)
+	_m_place_btn.pressed.connect(func() -> void:
+		obj_tool = _m_place_tool
+		_set_mode("objects")
+		_highlight_objects())
+	v.add_child(_m_place_btn)
 	v.add_child(Ui.label("BRIEFING", 13, Ui.GOLD, true))
 	_m_brief = TextEdit.new()
 	_m_brief.custom_minimum_size = Vector2(280, 90)
@@ -899,9 +987,10 @@ func _load_mission_ui() -> void:
 	var m: Dictionary = data.mission
 	_m_type = str(m.get("type", "waves"))
 	_m_time.set_value_no_signal(float(m.get("time", 300)))
-	_m_count.set_value_no_signal(float(m.get("convoy_count", 3)))
-	_m_need.set_value_no_signal(float(m.get("convoy_need", 3)))
-	_m_start.set_value_no_signal(float(m.get("convoy_start", 20)))
+	var ally := str(m.get("type", "")) == "escort_defend"
+	_m_count.set_value_no_signal(float(m.get("convoy_count", 1 if ally else 3)))
+	_m_need.set_value_no_signal(float(m.get("convoy_need", 1 if ally else 3)))
+	_m_start.set_value_no_signal(float(m.get("convoy_start", 0 if ally else 20)))
 	_m_gap.set_value_no_signal(float(m.get("convoy_interval", 40)))
 	_m_kind = str(m.get("convoy_kind", "convoy"))
 	_m_waves = Mission.new(m).waves_enabled()
@@ -914,15 +1003,29 @@ func _mission_ui_refresh() -> void:
 		(_mission_type_buttons[t] as Button).theme_type_variation = "PrimaryButton" if t == _m_type else ""
 	for k in _m_kind_buttons:
 		(_m_kind_buttons[k] as Button).theme_type_variation = "PrimaryButton" if k == _m_kind else ""
+	var convoys := _m_type in ["convoy", "escort_defend"]
 	var show := {
-		"time": _m_type in ["survive", "capture"],
-		"count": _m_type == "convoy", "need": _m_type == "convoy", "start": _m_type == "convoy",
-		"gap": _m_type == "convoy", "kind": _m_type == "convoy",
+		"time": _m_type == "survive",
+		"count": convoys, "need": convoys, "start": convoys, "gap": convoys, "kind": _m_type == "convoy",
 	}
 	for k in _m_rows:
 		for n in _m_rows[k]:
 			(n as Control).visible = show.get(k, false)
-	(_m_rows.time[0] as Label).text = "Durée (s)" if _m_type == "survive" else "Tenir chaque zone (s)"
+	(_m_rows.need[0] as Label).text = "À faire arriver" if _m_type == "escort_defend" else "À détruire"
+	var hints := {
+		"waves": ["Survivre à toutes les vagues. Pose un BÂTIMENT À DÉFENDRE : les ennemis le visent en priorité et sa destruction fait perdre la mission.", "★ POSER LE BÂTIMENT À DÉFENDRE", "defend:barracks"],
+		"survive": ["Tenir jusqu'à la fin du chrono. Si ta base est détruite, la mission est perdue.", "", ""],
+		"destroy_base": ["Pose une ou plusieurs BASES ENNEMIES où tu veux (et leurs défenses) : toutes doivent être détruites.", "✚ POSER UNE BASE ENNEMIE", "structure:e_hq"],
+		"convoy": ["Trace le trajet avec des POINTS DE PASSAGE (1 = départ) ; règle une PAUSE sur un point pour arrêter le convoi. Sans points : trajet automatique sur rails / route / eau.", "✚ TRACER LE TRAJET", "waypoint:"],
+		"escort": ["Pose le VIP et la ZONE D'ARRIVÉE : le joueur le guide lui-même.", "✚ POSER LE VIP", "vip:commander"],
+		"escort_defend": ["Convoi allié non contrôlable : il part du DÉPART (ou du point 1), suit les POINTS DE PASSAGE avec leurs pauses. Les ennemis le visent en priorité.", "✚ TRACER LE TRAJET", "waypoint:"],
+		"capture": ["Pose les ZONES DE PRISE : chacune a sa durée (TENIR) et son rayon. Unités dedans + aucun ennemi = la prise avance.", "✚ POSER UNE ZONE", "zone:capture"],
+	}
+	var h: Array = hints.get(_m_type, ["", "", ""])
+	_m_hint.text = h[0]
+	_m_place_btn.text = h[1]
+	_m_place_btn.visible = h[1] != ""
+	_m_place_tool = h[2]
 	if _m_type == "waves":
 		_m_waves = true
 	_m_waves_btn.text = "VAGUES ENNEMIES : %s" % ("OUI" if _m_waves else "NON")
@@ -935,10 +1038,11 @@ func _mission_dict() -> Dictionary:
 		return data.mission if data != null else {}
 	var m := {"type": _m_type, "waves_enabled": _m_waves, "briefing": _m_brief.text.strip_edges()}
 	match _m_type:
-		"survive", "capture":
+		"survive":
 			m.time = int(_m_time.value)
-		"convoy":
-			m.convoy_kind = _m_kind
+		"convoy", "escort_defend":
+			if _m_type == "convoy":
+				m.convoy_kind = _m_kind
 			m.convoy_count = int(_m_count.value)
 			m.convoy_need = mini(int(_m_need.value), int(_m_count.value))
 			m.convoy_start = _m_start.value
@@ -949,9 +1053,12 @@ func _mission_dict() -> Dictionary:
 func _mission_warnings() -> String:
 	var w := ""
 	var kinds := {}
+	var wps := 0
 	for e in data.entities:
 		kinds[e.kind + ":" + str(e.get("type", e.get("role", "")))] = true
 		kinds[e.kind] = true
+		if e.kind == "waypoint":
+			wps += 1
 	match _m_type:
 		"destroy_base":
 			if not kinds.has("structure:e_hq"):
@@ -960,14 +1067,16 @@ func _mission_warnings() -> String:
 			if not kinds.has("vip") or not kinds.has("zone:goal"):
 				w += "\n⚠ Il faut un VIP et une ZONE D'ARRIVÉE"
 		"escort_defend":
-			if not kinds.has("escortee") or not kinds.has("waypoint"):
-				w += "\n⚠ Il faut un CONVOI ALLIÉ et des POINTS DE PASSAGE"
+			if wps < (1 if kinds.has("escortee") else 2):
+				w += "\n⚠ Trace le trajet du convoi : au moins 2 POINTS DE PASSAGE"
 		"capture":
 			if not kinds.has("zone:capture"):
 				w += "\n⚠ Pose au moins une ZONE DE PRISE"
 		"convoy":
+			if wps == 1:
+				w += "\n⚠ Un trajet a besoin d'au moins 2 POINTS DE PASSAGE"
 			var need: Callable = {"train": grid.is_rail, "convoy": grid.is_road, "boat": grid.is_water}[_m_kind]
-			var any := false
+			var any := wps >= 2
 			for y in grid.height:
 				for x in grid.width:
 					if need.call(Vector2i(x, y)):
@@ -1075,28 +1184,40 @@ class _GridOverlay extends Node2D:
 				"escortee":
 					draw_rect(Rect2(center - Vector2(22, 16), Vector2(44, 32)), Color(0.3, 0.6, 0.4))
 					draw_arc(center, t * 0.5, 0, TAU, 20, Ui.GREEN, 3.0)
-					draw_string(font, center + Vector2(-30, -26), "CONVOI", HORIZONTAL_ALIGNMENT_CENTER, 60, 14, Ui.GREEN)
+					draw_string(font, center + Vector2(-30, -26), "DÉPART", HORIZONTAL_ALIGNMENT_CENTER, 60, 14, Ui.GREEN)
+				"defend":
+					var sz := float(Content.building(str(e.type)).get("size", 1)) * t
+					var r := Rect2(c * t, Vector2(sz, sz))
+					var lk: Array = Sprites.PRODUCER_LOOK.get(e.type, [Sprites.W_HOUSE, Color.WHITE])
+					draw_texture_rect(lk[0], r, false, lk[1])
+					draw_rect(r.grow(3), Ui.GOLD, false, 4.0)
+					draw_string(font, Vector2(r.position.x, r.position.y - 6), "★ " + str(Content.building(str(e.type)).name).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Ui.GOLD)
 				"waypoint":
-					wps.append([int(e.get("order", 0)), center])
+					wps.append([int(e.get("order", 0)), center, float(e.get("pause", 0.0))])
 				"zone":
 					var rad := float(e.get("radius", 2.5)) * t
 					var col := Ui.GREEN if e.role == "goal" else Ui.GOLD
 					draw_circle(center, rad, Color(col, 0.12))
 					draw_arc(center, rad, 0, TAU, 40, col, 3.0)
-					draw_string(font, center + Vector2(-50, 6), "ARRIVÉE" if e.role == "goal" else "PRISE", HORIZONTAL_ALIGNMENT_CENTER, 100, 18, col)
+					var lbl := "ARRIVÉE" if e.role == "goal" else "PRISE %d s" % int(e.get("time", 30))
+					draw_string(font, center + Vector2(-60, 6), lbl, HORIZONTAL_ALIGNMENT_CENTER, 120, 18, col)
 				"deco":
 					var sp := str(e.get("sprite", ""))
 					if not _tex_cache.has(sp):
 						_tex_cache[sp] = UnitsView.deco_texture(sp)
-					var tex2: Texture2D = _tex_cache[sp]
-					if tex2 != null:
-						draw_texture_rect(tex2, Rect2(c * t, Vector2(t, t)), false)
+					var rot := int(e.get("rot", 0))
+					var fp := Mission.deco_footprint(sp, rot)
+					UnitsView.draw_deco(self, _tex_cache[sp], Vector2i(c), Mission.deco_size(sp), rot, t)
 					if e.get("block", false):
-						draw_rect(Rect2(c * t, Vector2(t, t)), Color(1, 1, 1, 0.5), false, 2.0)
+						draw_rect(Rect2(c * t, Vector2(fp) * t), Color(1, 1, 1, 0.5), false, 2.0)
 		wps.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		# Trajet rouge pour les convois ennemis, vert pour les convois alliés.
+		var wcol: Color = Ui.RED if editor._m_type == "convoy" else Ui.GREEN
 		for i in wps.size():
 			if i > 0:
-				draw_dashed_line(wps[i - 1][1], wps[i][1], Color(Ui.GREEN, 0.7), 3.0, 12.0)
-			draw_circle(wps[i][1], 14, Color(0.1, 0.3, 0.15))
-			draw_arc(wps[i][1], 14, 0, TAU, 20, Ui.GREEN, 2.5)
-			draw_string(font, wps[i][1] + Vector2(-10, 6), str(i + 1), HORIZONTAL_ALIGNMENT_CENTER, 20, 16, Ui.GREEN)
+				draw_dashed_line(wps[i - 1][1], wps[i][1], Color(wcol, 0.7), 3.0, 12.0)
+			draw_circle(wps[i][1], 14, Color(0.1, 0.1, 0.1, 0.85))
+			draw_arc(wps[i][1], 14, 0, TAU, 20, wcol, 2.5)
+			draw_string(font, wps[i][1] + Vector2(-10, 6), str(i + 1), HORIZONTAL_ALIGNMENT_CENTER, 20, 16, wcol)
+			if float(wps[i][2]) > 0.0:
+				draw_string(font, wps[i][1] + Vector2(-30, -20), "⏸ %d s" % int(wps[i][2]), HORIZONTAL_ALIGNMENT_CENTER, 60, 15, Ui.GOLD)

@@ -64,6 +64,10 @@ var _next_enemy_id := 1
 var _next_site_id := 1
 var _next_unit_id := 1
 var _flow_dirty := true
+## Cibles prioritaires des ennemis (convois alliés, bâtiments à défendre) et leur champ de direction.
+var focus: Array = []
+var focus_flow: FlowField
+var _focus_timer := 0.0
 var _base_rect := Rect2()
 var _rng := RandomNumberGenerator.new()
 var _auto_repair_timer := 0.0
@@ -86,6 +90,7 @@ func _init(g: GameGrid, config := {}) -> void:
 	orbital_cooldown = 0.0 if config.get("orbital", false) else -1.0
 	pathfinder = Pathfinder.new(g)
 	flow = FlowField.new(g, pathfinder)
+	focus_flow = FlowField.new(g, pathfinder)
 	waves = WaveManager.new()
 	_rng.seed = 12345 # déterministe
 	if not g.base_cells.is_empty():
@@ -140,9 +145,11 @@ func tick(delta: float) -> void:
 	mission.tick(self, delta)
 	if orbital_cooldown > 0.0:
 		orbital_cooldown = maxf(0.0, orbital_cooldown - delta)
+	var focus_dirty := _flow_dirty
 	if _flow_dirty:
 		flow.rebuild()
 		_flow_dirty = false
+	_update_focus(delta, focus_dirty)
 	_tick_producer(base_producer, BASE_ID, delta)
 	for s in sites:
 		if s.built and s.producer != null:
@@ -280,13 +287,42 @@ func _longest_route(check: Callable) -> Array[Vector2]:
 	return out
 
 
+## Cibles prioritaires : recalculées en continu ; le champ de direction suit les convois qui roulent.
+func _update_focus(delta: float, force: bool) -> void:
+	_focus_timer -= delta
+	if _focus_timer > 0.0 and not force:
+		focus = focus.filter(func(f: Variant) -> bool: return f.alive)
+		return
+	_focus_timer = 0.5
+	focus = mission.focus_targets(self)
+	if focus.is_empty():
+		return
+	var goals: Array[Vector2i] = []
+	for f: Variant in focus:
+		if f is Unit:
+			goals.append((f as Unit).cell())
+		else:
+			goals.append_array(pathfinder.free_cells_around((f as BuildSite).cells()))
+	focus_flow.rebuild(goals)
+
+
+func _focus_pos(f: Variant) -> Vector2:
+	return (f as Unit).pos if f is Unit else (f as BuildSite).center()
+
+
+func _focus_dist(e: Enemy, f: Variant) -> float:
+	if f is Unit:
+		return e.pos.distance_to((f as Unit).pos) - 0.35
+	return _dist_to_rect(e.pos, (f as BuildSite).rect())
+
+
 func _tick_objectives(delta: float) -> void:
 	for i in objectives.size():
 		var o := objectives[i]
 		var ready: bool = time >= float(o.time) if o.has("time") else waves.wave >= int(o.wave)
 		if o.state == "pending" and ready:
-			var route := objective_route(o.type)
-			if route.size() < 4:
+			var route := mission.foe_route if o.get("custom", false) else objective_route(o.type)
+			if route.size() < (2 if o.get("custom", false) else 4):
 				o.state = "failed"
 				continue
 			o.state = "active"
@@ -298,8 +334,12 @@ func _tick_objectives(delta: float) -> void:
 		q[0] -= delta
 	while not _objective_queue.is_empty() and _objective_queue[0][0] <= 0.0:
 		var q: Array = _objective_queue.pop_front()
-		var route := objective_route(objectives[q[2]].type)
+		var custom: bool = objectives[q[2]].get("custom", false)
+		var route := mission.foe_route if custom else objective_route(objectives[q[2]].type)
 		var e := Enemy.create(q[1], route[0], waves.hp_scale())
+		if custom:
+			e.route_pauses = mission.foe_pauses
+			e.pause_timer = float(mission.foe_pauses.get(0, 0.0))
 		e.id = _next_enemy_id
 		_next_enemy_id += 1
 		e.route = route
@@ -311,6 +351,9 @@ func _tick_objectives(delta: float) -> void:
 
 ## Entité d'objectif : avance le long de son trajet ; si elle sort de la carte, l'objectif échoue.
 func _tick_neutral(e: Enemy, delta: float) -> void:
+	if e.pause_timer > 0.0:
+		e.pause_timer -= delta
+		return
 	var step := e.speed * (e.slow_mult if e.slow_timer > 0.0 else 1.0) * delta
 	while step > 0.0 and e.route_i < e.route.size():
 		var t: Vector2 = e.route[e.route_i]
@@ -321,6 +364,9 @@ func _tick_neutral(e: Enemy, delta: float) -> void:
 			e.pos = t
 			step -= d
 			e.route_i += 1
+			if e.route_pauses.has(e.route_i - 1):
+				e.pause_timer = float(e.route_pauses[e.route_i - 1])
+				break
 		else:
 			e.pos += (t - e.pos) / d * step
 			step = 0.0
@@ -994,7 +1040,17 @@ func _tick_enemy(e: Enemy, delta: float) -> void:
 			_enemy_attack(e)
 		return
 	var dir := Vector2.ZERO
-	if not e.flying:
+	if not focus.is_empty():
+		# Priorité au convoi / bâtiment à défendre.
+		if not e.flying:
+			dir = focus_flow.direction_at(e.pos)
+		if dir == Vector2.ZERO:
+			var best: Variant = focus[0]
+			for f: Variant in focus:
+				if _focus_dist(e, f) < _focus_dist(e, best):
+					best = f
+			dir = (_focus_pos(best) - e.pos).normalized()
+	elif not e.flying:
 		dir = flow.direction_at(e.pos)
 	if dir == Vector2.ZERO:
 		dir = (base_center() - e.pos).normalized()
@@ -1078,6 +1134,18 @@ func _pick_target(e: Enemy, reach := -1.0) -> void:
 	e.target_kind = Enemy.Target.NONE
 	e.target_ref = null
 	var best_d := e.attack_range if reach < 0.0 else reach
+	# Cibles prioritaires à portée : on les attaque avant tout le reste.
+	var fd := best_d
+	for f: Variant in focus:
+		var dd := _focus_dist(e, f)
+		if dd <= fd:
+			fd = dd
+			e.target_kind = Enemy.Target.UNIT if f is Unit else Enemy.Target.SITE
+			e.target_ref = f
+	if e.target_kind != Enemy.Target.NONE:
+		return
+	if not focus.is_empty() and e.mode == "march":
+		best_d = minf(best_d, 0.6) # en route vers le convoi : seulement ce qui barre le passage
 	var d := _dist_to_rect(e.pos, _base_rect)
 	if d <= best_d:
 		best_d = d
@@ -1610,7 +1678,7 @@ func upgrade(s: BuildSite) -> bool:
 
 
 func sell(s: BuildSite) -> void:
-	if not sites.has(s):
+	if not sites.has(s) or mission.defend_ids.has(s.id):
 		return
 	var refund := s.sell_value()
 	metal += refund.metal

@@ -43,7 +43,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"u": units,
 		"dl": w.deposit_left,
 		"up": w.upgrades,
-		"ms": [w.mission.zones.map(func(z: Dictionary) -> Array: return [z.progress, z.captured]), w.mission.escort_i, w.time],
+		"ms": [w.mission.zones.map(func(z: Dictionary) -> Array: return [z.progress, z.captured]), w.mission.convoys.map(func(c: Dictionary) -> Array: return [c.uid, c.i, c.state, c.at]), w.time],
 		"ob": w.objectives.map(func(o: Dictionary) -> Array: return [o.state, o.destroyed]),
 		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
@@ -102,7 +102,10 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		for i in mini(zs.size(), w.mission.zones.size()):
 			w.mission.zones[i].progress = zs[i][0]
 			w.mission.zones[i].captured = zs[i][1]
-		w.mission.escort_i = snap.ms[1]
+		var cvs: Array[Dictionary] = []
+		for c: Array in snap.ms[1]:
+			cvs.append({"uid": c[0], "i": c[1], "state": c[2], "at": c[3], "pause": 0.0})
+		w.mission.convoys = cvs
 		w.time = snap.ms[2]
 	if snap.has("up") and snap.up != w.upgrades:
 		w.upgrades = snap.up

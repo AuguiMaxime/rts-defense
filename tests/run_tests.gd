@@ -934,22 +934,80 @@ func _test_missions() -> void:
 		{"kind": "waypoint", "order": 1, "cell": [14, 8]},
 		{"kind": "waypoint", "order": 2, "cell": [22, 8]},
 	])
-	_check(wd.mission.escortee != null and wd.unit_at(wd.mission.escortee.pos) == null, "convoi allié posé et non sélectionnable")
+	_run(wd, 0.2)
+	var truck := wd.unit_by_id(int(wd.mission.convoys[0].uid))
+	_check(truck != null and wd.unit_at(truck.pos) == null, "convoi allié parti et non sélectionnable")
 	_run(wd, 40.0)
 	_check(wd.state == GameWorld.State.WON, "convoi allié arrivé au bout du trajet = victoire")
+	# Convois alliés multiples, pause sur un point, ennemis qui visent le convoi
+	var wd2 := _mission_world({"type": "escort_defend", "convoy_count": 2, "convoy_need": 2, "convoy_start": 0, "convoy_interval": 3}, [
+		{"kind": "waypoint", "order": 0, "cell": [8, 1]},
+		{"kind": "waypoint", "order": 1, "cell": [14, 1], "pause": 5},
+		{"kind": "waypoint", "order": 2, "cell": [22, 1]},
+	])
+	_run(wd2, 9.0)
+	var t1 := wd2.unit_by_id(int(wd2.mission.convoys[0].uid))
+	_check(t1 != null and t1.pos.distance_to(Vector2(14.5, 1.5)) < 0.8, "le convoi marque la pause au point 2")
+	_check(wd2.mission.convoys[1].state == "go", "le 2e convoi part à son heure")
+	var foe := Enemy.create("normal", Vector2(20.5, 8.5), 1.0)
+	foe.id = 999
+	wd2.enemies.append(foe)
+	_run(wd2, 0.6)
+	var d0 := foe.pos.distance_to(t1.pos)
+	_run(wd2, 2.0)
+	_check(foe.pos.distance_to(t1.pos) < d0 - 0.5, "les ennemis foncent sur le convoi en priorité")
+	foe.hp = 0
+	_run(wd2, 30.0)
+	_check(wd2.state == GameWorld.State.WON, "2 convois arrivés = victoire")
+	# Bâtiment à défendre
+	var wb := _mission_world({"type": "waves"}, [{"kind": "defend", "type": "barracks", "cell": [12, 4]}])
+	_check(wb.mission.defend_ids.size() == 1 and wb.sites[0].built, "bâtiment à défendre posé et construit")
+	_check(wb.metal == Balance.START_METAL, "gratuitement")
+	wb.sell(wb.sites[0])
+	_check(wb.sites.size() == 1, "impossible de vendre le bâtiment à défendre")
+	_run(wb, 0.1)
+	_check(not wb.focus.is_empty(), "il devient la cible prioritaire des ennemis")
+	wb.sites[0].hp = 0
+	_run(wb, 0.2)
+	_check(wb.state == GameWorld.State.LOST, "bâtiment à défendre détruit = défaite")
+	# Survie : base détruite = défaite
+	var ws2 := _mission_world({"type": "survive", "time": 60, "waves_enabled": false}, [])
+	ws2.base_hp = 0
+	_run(ws2, 0.2)
+	_check(ws2.state == GameWorld.State.LOST, "survie : base détruite = défaite")
+	# Décor sur plusieurs cases, pivoté
+	_check(Mission.deco_size("hangar_2x1") == Vector2i(2, 1) and Mission.deco_footprint("hangar_2x1", 1) == Vector2i(1, 2), "taille du décor lue dans son nom, pivot")
+	var wdec := _mission_world({"type": "waves"}, [{"kind": "deco", "sprite": "hangar_2x2", "block": true, "cell": [12, 2]}])
+	_check(not wdec.pathfinder.is_free(Vector2i(13, 3)) and wdec.pathfinder.is_free(Vector2i(14, 3)), "un décor 2x2 bloque ses 4 cases")
 	# Prise de position
-	var wc := _mission_world({"type": "capture", "time": 5}, [
-		{"kind": "zone", "role": "capture", "cell": [12, 6], "radius": 2},
+	var wc := _mission_world({"type": "capture"}, [
+		{"kind": "zone", "role": "capture", "cell": [12, 6], "radius": 2, "time": 5},
+		{"kind": "zone", "role": "capture", "cell": [20, 6], "radius": 2, "time": 10},
 		{"kind": "ally_unit", "type": "soldier", "cell": [12, 6], "hold": true},
+		{"kind": "ally_unit", "type": "soldier", "cell": [20, 6], "hold": true},
 	])
 	_run(wc, 6.0)
-	_check(wc.state == GameWorld.State.WON, "prise de position tenue 5 s = victoire")
+	_check(wc.mission.zones[0].captured and not wc.mission.zones[1].captured, "chaque zone a sa propre durée")
+	_run(wc, 5.0)
+	_check(wc.state == GameWorld.State.WON, "toutes les positions prises = victoire")
 	# Convois en objectif principal
 	var conv_map := "S.........................\n..........................\n==========================\n..........................\n...BBB....................\n...BBB....................\n...BBB....................\n.M........................"
 	var wv := GameWorld.new(MapLoader.from_layout(conv_map), {"mission": {"type": "convoy", "convoy_kind": "convoy", "convoy_count": 2, "convoy_need": 2, "convoy_start": 1, "convoy_interval": 5}})
 	_check(wv.objectives.size() == 2, "2 convois programmés")
 	_run(wv, 30.0)
 	_check(wv.state == GameWorld.State.LOST, "convois non détruits = défaite")
+	# Convoi ennemi sur un trajet tracé, avec pause
+	var wr := _mission_world({"type": "convoy", "convoy_kind": "convoy", "convoy_count": 1, "convoy_need": 1, "convoy_start": 0, "convoy_interval": 5}, [
+		{"kind": "waypoint", "order": 0, "cell": [10, 1]},
+		{"kind": "waypoint", "order": 1, "cell": [16, 1], "pause": 6},
+		{"kind": "waypoint", "order": 2, "cell": [16, 9]},
+	])
+	_check(wr.mission.foe_route.size() == 15 and wr.mission.foe_pauses.has(6), "trajet tracé case par case avec sa pause")
+	_run(wr, 9.0)
+	var cv := wr.enemies.filter(func(e: Enemy) -> bool: return e.neutral)
+	_check(not cv.is_empty() and cv[0].pos.distance_to(Vector2(16.5, 1.5)) < 0.5, "le convoi ennemi s'arrête au point de pause")
+	_run(wr, 30.0)
+	_check(wr.state == GameWorld.State.LOST, "convoi arrivé au bout = raté")
 	# Alliés posés
 	var wa := _mission_world({"type": "waves"}, [{"kind": "ally_tower", "type": "cannon", "cell": [10, 4], "level": 2}])
 	_check(wa.sites.size() == 1 and wa.sites[0].built and wa.sites[0].level == 2, "tourelle alliée déjà construite au niveau 2")

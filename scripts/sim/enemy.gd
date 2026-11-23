@@ -30,6 +30,8 @@ var neutral := false
 var route: Array[Vector2] = []
 var route_i := 0
 var objective := -1 # index de l'objectif dans GameWorld.objectives
+var route_pauses := {} # index du point de trajet -> secondes d'arrêt (trajet tracé dans l'éditeur)
+var pause_timer := 0.0
 ## Comportement : "march" (vague : marche vers la base), "guard" (posé : défend sa zone),
 ## "static" (structure ou unité qui tient sa position : ne bouge jamais).
 var mode := "march"

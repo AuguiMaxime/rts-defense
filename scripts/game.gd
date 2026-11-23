@@ -318,6 +318,9 @@ var rally_mode := false
 
 ## Vente en deux temps : 1re touche = demande de confirmation (3 s), 2e touche = vente.
 func _ask_sell(s: BuildSite) -> void:
+	if world.mission.defend_ids.has(s.id):
+		hud.flash("Bâtiment de mission : impossible de le vendre", Ui.RED)
+		return
 	if _sell_armed == s.id and Time.get_ticks_msec() < _sell_armed_until:
 		_sell_armed = -1
 		sell_focused()

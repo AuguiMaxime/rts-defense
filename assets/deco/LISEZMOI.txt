@@ -1,1 +1,3 @@
 Décor de l'éditeur de missions : chaque PNG déposé ici devient un objet de décor posable.
+
+Taille : le nom du fichier se termine par _LxH pour couvrir plusieurs cases (hangar_2x2.png, camion_2x1.png). Sans suffixe = 1 case.
