@@ -1082,7 +1082,12 @@ func _remove_site(s: BuildSite) -> void:
 	_flow_dirty = true
 	for w in workers:
 		if w.target_site == s:
-			_resume_or_idle(w)
+			# Construction à la chaîne : l'ouvrier enchaîne sur le chantier voisin le plus proche.
+			var nxt := _next_pending_site(s.center(), 6.0)
+			if nxt != null:
+				command_build([w], nxt)
+			else:
+				_resume_or_idle(w)
 
 
 static func _dist_to_rect(p: Vector2, r: Rect2) -> float:
@@ -1178,6 +1183,18 @@ func _on_arrived(w: Worker) -> void:
 			w.state = Worker.State.REPAIRING
 		_:
 			w.state = Worker.State.IDLE
+
+
+func _next_pending_site(from: Vector2, radius: float) -> BuildSite:
+	var best: BuildSite = null
+	var bd := radius
+	for x in sites:
+		if not x.built and x.alive:
+			var d := from.distance_to(x.center())
+			if d < bd:
+				bd = d
+				best = x
+	return best
 
 
 ## Base la plus proche où déposer (principale ou base du joueur 2).

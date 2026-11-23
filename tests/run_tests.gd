@@ -45,6 +45,7 @@ func _init() -> void:
 	_test_research()
 	_test_hold()
 	_test_coop_base()
+	_test_chain_build()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -837,3 +838,23 @@ func _test_coop_base() -> void:
 			near = x
 	_check(near != null and w._dropoff_cells(near) == w.hq_site.cells(), "ses ouvriers déposent à la base la plus proche")
 	_check(MapData.from_grid(w.grid).count("b") == 9 or MapData.from_grid(solo.grid).count("b") == 9, "l'emplacement J2 est conservé à l'enregistrement")
+
+
+func _test_chain_build() -> void:
+	print("Construction à la chaîne")
+	var world := GameWorld.new(MapLoader.from_layout(preload("res://maps/map_01.gd").LAYOUT))
+	world.waves.timer = 9999
+	world.metal = 1000
+	var w := world.workers[0]
+	world.command_harvest(world.workers.slice(1), world.grid.metal_deposits[0]) # les autres sont occupés
+	var bc := Vector2i(world.base_center())
+	var placed := 0
+	for i in 4:
+		var c := bc + Vector2i(3 + i, -4)
+		if world.can_place("house", c) == "":
+			world.place("house", c)
+			placed += 1
+	world.command_build([w], world.sites[0])
+	_run(world, 60.0)
+	var built := world.sites.filter(func(x: BuildSite) -> bool: return x.built).size()
+	_check(placed >= 3 and built == placed, "un seul ouvrier enchaîne les %d chantiers voisins (%d construits)" % [placed, built])

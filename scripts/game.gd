@@ -67,7 +67,11 @@ func _ready() -> void:
 	camera.tapped.connect(_on_tapped)
 	camera.selection_updated.connect(_on_selection_updated)
 	camera.selection_ended.connect(_on_selection_ended)
-	camera.selection_cancelled.connect(func() -> void: units_view.selection_rect = Rect2())
+	camera.selection_cancelled.connect(func() -> void:
+		units_view.selection_rect = Rect2()
+		_chain_cells.clear()
+		_chain_count = 0
+		_chain_warned = false)
 
 	$HUD.add_child(hud)
 	hud.setup(self)
@@ -474,8 +478,44 @@ func _try_place(c: Vector2i) -> void:
 	set_build_kind("")
 
 
+## Construction à la chaîne : en mode placement, glisser le doigt pose un bâtiment
+## à chaque pas (taille du bâtiment) le long de la ligne tracée.
+var _chain_cells := {}
+var _chain_count := 0
+var _chain_warned := false
+
+
+func _chain_build(a: Vector2, b: Vector2) -> void:
+	var size := int(Content.building(build_kind).get("size", 1))
+	var start := Vector2i((a / TILE).floor())
+	var end := Vector2i((b / TILE).floor())
+	var d := end - start
+	# On suit l'axe principal du geste (ligne droite horizontale ou verticale).
+	var step := Vector2i(signi(d.x), 0) if absi(d.x) >= absi(d.y) else Vector2i(0, signi(d.y))
+	var n := (absi(d.x) if step.x != 0 else absi(d.y)) / size
+	for i in n + 1:
+		var c := start + step * size * i
+		if _chain_cells.has(c):
+			continue
+		_chain_cells[c] = true
+		if world.can_place(build_kind, c) != "":
+			continue
+		var cost := Content.building(build_kind)
+		if world.metal < cost.metal or world.essence < cost.essence:
+			if not _chain_warned:
+				hud.flash("Plus assez de ressources pour continuer la chaîne", Ui.RED)
+				_chain_warned = true
+			return
+		# Les ouvriers sélectionnés prennent le premier chantier, puis enchaînent les suivants.
+		issue({"t": "place", "k": build_kind, "c": c, "w": Commands.ids(selected) if _chain_count == 0 else []})
+		_chain_count += 1
+
+
 ## Cadre de sélection : dès qu'il est vraiment tracé, l'ancienne sélection disparaît.
 func _on_selection_updated(a: Vector2, b: Vector2) -> void:
+	if build_kind != "" and build_kind != "orbital":
+		_chain_build(a, b)
+		return
 	units_view.selection_rect = Rect2(a, b - a).abs()
 	var r := Rect2(a / TILE, (b - a) / TILE).abs()
 	if (r.size.x >= 0.9 or r.size.y >= 0.9) and selection_kind() != "none":
@@ -484,6 +524,16 @@ func _on_selection_updated(a: Vector2, b: Vector2) -> void:
 
 func _on_selection_ended(a: Vector2, b: Vector2) -> void:
 	units_view.selection_rect = Rect2()
+	if build_kind != "" and build_kind != "orbital":
+		if _chain_count == 0:
+			_on_tapped(b) # simple toucher : un seul bâtiment
+		else:
+			hud.flash("%d × %s en construction" % [_chain_count, Content.building(build_kind).name], Ui.GREEN)
+			set_build_kind("")
+		_chain_cells.clear()
+		_chain_count = 0
+		_chain_warned = false
+		return
 	var r := Rect2(a / TILE, (b - a) / TILE).abs()
 	# Petit glissé du doigt : c'est un toucher, pas un cadre (sinon on perd la sélection).
 	if r.size.x < 0.9 and r.size.y < 0.9:
