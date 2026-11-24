@@ -4,6 +4,15 @@ extends RefCounted
 ## Chargée depuis / convertie vers MapData (fichier unique, versionné).
 
 const VERSION := 2
+## Rôles des zones (seules la prise et l'arrivée ont un effet sans déclencheur).
+const ZONE_ROLES := {"capture": "Zone de prise", "goal": "Zone d'arrivée", "extraction": "Zone d'extraction",
+		"passage": "Zone de passage", "trigger": "Zone déclencheur"}
+## Noms affichés des ennemis.
+const ENEMY_NAMES := {
+	"normal": "Rampant", "fast": "Coureur", "armored": "Blindé", "flying": "Volant", "boss": "Boss",
+	"swarmer": "Nuée", "spitter": "Cracheur", "brute": "Brute", "shell": "Carapace", "siege": "Char de siège",
+	"mothership": "Vaisseau-mère",
+}
 
 var name := "Nouvelle carte"
 var ground := "grass"
@@ -144,6 +153,9 @@ static func entity_size(e: Dictionary) -> Vector2i:
 			return Vector2i.ONE * int(Content.building(str(e.type)).get("size", 1))
 		"deco":
 			return Mission.deco_footprint(str(e.get("sprite", "")), int(e.get("rot", 0)))
+		"door":
+			var n := clampi(int(e.get("len", 2)), 1, 8)
+			return Vector2i(1, n) if e.get("vertical", false) else Vector2i(n, 1)
 	return Vector2i.ONE
 
 
@@ -188,7 +200,7 @@ static func base_name(e: Dictionary) -> String:
 		"structure":
 			return str(Balance.ENEMY_STRUCTURES.get(t, {}).get("name", "Structure"))
 		"enemy":
-			return str(EditorCatalog.ENEMY_NAMES.get(t, "Ennemi " + t))
+			return str(ENEMY_NAMES.get(t, "Ennemi " + t))
 		"ally_tower":
 			return str(Content.TOWERS.get(t, {}).get("name", "Tourelle"))
 		"ally_unit":
@@ -202,7 +214,17 @@ static func base_name(e: Dictionary) -> String:
 		"waypoint":
 			return "Point"
 		"zone":
-			return "Zone d'arrivée" if e.get("role", "") == "goal" else "Zone de prise"
+			return str(ZONE_ROLES.get(str(e.get("role", "capture")), "Zone"))
+		"door":
+			return "Porte"
+		"shield":
+			return "Bouclier"
+		"terminal":
+			return "Terminal"
+		"prisoners":
+			return "Prisonniers"
+		"pickup":
+			return "Objet à récupérer"
 		"deco":
 			return "Décor " + str(e.get("sprite", "")).replace("_", " ")
 	return "Objet"

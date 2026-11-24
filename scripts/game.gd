@@ -223,7 +223,7 @@ func _select_same_type(key: String) -> void:
 	var parts := key.split(":")
 	match parts[0]:
 		"u":
-			_set_selection([], world.units.filter(func(x: Unit) -> bool: return x.alive and x.type == parts[1]))
+			_set_selection([], world.units.filter(func(x: Unit) -> bool: return x.alive and x.controllable() and x.type == parts[1]))
 		"w":
 			_set_selection(world.workers.filter(func(x: Worker) -> bool: return x.alive))
 		"s":
@@ -276,7 +276,7 @@ func _clear_selection() -> void:
 
 ## Bouton « ARMÉE » : sélectionne toutes les unités de combat.
 func select_army() -> void:
-	var army: Array = world.units.filter(func(x: Unit) -> bool: return x.alive and not x.locked)
+	var army: Array = world.units.filter(func(x: Unit) -> bool: return x.alive and x.controllable())
 	if army.is_empty():
 		hud.flash("Aucune unité de combat : forme-en à la base ou à la caserne", Ui.MUTED)
 		return

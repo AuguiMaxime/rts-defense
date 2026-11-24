@@ -35,6 +35,16 @@ var dest := Vector2.ZERO
 var stuck_t := 0.0 # temps sans progrès vers la destination
 var stuck_pos := Vector2.INF # position de référence (détection de blocage)
 var stuck_tries := 0 # destination d'un déplacement offensif
+## Réglages de la fiche de l'éditeur.
+var eid := -1
+var ai := false # unité alliée pilotée par l'ordinateur (non sélectionnable)
+var invulnerable := false
+var mul_dmg := 1.0
+var mul_spd := 1.0
+var mul_rng := 1.0
+var patrol: Array[Vector2i] = []
+var patrol_i := 0
+var follow_eid := -1
 
 
 static func create(type_name: String, at: Vector2) -> Unit:
@@ -54,6 +64,11 @@ func stats() -> Dictionary:
 ## Statistiques effectives (pouvoir actif, mode siège).
 func eff() -> Dictionary:
 	var st: Dictionary = Research.apply_unit(type, stats())
+	if mul_dmg != 1.0 or mul_spd != 1.0 or mul_rng != 1.0:
+		st = st.duplicate()
+		st.damage = roundi(st.damage * mul_dmg)
+		st.speed = st.speed * mul_spd
+		st.range = st.range * mul_rng
 	if buff_time <= 0.0 and not sieged:
 		return st
 	var e := st.duplicate()
@@ -78,6 +93,11 @@ func eff() -> Dictionary:
 
 func ability() -> String:
 	return stats().get("ability", "")
+
+
+## Le joueur peut-il la sélectionner et lui donner des ordres ?
+func controllable() -> bool:
+	return not locked and not ai
 
 
 func cell() -> Vector2i:

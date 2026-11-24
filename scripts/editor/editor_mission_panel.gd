@@ -229,6 +229,18 @@ static func warnings(doc: EditorDoc, grid: GameGrid) -> Array[String]:
 			wps += 1
 		if e.kind == "deco" and UnitsView.deco_texture(str(e.get("sprite", ""))) == null:
 			w.append("Image de décor introuvable : %s" % e.get("sprite", ""))
+	# Fiches : liens et réglages incomplets
+	for e: Dictionary in doc.entities:
+		var beh := str(e.get("behavior", ""))
+		if beh == "patrol" and e.get("patrol", []).size() < 2:
+			w.append("%s : la patrouille a besoin d'au moins 2 points" % e.name)
+		if beh in ["defend", "attack_target", "attack_zone", "follow"] and int(e.get("target", -1)) < 0:
+			w.append("%s : choisis sa cible dans sa fiche" % e.name)
+		for key in ["target", "link"]:
+			if int(e.get(key, -1)) >= 0 and doc.entity_by_id(int(e[key])).is_empty():
+				w.append("%s : l'objet lié n'existe plus" % e.name)
+		if e.kind == "shield" and int(e.get("link", -1)) < 0:
+			w.append("%s : sans générateur, il reste actif toute la partie" % e.name)
 	var t := str(doc.mission.get("type", "waves"))
 	match t:
 		"destroy_base":

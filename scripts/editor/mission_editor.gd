@@ -28,6 +28,10 @@ const TOOL_INFO := {
 	"erase": ["Gomme", "E", "Clic / glisser : retirer les objets"],
 }
 const TAB_TOOLS := {"map": ["select", "paint", "fill", "pipette"], "objects": ["select", "place", "erase", "pipette"], "mission": []}
+const ENEMY_BEHAVIORS := [["guard", "Garde son poste"], ["static", "Immobile"], ["patrol", "Patrouille"], ["defend", "Défend une structure"],
+		["aggressive", "Attaque à vue"], ["attack_target", "Attaque une cible"], ["attack_zone", "Attaque une zone"], ["follow", "Suit une unité"],
+		["march", "Marche sur la base"]]
+const ALLY_BEHAVIORS := [["guard", "Garde son poste"], ["hold", "Tient la position"], ["patrol", "Patrouille"], ["follow", "Suit une unité"]]
 const AUTOSAVE_DIR := "user://editor/"
 const AUTOSAVE_PATH := "user://editor/autosave.json"
 const AUTOSAVE_EVERY := 30.0
@@ -80,6 +84,11 @@ var _last_paint := Vector2i(-999, -999)
 var _last_place := Vector2i(-999, -999)
 var _panning := false
 var _space := false
+var _rmb_moved := 0.0
+var _placed_any := false
+## Choix sur la carte pour une fiche : {"id", "key", "accept": Callable, "hint"}
+var pick := {}
+var _fiche_name: LineEdit
 
 # --- Scène et interface -------------------------------------------------------------------
 var camera: Camera2D
@@ -308,6 +317,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_zoom_at(1.0 / 1.15, mb.position)
 		elif mb.pressed and (mb.button_index in [MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT] or (mb.button_index == MOUSE_BUTTON_LEFT and _space)):
 			_panning = true
+			_rmb_moved = 0.0
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and mb.double_click and tool == "select" and pick.is_empty():
+			var e := doc.entity_at(_cell_at(mb.position), func(x: Dictionary) -> bool: return layers.entity_visible(x))
+			if not e.is_empty() and _fiche_name != null:
+				_fiche_name.grab_focus()
+				_fiche_name.select_all()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			_lmb = true
 			_on_press(_cell_at(mb.position), mb.shift_pressed, mb.alt_pressed)
@@ -326,6 +341,7 @@ func _input(event: InputEvent) -> void:
 			_set_hover(Vector2i(-1, -1))
 		if _panning:
 			camera.position -= mm.relative / camera.zoom.x
+			_rmb_moved += mm.relative.length()
 		if _lmb:
 			var c := _cell_at(mm.position)
 			_set_hover(c)
@@ -334,6 +350,9 @@ func _input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.button_index in [MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT] or (mb.button_index == MOUSE_BUTTON_LEFT and _panning):
 			_panning = false
+			if mb.button_index == MOUSE_BUTTON_RIGHT and _rmb_moved < 6.0 and _modal == null \
+					and get_viewport().gui_get_hovered_control() == null:
+				_right_click(_cell_at(mb.position))
 		if mb.button_index == MOUSE_BUTTON_LEFT and _lmb:
 			_lmb = false
 			_on_release(_cell_at(mb.position))
@@ -412,6 +431,11 @@ func _on_key(k: InputEventKey) -> void:
 				do_delete()
 			KEY_ESCAPE:
 				escape()
+			KEY_ENTER, KEY_KP_ENTER:
+				if not pick.is_empty():
+					end_pick()
+				else:
+					handled = false
 			KEY_F5:
 				test()
 			KEY_F1:
@@ -464,6 +488,10 @@ func _on_key(k: InputEventKey) -> void:
 func _on_press(c: Vector2i, shift: bool, alt: bool) -> void:
 	_press_cell = c
 	_press_mode = ""
+	if not pick.is_empty():
+		_pick_press(c)
+		_lmb = false
+		return
 	if not floating.is_empty() and not _float_move:
 		_drop_paste()
 		_lmb = false
@@ -528,6 +556,9 @@ func _on_release(c: Vector2i) -> void:
 		"paint", "place", "erase":
 			if history.commit():
 				after_change()
+				if tool == "place" and _placed_any:
+					catalog.add_recent(obj_tool)
+			_placed_any = false
 		"select":
 			_select_release(c)
 
@@ -538,6 +569,8 @@ func _place_at(c: Vector2i, report: bool) -> void:
 		if report and res.error != "":
 			_toast(res.error, Ui.RED)
 		return
+	if not res.get("updated", false):
+		_placed_any = true
 	_view_dirty = true
 	_check_dirty = true
 
@@ -815,6 +848,9 @@ func _transform_selection(label: String, f: Callable) -> void:
 
 
 func escape() -> void:
+	if not pick.is_empty():
+		end_pick()
+		return
 	if not floating.is_empty():
 		if _float_move:
 			history.cancel()
@@ -1512,22 +1548,9 @@ func _context_selection() -> void:
 	if nb > 0:
 		parts.append("%d objet%s" % [nb, "s" if nb > 1 else ""])
 	_context.add_child(EditorUi.label(", ".join(parts), 12))
+	_fiche_name = null
 	if nb == 1:
-		var e := doc.entity_by_id(sel_ids[0])
-		var name := EditorUi.line_edit("Nom")
-		name.text = str(e.name)
-		var id := int(e.id)
-		name.text_submitted.connect(func(t: String) -> void:
-			_rename(id, t)
-			name.release_focus())
-		name.focus_exited.connect(func() -> void: _rename(id, name.text))
-		_context.add_child(name)
-		_context.add_child(EditorUi.muted("%s · id %d · case %d, %d" % [_tool_label(EditorDoc.entity_tool(e)), id, int(e.cell[0]), int(e.cell[1])]))
-		_options_ui(str(e.kind), EditorDoc.entity_tool(e), EditorOps.options_of(e), func(k: String, v: Variant) -> void:
-			var opts := EditorOps.options_of(doc.entity_by_id(id))
-			opts[k] = v
-			if history.record("Réglage · " + str(e.name), func() -> void: EditorOps.apply_options(doc.entity_by_id(id), opts)):
-				after_change())
+		_fiche(doc.entity_by_id(sel_ids[0]))
 	var g := EditorUi.grid(3, 3)
 	for a in [["↻ Pivoter", "R", rotate_any], ["⇋ Miroir", "M", func() -> void: mirror_any(true)], ["⇅ Miroir", "Maj+M", func() -> void: mirror_any(false)],
 			["Copier", "Ctrl+C", do_copy], ["Dupliquer", "Ctrl+D", do_duplicate], ["Supprimer", "Suppr", do_delete]]:
@@ -1538,6 +1561,279 @@ func _context_selection() -> void:
 		g.add_child(b)
 	_context.add_child(g)
 	_context.add_child(EditorUi.muted("Glisser la sélection pour la déplacer · Échap pour désélectionner"))
+
+
+# --- Fiche d'un objet ----------------------------------------------------------------------------
+
+func _right_click(c: Vector2i) -> void:
+	if not pick.is_empty():
+		end_pick()
+		return
+	if not floating.is_empty():
+		escape()
+		return
+	var e := doc.entity_at(c, func(x: Dictionary) -> bool: return layers.entity_visible(x))
+	if e.is_empty():
+		clear_selection()
+		return
+	if tab == "mission":
+		set_tab("objects")
+	set_tool("select")
+	sel_rect = Rect2i()
+	sel_ids = [int(e.id)]
+	_refresh_context()
+
+
+func start_pick(id: int, key: String, accept: Callable, hint: String) -> void:
+	pick = {"id": id, "key": key, "accept": accept, "hint": hint}
+	_status_hint.text = hint + "  ·  Échap / clic droit : terminer"
+	_toast("Clique sur : " + hint.to_lower() if key != "patrol" else hint)
+
+
+func end_pick() -> void:
+	pick = {}
+	set_tool(tool)
+
+
+func _pick_press(c: Vector2i) -> void:
+	var id := int(pick.id)
+	var e := doc.entity_by_id(id)
+	if e.is_empty():
+		end_pick()
+		return
+	if pick.key == "patrol":
+		if not doc.inside(c):
+			return
+		var add_point := func() -> void:
+			var pts: Array = doc.entity_by_id(id).get("patrol", []).duplicate()
+			pts.append([c.x, c.y])
+			doc.entity_by_id(id).patrol = pts
+		if history.record("Patrouille · " + str(e.name), add_point):
+			after_change()
+		return
+	var accept: Callable = pick.accept
+	var t := doc.entity_at(c, func(x: Dictionary) -> bool: return layers.entity_visible(x) and int(x.id) != id and accept.call(x))
+	if t.is_empty():
+		_toast("Clique sur : " + str(pick.hint).to_lower(), Ui.GOLD)
+		return
+	var key: String = pick.key
+	var tid := int(t.id)
+	if history.record("Lien · " + str(e.name), func() -> void: doc.entity_by_id(id)[key] = tid):
+		after_change()
+	_toast("%s → %s" % [e.name, t.name], Ui.GREEN)
+	end_pick()
+
+
+## Modifie une propriété d'un objet (avec annulation). rebuild = redessiner la fiche.
+func _set_prop(id: int, key: String, value: Variant, rebuild := false) -> void:
+	var e := doc.entity_by_id(id)
+	if e.is_empty():
+		return
+	var change := func() -> void:
+		var x := doc.entity_by_id(id)
+		if value == null:
+			x.erase(key)
+		else:
+			x[key] = value
+	var ok := history.record("Fiche · " + str(e.name), change)
+	if not ok:
+		return
+	if rebuild:
+		after_change()
+	else:
+		_view_dirty = true
+		_check_dirty = true
+		_refresh_undo()
+
+
+func _fiche_row(g: GridContainer, label: String, ctl: Control, tip := "") -> void:
+	var l := EditorUi.label(label, 13)
+	l.tooltip_text = tip
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	g.add_child(l)
+	g.add_child(ctl)
+
+
+func _fiche_toggle(id: int, key: String, on: bool, text_on: String, text_off: String, rebuild := false) -> Button:
+	var b := EditorUi.button(text_on if on else text_off, "", true, 104)
+	b.button_pressed = on
+	b.pressed.connect(func() -> void:
+		b.text = text_on if b.button_pressed else text_off
+		_set_prop(id, key, b.button_pressed, rebuild))
+	return b
+
+
+func _fiche_spin(id: int, key: String, value: float, lo: float, hi: float, step: float, suffix := "", scale := 1.0) -> SpinBox:
+	var s := EditorUi.spin(lo, hi, step, value * scale, 104)
+	s.suffix = suffix
+	s.value_changed.connect(func(v: float) -> void: _set_prop(id, key, v / scale))
+	return s
+
+
+func _fiche_options(id: int, key: String, items: Array, current: String, rebuild := true) -> OptionButton:
+	var o := OptionButton.new()
+	o.focus_mode = Control.FOCUS_NONE
+	o.custom_minimum_size = Vector2(0, EditorUi.BTN_H)
+	o.add_theme_font_size_override("font_size", 13)
+	o.get_popup().add_theme_font_size_override("font_size", 14)
+	for i in items.size():
+		o.add_item(items[i][1], i)
+		if items[i][0] == current:
+			o.select(i)
+	o.item_selected.connect(func(i: int) -> void: _set_prop(id, key, items[i][0], rebuild))
+	return o
+
+
+func _fiche_link(id: int, key: String, label: String, accept: Callable, hint: String) -> void:
+	var e := doc.entity_by_id(id)
+	var tid := int(e.get(key, -1))
+	var t := doc.entity_by_id(tid) if tid >= 0 else {}
+	var h := EditorUi.hbox(4)
+	var l := EditorUi.label("%s : %s" % [label, t.name if not t.is_empty() else "aucun"], 13, Color(0.85, 0.9, 0.97) if not t.is_empty() else Ui.GOLD)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.clip_text = true
+	h.add_child(l)
+	var b := EditorUi.button("Choisir…", hint)
+	b.pressed.connect(func() -> void: start_pick(id, key, accept, hint))
+	h.add_child(b)
+	if not t.is_empty():
+		var x := EditorUi.button("✕", "Retirer le lien", false, 26)
+		x.pressed.connect(func() -> void: _set_prop(id, key, null, true))
+		h.add_child(x)
+	_context.add_child(h)
+
+
+func _fiche(e: Dictionary) -> void:
+	var id := int(e.id)
+	var kind := str(e.kind)
+	var name := EditorUi.line_edit("Nom")
+	name.text = str(e.name)
+	name.text_submitted.connect(func(t: String) -> void:
+		_rename(id, t)
+		name.release_focus())
+	name.focus_exited.connect(func() -> void: _rename(id, name.text))
+	_fiche_name = name
+	_context.add_child(name)
+	_context.add_child(EditorUi.muted("%s · id %d · case %d, %d" % [_tool_label(EditorDoc.entity_tool(e)), id, int(e.cell[0]), int(e.cell[1])]))
+	# Comportement
+	if kind in ["enemy", "ally_unit"]:
+		_context.add_child(EditorUi.section("Comportement"))
+		var items: Array = ENEMY_BEHAVIORS if kind == "enemy" else ALLY_BEHAVIORS
+		var beh := str(e.get("behavior", ("static" if kind == "enemy" else "hold") if e.get("hold", false) else "guard"))
+		_context.add_child(_fiche_options(id, "behavior", items, beh))
+		match beh:
+			"patrol":
+				var pts: Array = e.get("patrol", [])
+				var h := EditorUi.hbox(4)
+				var l := EditorUi.label("%d point%s" % [pts.size(), "s" if pts.size() > 1 else ""], 13, Ui.GOLD if pts.size() < 2 else Color(0.85, 0.9, 0.97))
+				l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				h.add_child(l)
+				var tr := EditorUi.button("Tracer…", "Clique les points de patrouille sur la carte, dans l'ordre")
+				tr.pressed.connect(func() -> void: start_pick(id, "patrol", Callable(), "Clique les points de patrouille dans l'ordre"))
+				h.add_child(tr)
+				var clr := EditorUi.button("Effacer")
+				clr.pressed.connect(func() -> void: _set_prop(id, "patrol", [], true))
+				h.add_child(clr)
+				_context.add_child(h)
+			"defend":
+				_fiche_link(id, "target", "Structure", func(x: Dictionary) -> bool: return x.kind == "structure", "Une structure ennemie à défendre")
+			"attack_target":
+				_fiche_link(id, "target", "Cible", func(x: Dictionary) -> bool: return x.kind in ["ally_tower", "ally_unit", "defend", "vip"], "Une tourelle, une unité ou un bâtiment allié")
+			"attack_zone":
+				_fiche_link(id, "target", "Zone", func(x: Dictionary) -> bool: return x.kind == "zone", "Une zone")
+			"follow":
+				var allies := kind == "ally_unit"
+				_fiche_link(id, "target", "Suit", func(x: Dictionary) -> bool: return (x.kind in ["ally_unit", "vip"]) if allies else (x.kind in ["enemy", "structure"]),
+						"Une unité alliée ou le VIP" if allies else "Un ennemi")
+		var g := EditorUi.grid(2, 6)
+		if kind == "enemy":
+			_fiche_row(g, "Repli sous", _fiche_spin(id, "retreat", float(e.get("retreat", 0)), 0, 90, 5, " %"), "Retourne à son point de départ quand ses PV passent sous ce seuil (0 = jamais)")
+		else:
+			_fiche_row(g, "Contrôle", _fiche_toggle(id, "selectable", e.get("selectable", true), "Joueur", "IA alliée"), "IA alliée : le joueur ne peut pas la sélectionner")
+			if Content.UNITS.get(str(e.type), {}).get("ability", "") == "siege":
+				_fiche_row(g, "Départ", _fiche_toggle(id, "sieged", e.get("sieged", false), "En siège", "Mobile"))
+		_context.add_child(g)
+	# Statistiques
+	if kind in ["enemy", "structure", "ally_unit", "ally_tower", "defend", "vip"]:
+		_context.add_child(EditorUi.section("Statistiques"))
+		var g := EditorUi.grid(2, 6)
+		_fiche_row(g, "Points de vie", _fiche_spin(id, "hp_mul", float(e.get("hp_mul", 1.0)), 10, 1000, 10, " %", 100.0))
+		if kind != "defend" and kind != "vip" and e.get("type", "") != "e_generator":
+			_fiche_row(g, "Dégâts", _fiche_spin(id, "dmg_mul", float(e.get("dmg_mul", 1.0)), 0, 1000, 10, " %", 100.0))
+			_fiche_row(g, "Portée", _fiche_spin(id, "rng_mul", float(e.get("rng_mul", 1.0)), 10, 400, 10, " %", 100.0))
+		if kind in ["enemy", "ally_unit"]:
+			_fiche_row(g, "Vitesse", _fiche_spin(id, "spd_mul", float(e.get("spd_mul", 1.0)), 10, 400, 10, " %", 100.0))
+		_context.add_child(g)
+		var g2 := EditorUi.grid(2, 6)
+		_fiche_row(g2, "Dégâts subis", _fiche_toggle(id, "inv", e.get("inv", false), "Invulnérable", "Normal"))
+		if kind == "ally_tower":
+			var lv := EditorUi.spin(1, BuildSite.MAX_LEVEL, 1, int(e.get("level", 1)), 104)
+			lv.value_changed.connect(func(v: float) -> void: _set_prop(id, "level", int(v)))
+			_fiche_row(g2, "Niveau", lv)
+		if kind in ["ally_tower", "defend"]:
+			_fiche_row(g2, "État", _fiche_toggle(id, "building", e.get("building", false), "En chantier", "Construit"), "En chantier : les ouvriers doivent le terminer")
+		_context.add_child(g2)
+	# Réglages propres
+	var g3 := EditorUi.grid(2, 6)
+	match kind:
+		"deco":
+			var rh := EditorUi.hbox(2)
+			for r in 4:
+				var rb := EditorUi.button("%d°" % (r * 90), "Rotation (R)", true, 34)
+				rb.add_theme_font_size_override("font_size", 11)
+				rb.button_pressed = int(e.get("rot", 0)) == r
+				var rr: int = r
+				rb.pressed.connect(func() -> void: _set_prop(id, "rot", rr, true))
+				rh.add_child(rb)
+			_fiche_row(g3, "Rotation", rh)
+			_fiche_row(g3, "Miroir", _fiche_toggle(id, "flip", e.get("flip", false), "Retourné", "Normal"))
+			_fiche_row(g3, "Passage", _fiche_toggle(id, "block", e.get("block", false), "Bloque", "Libre"))
+		"waypoint":
+			_fiche_row(g3, "Pause", _fiche_spin(id, "pause", float(e.get("pause", 0.0)), 0, 600, 1, " s"))
+		"zone":
+			var roles := []
+			for r in EditorDoc.ZONE_ROLES:
+				roles.append([r, EditorDoc.ZONE_ROLES[r]])
+			_context.add_child(_fiche_options(id, "role", roles, str(e.get("role", "capture"))))
+			_fiche_row(g3, "Rayon", _fiche_spin(id, "radius", float(e.get("radius", 2.5)), 1, 12, 0.5, " cases"))
+			if e.get("role", "") == "capture":
+				_fiche_row(g3, "Temps à tenir", _fiche_spin(id, "time", float(e.get("time", 30.0)), 5, 900, 5, " s"))
+			if e.get("role", "") in ["extraction", "passage", "trigger"]:
+				_context.add_child(EditorUi.muted("Rôle utilisé par les objectifs et déclencheurs (livraison 3)."))
+		"door":
+			_fiche_row(g3, "Longueur", _fiche_spin(id, "len", float(e.get("len", 2)), 1, 8, 1, " cases"))
+			_fiche_row(g3, "Sens", _fiche_toggle(id, "vertical", e.get("vertical", false), "Verticale", "Horizontale", true))
+			_fiche_row(g3, "Au départ", _fiche_toggle(id, "open", e.get("open", false), "Ouverte", "Fermée"))
+			_context.add_child(g3)
+			g3 = EditorUi.grid(2, 6)
+			_fiche_link(id, "link", "S'ouvre via", func(x: Dictionary) -> bool: return x.kind in ["terminal", "structure", "enemy"],
+					"Un terminal (activé) ou un objet ennemi (détruit)")
+		"shield":
+			_fiche_row(g3, "Rayon", _fiche_spin(id, "radius", float(e.get("radius", 4.0)), 1, 12, 0.5, " cases"))
+			_context.add_child(g3)
+			g3 = EditorUi.grid(2, 6)
+			_fiche_link(id, "link", "Générateur", func(x: Dictionary) -> bool: return x.kind == "structure", "Le générateur qui alimente le bouclier")
+		"terminal":
+			_fiche_row(g3, "Temps d'activation", _fiche_spin(id, "time", float(e.get("time", 5.0)), 1, 120, 1, " s"), "Temps passé par une unité du joueur à côté")
+		"prisoners":
+			_fiche_row(g3, "Nombre", _fiche_spin(id, "count", float(e.get("count", 3)), 1, 12, 1))
+			var units := []
+			for k in Content.UNITS:
+				if k not in ["worker", "escort_truck", "commander"]:
+					units.append([k, str(Content.UNITS[k].name)])
+			_fiche_row(g3, "Unités", _fiche_options(id, "unit", units, str(e.get("unit", "soldier")), false))
+		"pickup":
+			var le := EditorUi.line_edit("Libellé", 104)
+			le.text = str(e.get("label", "Données"))
+			le.text_submitted.connect(func(t: String) -> void: _set_prop(id, "label", t))
+			le.focus_exited.connect(func() -> void: _set_prop(id, "label", le.text))
+			_fiche_row(g3, "Libellé", le)
+	if g3.get_child_count() > 0:
+		_context.add_child(g3)
+	if kind in ["ally_unit", "enemy", "structure", "ally_tower", "defend", "vip", "door", "shield", "terminal", "prisoners", "pickup"]:
+		_context.add_child(EditorUi.muted("Clic droit sur un objet : sa fiche · double clic : renommer"))
+	_context.add_child(EditorUi.sep())
 
 
 func _rename(id: int, t: String) -> void:

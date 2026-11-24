@@ -48,6 +48,7 @@ func _init() -> void:
 	_test_chain_build()
 	_test_missions()
 	_test_editor_core()
+	_test_object_sheet()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -1114,3 +1115,84 @@ func _test_editor_core() -> void:
 	var big := EditorOps.place(d, L, "deco:hangar_2x2", Vector2i(10, 6), o)
 	_check(big.has("entity") and EditorDoc.entity_cells(big.entity).size() == 4, "décor 2x2 posé sur 4 cases")
 	_check(EditorOps.place(d, L, "deco:hangar_2x2", Vector2i(11, 0), o).has("error"), "un décor qui déborde est refusé")
+
+
+func _test_object_sheet() -> void:
+	print("Fiches d'objets : comportements, réglages, objets interactifs")
+	var w := _mission_world({"type": "destroy_base"}, [
+		{"kind": "enemy", "type": "normal", "cell": [12, 1], "id": 1, "behavior": "patrol", "patrol": [[12, 1], [20, 1]]},
+		{"kind": "enemy", "type": "armored", "cell": [22, 8], "id": 2, "hp_mul": 2.0, "inv": true},
+		{"kind": "ally_unit", "type": "soldier", "cell": [8, 8], "id": 3, "selectable": false, "behavior": "patrol", "patrol": [[8, 8], [8, 6]]},
+		{"kind": "ally_tower", "type": "gun", "cell": [16, 9], "id": 4, "building": true},
+		{"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9},
+	])
+	var pat: Enemy = w.find_by_eid(1)
+	var ai0: Unit = w.find_by_eid(3)
+	var min_y := 99.0
+	for i in 50:
+		w.tick(0.1)
+		min_y = minf(min_y, ai0.pos.y)
+	_check(pat.pos.x > 14.5, "patrouille : l'ennemi part vers le point suivant")
+	var tank: Enemy = w.find_by_eid(2)
+	_check(tank.max_hp == Balance.ENEMIES.armored.hp * 2, "PV ×2 appliqués")
+	w._damage_enemy(tank, 50)
+	_check(tank.hp == tank.max_hp, "ennemi invulnérable")
+	var ai: Unit = w.find_by_eid(3)
+	_check(ai.ai and w.unit_at(ai.pos) == null, "unité alliée IA non sélectionnable")
+	_check(min_y < 7.2, "l'unité IA suit sa patrouille")
+	var site: BuildSite = w.find_by_eid(4)
+	_check(site != null and not site.built, "tourelle posée en chantier")
+	# Attaque une cible, repli
+	var w2 := _mission_world({"type": "destroy_base"}, [
+		{"kind": "ally_tower", "type": "gun", "cell": [20, 8], "id": 5, "inv": true},
+		{"kind": "enemy", "type": "normal", "cell": [10, 2], "id": 6, "behavior": "attack_target", "target": 5},
+		{"kind": "enemy", "type": "normal", "cell": [14, 2], "id": 7, "retreat": 50},
+		{"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9},
+	])
+	var att: Enemy = w2.find_by_eid(6)
+	var d0 := att.pos.distance_to(Vector2(20.5, 8.5))
+	_run(w2, 2.0)
+	_check(att.pos.distance_to(Vector2(20.5, 8.5)) < d0 - 1.5, "attaque une cible : l'ennemi fonce sur la tourelle désignée")
+	var ret: Enemy = w2.find_by_eid(7)
+	ret.pos = Vector2(18.5, 6.5)
+	ret.hp = ret.max_hp / 3
+	_run(w2, 0.5)
+	_check(ret.retreating, "repli sous 50 % de PV")
+	# Générateur, bouclier, porte, terminal, prisonniers, objet
+	var w3 := _mission_world({"type": "destroy_base"}, [
+		{"kind": "structure", "type": "e_generator", "cell": [20, 2], "id": 10},
+		{"kind": "structure", "type": "e_tower_gun", "cell": [16, 2], "id": 11},
+		{"kind": "shield", "cell": [16, 2], "id": 12, "link": 10, "radius": 3},
+		{"kind": "door", "cell": [12, 0], "id": 13, "len": 3, "vertical": true, "link": 10},
+		{"kind": "terminal", "cell": [8, 4], "id": 14, "time": 2},
+		{"kind": "door", "cell": [12, 6], "id": 15, "len": 2, "link": 14},
+		{"kind": "prisoners", "cell": [9, 8], "id": 16, "count": 3},
+		{"kind": "pickup", "cell": [10, 8], "id": 17},
+		{"kind": "structure", "type": "e_hq", "cell": [22, 7], "id": 9},
+	])
+	_check(not w3.pathfinder.is_free(Vector2i(12, 1)), "porte fermée : infranchissable")
+	_run(w3, 0.2)
+	var tw: Enemy = w3.find_by_eid(11)
+	w3._damage_enemy(tw, 100)
+	_check(tw.hp == tw.max_hp, "bouclier actif : la tourelle ne prend pas de dégâts")
+	var gen: Enemy = w3.find_by_eid(10)
+	gen.hp = 0
+	_run(w3, 0.2)
+	w3._damage_enemy(tw, 100)
+	_check(tw.hp < tw.max_hp and not w3.mission.shields[0].active, "générateur détruit : bouclier coupé")
+	_check(w3.mission.doors[0].open and w3.pathfinder.is_free(Vector2i(12, 1)), "générateur détruit : la porte liée s'ouvre")
+	var s1 := _add_unit(w3, "soldier", Vector2(8.5, 5.5))
+	s1.order = Unit.Order.HOLD
+	_run(w3, 2.5)
+	_check(w3.mission.terminals[0].done and w3.mission.doors[1].open, "terminal activé : sa porte s'ouvre")
+	var before := w3.units.size()
+	s1.pos = Vector2(9.5, 8.5)
+	_run(w3, 0.3)
+	_check(w3.mission.prisoners[0].freed and w3.units.size() == before + 3, "prisonniers libérés : 3 unités rejoignent le joueur")
+	s1.pos = Vector2(10.5, 8.5)
+	_run(w3, 0.2)
+	_check(w3.mission.pickups[0].taken and w3.mission.collected == 1, "objet récupéré")
+	var st := w3.mission.inter_state()
+	var copy := GameWorld.new(MapLoader.from_layout(MISSION_MAP), {"mission": {"type": "destroy_base"}, "entities": w3.mission.entities})
+	copy.mission.apply_inter_state(st)
+	_check(copy.mission.doors[1].open and copy.mission.prisoners[0].freed, "état des objets transmis au 2e joueur")

@@ -5,7 +5,7 @@ extends RefCounted
 
 const ENEMY_TYPES: Array[String] = ["normal", "fast", "armored", "flying", "boss",
 		"swarmer", "spitter", "brute", "shell", "siege", "mothership", "train", "truck", "boat",
-		"e_tower_gun", "e_tower_cannon", "e_tower_missile", "e_tower_laser", "e_siege_tank", "e_bunker", "e_barracks", "e_hq"]
+		"e_tower_gun", "e_tower_cannon", "e_tower_missile", "e_tower_laser", "e_siege_tank", "e_bunker", "e_barracks", "e_hq", "e_generator"]
 
 static func _prod(p: Producer) -> Array:
 	if p == null:
@@ -26,7 +26,8 @@ static func snapshot(w: GameWorld) -> Dictionary:
 	var units := []
 	for u in w.units:
 		if u.alive:
-			units.append([u.id, u.type, u.pos.x, u.pos.y, u.facing.x, u.facing.y, u.aim_angle, u.hp, u.max_hp, u.order, u.sieged, u.buff_time, u.ability_cd])
+			units.append([u.id, u.type, u.pos.x, u.pos.y, u.facing.x, u.facing.y, u.aim_angle, u.hp, u.max_hp, u.order, u.sieged, u.buff_time, u.ability_cd,
+					u.locked, u.ai, u.vip])
 	var enemies := []
 	for e in w.enemies:
 		if e.hp > 0:
@@ -43,7 +44,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"u": units,
 		"dl": w.deposit_left,
 		"up": w.upgrades,
-		"ms": [w.mission.zones.map(func(z: Dictionary) -> Array: return [z.progress, z.captured]), w.mission.convoys.map(func(c: Dictionary) -> Array: return [c.uid, c.i, c.state, c.at]), w.time],
+		"ms": [w.mission.zones.map(func(z: Dictionary) -> Array: return [z.progress, z.captured]), w.mission.convoys.map(func(c: Dictionary) -> Array: return [c.uid, c.i, c.state, c.at]), w.time, w.mission.inter_state()],
 		"ob": w.objectives.map(func(o: Dictionary) -> Array: return [o.state, o.destroyed]),
 		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
@@ -106,6 +107,8 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		for c: Array in snap.ms[1]:
 			cvs.append({"uid": c[0], "i": c[1], "state": c[2], "at": c[3], "pause": 0.0})
 		w.mission.convoys = cvs
+		if snap.ms.size() > 3:
+			w.mission.apply_inter_state(snap.ms[3])
 		w.time = snap.ms[2]
 	if snap.has("up") and snap.up != w.upgrades:
 		w.upgrades = snap.up
@@ -144,6 +147,10 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		u.sieged = a[10]
 		u.buff_time = a[11]
 		u.ability_cd = a[12]
+		if a.size() > 15:
+			u.locked = a[13]
+			u.ai = a[14]
+			u.vip = a[15]
 		units.append(u)
 	for old in w.units:
 		if not units.has(old):

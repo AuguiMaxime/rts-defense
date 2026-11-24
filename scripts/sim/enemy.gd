@@ -42,6 +42,17 @@ var path: Array[Vector2i] = []
 var repath_timer := 0.0
 var spawn_timer := 0.0
 var aim_angle := 0.0
+## Objet de l'éditeur (identifiant), réglages de la fiche et comportement.
+var eid := -1
+var invulnerable := false
+var shielded := false # protégé par un bouclier dont le générateur est en vie
+var home := Vector2.ZERO # position de départ (repli)
+var patrol: Array[Vector2i] = []
+var patrol_i := 0
+var target_eid := -1 # défendre / attaquer / suivre cet objet
+var goal_pos := Vector2.INF # zone à attaquer
+var retreat_pct := 0.0 # se replie sous cette part de PV (0 = jamais)
+var retreating := false
 var visual_offset := Vector2.ZERO # petit décalage pour ne pas tous se superposer à l'écran
 
 

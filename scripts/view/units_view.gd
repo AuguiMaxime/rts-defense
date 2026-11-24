@@ -277,6 +277,7 @@ func _draw_mission_layer() -> void:
 		if not _deco_cache.has(d.sprite):
 			_deco_cache[d.sprite] = deco_texture(d.sprite)
 		draw_deco(self, _deco_cache[d.sprite], d.cell, d.base, d.rot, float(TILE), Color.WHITE, d.get("flip", false))
+	_draw_interactive(m)
 	for z in m.zones:
 		var c: Vector2 = z.pos * TILE
 		var rad: float = z.radius * TILE
@@ -319,6 +320,73 @@ func _draw_mission_layer() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(r.get_center().x - 100, r.position.y - 6), "★ À DÉFENDRE", HORIZONTAL_ALIGNMENT_CENTER, 200, 18, Color(1.0, 0.85, 0.3))
 
 
+## Portes, boucliers, terminaux, prisonniers, objets à récupérer (dessins provisoires).
+func _draw_interactive(m: Mission) -> void:
+	var font := ThemeDB.fallback_font
+	var t := float(TILE)
+	for d in m.doors:
+		var cells: Array = d.cells
+		if cells.is_empty():
+			continue
+		var r := Rect2(Vector2(cells[0]) * t, Vector2(t, t))
+		for c in cells:
+			r = r.merge(Rect2(Vector2(c) * t, Vector2(t, t)))
+		if d.open:
+			# Battants rangés sur les côtés
+			if d.vertical:
+				draw_rect(Rect2(r.position, Vector2(t, 10)), Color(0.35, 0.38, 0.42))
+				draw_rect(Rect2(Vector2(r.position.x, r.end.y - 10), Vector2(t, 10)), Color(0.35, 0.38, 0.42))
+			else:
+				draw_rect(Rect2(r.position, Vector2(10, t)), Color(0.35, 0.38, 0.42))
+				draw_rect(Rect2(Vector2(r.end.x - 10, r.position.y), Vector2(10, t)), Color(0.35, 0.38, 0.42))
+		else:
+			var inner := r.grow(-6)
+			draw_rect(r.grow(-2), Color(0.12, 0.13, 0.15))
+			draw_rect(inner, Color(0.42, 0.46, 0.52))
+			var n := int((inner.size.x if not d.vertical else inner.size.y) / 14.0)
+			for i in n:
+				var k := i * 14.0
+				if d.vertical:
+					draw_line(Vector2(inner.position.x, inner.position.y + k), Vector2(inner.end.x, inner.position.y + k + 10), Color(1.0, 0.78, 0.1, 0.9), 5.0)
+				else:
+					draw_line(Vector2(inner.position.x + k, inner.end.y), Vector2(inner.position.x + k + 10, inner.position.y), Color(1.0, 0.78, 0.1, 0.9), 5.0)
+			draw_rect(r.grow(-2), Color(0.05, 0.05, 0.06), false, 3.0)
+	for sh in m.shields:
+		if not sh.active:
+			continue
+		var c: Vector2 = sh.pos * t
+		var rad: float = sh.radius * t
+		draw_circle(c, rad, Color(0.35, 0.65, 1.0, 0.10 + 0.04 * sin(_anim * 3.0)))
+		draw_arc(c, rad, 0, TAU, 64, Color(0.5, 0.8, 1.0, 0.7), 3.0)
+	for tm in m.terminals:
+		var c := (Vector2(tm.cell) + Vector2(0.5, 0.5)) * t
+		draw_rect(Rect2(c - Vector2(22, 18), Vector2(44, 36)), Color(0.12, 0.15, 0.2))
+		draw_rect(Rect2(c - Vector2(16, 12), Vector2(32, 18)), Color(0.2, 1.0, 0.6, 0.85) if tm.done else Color(0.2, 0.7, 1.0, 0.6 + 0.3 * sin(_anim * 4.0)))
+		draw_rect(Rect2(c - Vector2(22, 18), Vector2(44, 36)), Color(0.05, 0.05, 0.06), false, 2.0)
+		if not tm.done and tm.progress > 0.0:
+			draw_arc(c, 30, -PI / 2, -PI / 2 + TAU * tm.progress / tm.time, 32, Color(0.3, 1.0, 0.6), 5.0)
+	for p in m.prisoners:
+		if p.freed:
+			continue
+		var r := Rect2(Vector2(p.cell) * t + Vector2(4, 4), Vector2(t - 8, t - 8))
+		draw_rect(r, Color(0.15, 0.12, 0.1, 0.8))
+		for i in mini(int(p.count), 6):
+			draw_circle(r.position + Vector2(12 + (i % 3) * 18, 16 + (i / 3) * 22), 6, Color(0.4, 0.75, 1.0))
+		for i in 5:
+			var x := r.position.x + i * (r.size.x / 4.0)
+			draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), Color(0.55, 0.58, 0.62), 3.0)
+		draw_rect(r, Color(0.55, 0.58, 0.62), false, 3.0)
+	for k in m.pickups:
+		if k.taken:
+			continue
+		var c := (Vector2(k.cell) + Vector2(0.5, 0.5)) * t
+		var b := 3.0 * sin(_anim * 4.0)
+		draw_circle(c, 22 + b, Color(1.0, 0.85, 0.3, 0.18))
+		draw_rect(Rect2(c - Vector2(13, 11), Vector2(26, 22)), Color(0.85, 0.65, 0.2))
+		draw_rect(Rect2(c - Vector2(13, 11), Vector2(26, 22)), Color(0.3, 0.2, 0.05), false, 2.0)
+		draw_string(font, c + Vector2(-60, -24), str(k.label), HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color(1.0, 0.9, 0.5))
+
+
 ## Structures ennemies posées (tourelles, bunker, caserne, base).
 func _draw_structure(e: Enemy) -> void:
 	var def: Dictionary = Balance.ENEMY_STRUCTURES[e.type]
@@ -346,6 +414,14 @@ func _draw_structure(e: Enemy) -> void:
 		"bunker", "barracks":
 			draw_texture_rect(Sprites.W_BARRACKS, Rect2(r.position + Vector2(5, 7), r.size), false, Color(0, 0, 0, 0.35))
 			draw_texture_rect(Sprites.W_BARRACKS if def.look == "barracks" else Sprites.W_FACTORY, r, false, red)
+		"generator":
+			draw_rect(r.grow(-6), Color(0.18, 0.1, 0.12))
+			var pulse := 0.6 + 0.4 * sin(_anim * 5.0)
+			draw_circle(p, sz * 0.28, Color(1.0, 0.3, 0.25, pulse))
+			draw_arc(p, sz * 0.36, 0, TAU, 32, Color(1.0, 0.55, 0.3), 4.0)
+			for i in 4:
+				var a := PI / 4.0 + i * PI / 2.0
+				draw_line(p + Vector2.from_angle(a) * sz * 0.38, p + Vector2.from_angle(a) * sz * 0.48, Color(1.0, 0.5, 0.3), 6.0)
 		"hq":
 			draw_texture_rect(Sprites.W_BASE, Rect2(r.position + Vector2(6, 9), r.size), false, Color(0, 0, 0, 0.35))
 			draw_texture_rect(Sprites.W_BASE, r.grow(4), false, Color(1.0, 0.45, 0.4))

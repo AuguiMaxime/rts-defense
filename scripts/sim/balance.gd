@@ -59,6 +59,7 @@ const ENEMY_STRUCTURES := {
 	"e_siege_tank": {"name": "Char ennemi en siège", "hp": 350, "speed": 0.0, "damage": 35, "range": 8.0, "cooldown": 3.0, "armor": 5, "flying": false, "size": 1, "look": "siege"},
 	"e_bunker": {"name": "Bunker ennemi", "hp": 650, "speed": 0.0, "damage": 12, "range": 4.0, "cooldown": 0.8, "armor": 4, "flying": false, "size": 2, "look": "bunker"},
 	"e_barracks": {"name": "Caserne ennemie", "hp": 800, "speed": 0.0, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 3, "flying": false, "size": 2, "look": "barracks", "spawn": "normal", "spawn_every": 30.0},
+	"e_generator": {"name": "Générateur ennemi", "hp": 600, "speed": 0.0, "damage": 0, "range": 0.0, "cooldown": 1.0, "armor": 3, "flying": false, "size": 2, "look": "generator"},
 	"e_hq": {"name": "Base ennemie", "hp": 2500, "speed": 0.0, "damage": 20, "range": 4.5, "cooldown": 1.5, "armor": 4, "flying": false, "size": 3, "look": "hq", "spawn": "armored", "spawn_every": 45.0},
 }
 ## Objectifs bonus (neutres : ne combattent pas, suivent la voie ferrée / la route / l'eau).

@@ -154,6 +154,17 @@ static func make_entity(tool_id: String, c: Vector2i, opts: Dictionary) -> Dicti
 			e.role = parts[1]
 		"deco":
 			e.sprite = parts[1]
+		"door":
+			e.len = 2
+		"shield":
+			e.radius = 4.0
+		"terminal":
+			e.time = 5.0
+		"prisoners":
+			e.count = 3
+			e.unit = "soldier"
+		"pickup":
+			e.label = "Données"
 	apply_options(e, opts)
 	return e
 

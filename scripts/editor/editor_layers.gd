@@ -25,6 +25,7 @@ const KIND_LAYER := {
 	"structure": "units", "enemy": "units", "ally_tower": "units", "ally_unit": "units",
 	"vip": "mission", "escortee": "mission", "waypoint": "mission", "defend": "mission",
 	"zone": "zones", "deco": "deco",
+	"door": "mission", "shield": "mission", "terminal": "mission", "prisoners": "mission", "pickup": "mission",
 }
 
 var hidden := {}

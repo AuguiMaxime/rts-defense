@@ -51,6 +51,32 @@ Outils : **Sélection (V)**, **Poser (P)**, **Gomme (E)**, **Pipette (I)** (repr
 - **Mission · bâtiment à défendre** : habitat, caserne, usine, forge, centre de recherche ou labo, déjà construit. Les ennemis le visent en priorité, on ne peut pas le vendre, et sa destruction fait **perdre** la mission (quel que soit le type).
 - **Décor** : chaque image PNG mise dans `assets/deco/` apparaît automatiquement ici. Sa taille vient de son nom : `hangar_2x2.png` couvre 2x2 cases (`_2x1`, `_1x2`, `_3x3`, `_4x4`… ; sans suffixe = 1 case). **PIVOTER** le tourne par quarts de tour, **BLOQUE** rend toutes ses cases infranchissables. Les prompts pour générer ces images sont dans le doc « RTS Defense — Prompts décors ».
 
+### Fiche d'un objet (clic droit)
+
+Clic droit sur un objet (ou sélection d'un seul objet) : sa fiche s'affiche à droite. Double clic : renommer.
+
+- **Comportement** (ennemis) : garde son poste, immobile, patrouille (bouton *Tracer…* puis clique les points dans l'ordre), défend une structure, attaque à vue, attaque une cible (une tourelle, une unité ou un bâtiment allié), attaque une zone, suit une unité, marche sur la base. **Repli sous X %** : l'ennemi retourne à son point de départ quand ses PV passent sous ce seuil.
+- **Comportement** (unités alliées) : garde, tient la position, patrouille, suit une unité. **Contrôle** : joueur ou *IA alliée* (non sélectionnable). Les chars peuvent démarrer **en siège**.
+- **Statistiques** : points de vie, dégâts, portée, vitesse en pourcentage (100 % = normal). **Invulnérable**. Tourelles : niveau ; tourelles et bâtiments : *en chantier* (les ouvriers doivent le terminer).
+- **Liens** : bouton *Choisir…* puis clic sur l'objet voulu sur la carte (les candidats clignotent). Une flèche relie l'objet à sa cible.
+
+### Objets interactifs
+
+| Objet | Effet en jeu |
+|---|---|
+| Porte | Infranchissable tant qu'elle est fermée. Longueur 1 à 8, horizontale ou verticale, ouverte ou fermée au départ. S'ouvre quand son lien est activé (terminal) ou détruit (générateur, structure, ennemi) |
+| Générateur ennemi | Structure 2×2 sans arme, à détruire |
+| Bouclier | Rend invulnérables les ennemis dans son rayon tant que son générateur est en vie |
+| Terminal | S'active quand une unité du joueur reste à côté le temps indiqué |
+| Prisonniers | Libérés au contact d'une unité du joueur : ils la rejoignent (nombre et type réglables) |
+| Objet à récupérer | Ramassé quand une unité du joueur passe dessus |
+
+Les zones ont maintenant cinq rôles : prise, arrivée, extraction, passage, déclencheur. Extraction, passage et déclencheur serviront aux objectifs et déclencheurs (livraison 3).
+
+### Catalogue
+
+Clic droit sur un objet du catalogue : l'ajoute aux **★ Favoris** (ou l'en retire). Les 8 derniers objets posés apparaissent dans **Récents**.
+
 ## 3. Onglet MISSION : les règles
 
 | Type | Victoire | Défaite |

@@ -50,6 +50,14 @@ var convoys: Array[Dictionary] = []
 var convoy_spawn := Vector2i(-1, -1)
 ## Bâtiments à défendre (ids des chantiers).
 var defend_ids: Array[int] = []
+## Objets interactifs (identifiant d'éditeur `eid`).
+var doors: Array[Dictionary] = [] # {eid, cells, open, link}
+var shields: Array[Dictionary] = [] # {eid, pos, radius, link, active}
+var terminals: Array[Dictionary] = [] # {eid, cell, time, progress, done}
+var prisoners: Array[Dictionary] = [] # {eid, cell, count, type, freed}
+var pickups: Array[Dictionary] = [] # {eid, cell, label, taken}
+var collected := 0
+const BEHAVIORS_ENEMY := ["guard", "static", "patrol", "defend", "aggressive", "attack_target", "attack_zone", "follow", "march"]
 
 
 func _init(d: Dictionary = {}, ents: Array = []) -> void:
@@ -107,6 +115,7 @@ func setup(w: GameWorld) -> void:
 				e.guard_pos = e.pos
 				e.id = w._next_enemy_id
 				w._next_enemy_id += 1
+				_enemy_props(e, ent)
 				w.enemies.append(e)
 				for cc in w._structure_cells(e):
 					w.pathfinder.set_solid(cc, true)
@@ -115,21 +124,32 @@ func setup(w: GameWorld) -> void:
 				if not Balance.ENEMIES.has(ent.type):
 					continue
 				var e := Enemy.create(ent.type, at, 1.0)
-				e.mode = "static" if ent.get("hold", false) else "guard"
+				var beh := str(ent.get("behavior", "static" if ent.get("hold", false) else "guard"))
+				e.mode = beh if BEHAVIORS_ENEMY.has(beh) else "guard"
 				e.guard_pos = at
+				e.home = at
 				e.id = w._next_enemy_id
 				w._next_enemy_id += 1
+				_enemy_props(e, ent)
+				for pc in ent.get("patrol", []):
+					e.patrol.append(Vector2i(int(pc[0]), int(pc[1])))
+				e.target_eid = int(ent.get("target", -1))
+				e.retreat_pct = float(ent.get("retreat", 0)) / 100.0
 				w.enemies.append(e)
 			"ally_tower", "defend":
-				var s := _place_free(w, str(ent.get("type", "")), c)
+				var s := _place_free(w, str(ent.get("type", "")), c, not ent.get("building", false))
 				if s == null:
 					continue
+				s.eid = int(ent.get("id", -1))
+				s.invulnerable = ent.get("inv", false)
+				s.set_mults(float(ent.get("dmg_mul", 1.0)), float(ent.get("rng_mul", 1.0)))
 				if ent.kind == "ally_tower":
 					s.level = clampi(int(ent.get("level", 1)), 1, BuildSite.MAX_LEVEL)
-					s.max_hp = int(s.stats().hp)
-					s.hp = s.max_hp
 				else:
 					defend_ids.append(s.id)
+				if s.built:
+					s.max_hp = roundi((s.stats().hp if s.is_tower() else Content.building(s.kind).hp) * float(ent.get("hp_mul", 1.0)))
+					s.hp = s.max_hp
 			"ally_unit", "vip":
 				var t := str(ent.get("type", "soldier"))
 				if not Content.UNITS.has(t):
@@ -137,9 +157,27 @@ func setup(w: GameWorld) -> void:
 				var u := Unit.create(t, at)
 				u.id = w._next_unit_id
 				w._next_unit_id += 1
+				u.eid = int(ent.get("id", -1))
+				u.invulnerable = ent.get("inv", false)
+				u.max_hp = roundi(u.max_hp * float(ent.get("hp_mul", 1.0)))
+				u.hp = u.max_hp
+				u.mul_dmg = float(ent.get("dmg_mul", 1.0))
+				u.mul_spd = float(ent.get("spd_mul", 1.0))
+				u.mul_rng = float(ent.get("rng_mul", 1.0))
 				w.units.append(u)
-				if ent.kind == "ally_unit" and ent.get("hold", false):
-					u.order = Unit.Order.HOLD
+				if ent.kind == "ally_unit":
+					var beh := str(ent.get("behavior", "hold" if ent.get("hold", false) else "guard"))
+					match beh:
+						"hold":
+							u.order = Unit.Order.HOLD
+						"patrol":
+							for pc in ent.get("patrol", []):
+								u.patrol.append(Vector2i(int(pc[0]), int(pc[1])))
+						"follow":
+							u.follow_eid = int(ent.get("target", -1))
+					u.ai = not ent.get("selectable", true)
+					if ent.get("sieged", false) and u.ability() == "siege":
+						u.sieged = true
 				if ent.kind == "vip":
 					u.vip = true
 					vip = u
@@ -148,8 +186,32 @@ func setup(w: GameWorld) -> void:
 			"waypoint":
 				waypoints.append([int(ent.get("order", waypoints.size())), c, float(ent.get("pause", 0.0))])
 			"zone":
-				zones.append({"pos": at, "radius": float(ent.get("radius", 2.5)), "role": str(ent.get("role", "capture")),
-						"progress": 0.0, "captured": false, "time": float(ent.get("time", data.get("time", 30.0)))})
+				zones.append({"eid": int(ent.get("id", -1)), "name": str(ent.get("name", "")), "pos": at, "radius": float(ent.get("radius", 2.5)),
+						"role": str(ent.get("role", "capture")), "progress": 0.0, "captured": false,
+						"time": float(ent.get("time", data.get("time", 30.0)))})
+			"door":
+				var cells: Array[Vector2i] = []
+				for i in clampi(int(ent.get("len", 2)), 1, 8):
+					var cc := c + (Vector2i(0, i) if ent.get("vertical", false) else Vector2i(i, 0))
+					if w.grid.is_inside(cc):
+						cells.append(cc)
+				var dr := {"eid": int(ent.get("id", -1)), "cells": cells, "open": bool(ent.get("open", false)),
+						"link": int(ent.get("link", -1)), "vertical": bool(ent.get("vertical", false))}
+				doors.append(dr)
+				if not dr.open:
+					for cc in cells:
+						w.pathfinder.set_solid(cc, true)
+					w._flow_dirty = true
+			"shield":
+				shields.append({"eid": int(ent.get("id", -1)), "pos": at, "radius": float(ent.get("radius", 4.0)),
+						"link": int(ent.get("link", -1)), "active": true})
+			"terminal":
+				terminals.append({"eid": int(ent.get("id", -1)), "cell": c, "time": float(ent.get("time", 5.0)), "progress": 0.0, "done": false})
+			"prisoners":
+				prisoners.append({"eid": int(ent.get("id", -1)), "cell": c, "count": clampi(int(ent.get("count", 3)), 1, 12),
+						"type": str(ent.get("unit", "soldier")), "freed": false})
+			"pickup":
+				pickups.append({"eid": int(ent.get("id", -1)), "cell": c, "label": str(ent.get("label", "Objet")), "taken": false})
 			"deco":
 				var sp := str(ent.get("sprite", ""))
 				var rot := int(ent.get("rot", 0)) % 4
@@ -161,6 +223,12 @@ func setup(w: GameWorld) -> void:
 							if w.grid.is_inside(c + Vector2i(dx, dy)):
 								w.pathfinder.set_solid(c + Vector2i(dx, dy), true)
 					w._flow_dirty = true
+	# Ennemis qui attaquent une zone : position de la zone.
+	for e in w.enemies:
+		if e.mode == "attack_zone":
+			for z in zones:
+				if z.eid == e.target_eid:
+					e.goal_pos = z.pos
 	waypoints.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 	for wp in waypoints:
 		route_cells.append(wp[1])
@@ -185,8 +253,19 @@ func setup(w: GameWorld) -> void:
 			convoys.append({"uid": -1, "at": start + gap * i, "i": 0, "pause": 0.0, "state": "wait"})
 
 
-## Pose un bâtiment allié déjà construit, sans le faire payer.
-func _place_free(w: GameWorld, kind: String, c: Vector2i) -> BuildSite:
+## Réglages de la fiche communs aux ennemis et structures.
+static func _enemy_props(e: Enemy, ent: Dictionary) -> void:
+	e.eid = int(ent.get("id", -1))
+	e.invulnerable = ent.get("inv", false)
+	e.max_hp = roundi(e.max_hp * float(ent.get("hp_mul", 1.0)))
+	e.hp = e.max_hp
+	e.damage = roundi(e.damage * float(ent.get("dmg_mul", 1.0)))
+	e.speed = e.speed * float(ent.get("spd_mul", 1.0))
+	e.attack_range = e.attack_range * float(ent.get("rng_mul", 1.0))
+
+
+## Pose un bâtiment allié sans le faire payer, construit ou en chantier.
+func _place_free(w: GameWorld, kind: String, c: Vector2i, built := true) -> BuildSite:
 	if kind == "" or (not Content.TOWERS.has(kind) and kind != "house" and not Content.PRODUCTION.has(kind)):
 		return null
 	var cost := Content.building(kind)
@@ -197,10 +276,11 @@ func _place_free(w: GameWorld, kind: String, c: Vector2i) -> BuildSite:
 		w.metal -= int(cost.metal)
 		w.essence -= int(cost.essence)
 		return null
-	s.work_done = s.work_needed
-	w._finish_site(s)
-	s.max_hp = int(s.stats().hp) if s.is_tower() else int(Content.building(kind).hp)
-	s.hp = s.max_hp
+	if built:
+		s.work_done = s.work_needed
+		w._finish_site(s)
+		s.max_hp = int(s.stats().hp) if s.is_tower() else int(Content.building(kind).hp)
+		s.hp = s.max_hp
 	return s
 
 
@@ -268,6 +348,7 @@ static func _line(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 
 func tick(w: GameWorld, delta: float) -> void:
 	_tick_convoys(w, delta)
+	_tick_interactive(w, delta)
 	# Zones de prise de position : des alliés dedans et aucun ennemi hostile.
 	for z in zones:
 		if z.role != "capture" or z.captured:
@@ -326,6 +407,100 @@ func _tick_convoys(w: GameWorld, delta: float) -> void:
 					u.path = w._path_toward(u.cell(), goal)
 				u.repath_timer -= delta
 				w._follow_path(u, ESCORTEE_SPEED, delta)
+
+
+## Portes, boucliers, terminaux, prisonniers, objets à récupérer.
+func _tick_interactive(w: GameWorld, delta: float) -> void:
+	var mine := w.units.filter(func(u: Unit) -> bool: return u.alive and not u.locked)
+	# Terminaux : une unité du joueur à côté pendant le temps indiqué.
+	for t in terminals:
+		if t.done:
+			continue
+		var c := Vector2(t.cell) + Vector2(0.5, 0.5)
+		if mine.any(func(u: Unit) -> bool: return u.pos.distance_to(c) <= 1.6):
+			t.progress = float(t.progress) + delta
+			if t.progress >= t.time:
+				t.done = true
+				w._emit({"type": "terminal_done", "pos": c, "eid": t.eid})
+		else:
+			t.progress = maxf(0.0, float(t.progress) - delta * 0.5)
+	# Portes liées à un terminal (activé) ou à un objet (détruit).
+	for d in doors:
+		if d.open or d.link < 0:
+			continue
+		var opened := false
+		var term := terminals.filter(func(t: Dictionary) -> bool: return t.eid == d.link)
+		if not term.is_empty():
+			opened = term[0].done
+		else:
+			opened = w.find_by_eid(d.link) == null
+		if opened:
+			open_door(w, d)
+	# Boucliers : actifs tant que leur générateur est en vie.
+	for e in w.enemies:
+		e.shielded = false
+	for sh in shields:
+		sh.active = sh.link < 0 or w.find_by_eid(sh.link) != null
+		if not sh.active:
+			continue
+		var r2: float = sh.radius * sh.radius
+		for e in w.enemies:
+			if not e.neutral and e.eid != sh.link and e.pos.distance_squared_to(sh.pos) <= r2:
+				e.shielded = true
+	# Prisonniers : libérés au contact, ils rejoignent le joueur.
+	for p in prisoners:
+		if p.freed:
+			continue
+		var c := Vector2(p.cell) + Vector2(0.5, 0.5)
+		if mine.any(func(u: Unit) -> bool: return u.pos.distance_to(c) <= 1.6):
+			p.freed = true
+			var t := str(p.type) if Content.UNITS.has(str(p.type)) else "soldier"
+			for i in int(p.count):
+				var u := Unit.create(t, c + Vector2.from_angle(TAU * i / float(p.count)) * 0.6)
+				u.id = w._next_unit_id
+				w._next_unit_id += 1
+				w.units.append(u)
+			w._emit({"type": "prisoners_freed", "pos": c, "eid": p.eid})
+	# Objets à récupérer : ramassés au passage.
+	for k in pickups:
+		if k.taken:
+			continue
+		var c := Vector2(k.cell) + Vector2(0.5, 0.5)
+		if mine.any(func(u: Unit) -> bool: return u.pos.distance_to(c) <= 0.9):
+			k.taken = true
+			collected += 1
+			w._emit({"type": "pickup", "pos": c, "eid": k.eid})
+
+
+func open_door(w: GameWorld, d: Dictionary) -> void:
+	if d.open:
+		return
+	d.open = true
+	for cc in d.cells:
+		w.pathfinder.set_solid(cc, false)
+	w._flow_dirty = true
+	w._emit({"type": "door_open", "pos": Vector2(d.cells[0]) + Vector2(0.5, 0.5), "eid": d.eid})
+
+
+## État des objets interactifs (coop : envoyé au 2e joueur).
+func inter_state() -> Array:
+	return [doors.map(func(d: Dictionary) -> bool: return d.open), terminals.map(func(t: Dictionary) -> Array: return [t.progress, t.done]),
+			prisoners.map(func(p: Dictionary) -> bool: return p.freed), pickups.map(func(k: Dictionary) -> bool: return k.taken),
+			shields.map(func(s: Dictionary) -> bool: return s.active)]
+
+
+func apply_inter_state(a: Array) -> void:
+	for i in mini(doors.size(), a[0].size()):
+		doors[i].open = a[0][i]
+	for i in mini(terminals.size(), a[1].size()):
+		terminals[i].progress = a[1][i][0]
+		terminals[i].done = a[1][i][1]
+	for i in mini(prisoners.size(), a[2].size()):
+		prisoners[i].freed = a[2][i]
+	for i in mini(pickups.size(), a[3].size()):
+		pickups[i].taken = a[3][i]
+	for i in mini(shields.size(), a[4].size()):
+		shields[i].active = a[4][i]
 
 
 ## Cibles prioritaires des ennemis : convois alliés en route, puis bâtiments à défendre.

@@ -83,12 +83,62 @@ func _draw() -> void:
 			if not e.is_empty():
 				var er := EditorDoc.entity_rect(e)
 				draw_rect(Rect2(Vector2(er.position) * T, Vector2(er.size) * T).grow(3), Color.WHITE, false, 2.5 * px)
+	_draw_relations(px)
 	if ed.band_active:
 		var br: Rect2i = ed.band_rect()
 		var r := Rect2(Vector2(br.position) * T, Vector2(br.size) * T)
 		draw_rect(r, Color(Ui.CYAN, 0.12))
 		draw_rect(r, Ui.CYAN, false, 1.5 * px)
 	_draw_hover(px)
+
+
+## Liens de l'objet sélectionné (patrouille, cible, porte, bouclier) et choix en cours sur la carte.
+func _draw_relations(px: float) -> void:
+	var doc: EditorDoc = ed.doc
+	var font := ThemeDB.fallback_font
+	var shown: Array = ed.sel_ids.duplicate()
+	if not ed.pick.is_empty() and not shown.has(int(ed.pick.id)):
+		shown.append(int(ed.pick.id))
+	for id in shown:
+		var e := doc.entity_by_id(int(id))
+		if e.is_empty():
+			continue
+		var from := _center(e)
+		var pts: Array = e.get("patrol", [])
+		if not pts.is_empty() and str(e.get("behavior", "")) == "patrol" or (not ed.pick.is_empty() and ed.pick.key == "patrol" and int(ed.pick.id) == int(id)):
+			var prev := from
+			for i in pts.size():
+				var q := (Vector2(int(pts[i][0]), int(pts[i][1])) + Vector2(0.5, 0.5)) * T
+				draw_dashed_line(prev, q, Color(Ui.GOLD, 0.8), 3.0, 10.0)
+				draw_circle(q, 11, Color(0.1, 0.1, 0.1, 0.85))
+				draw_arc(q, 11, 0, TAU, 16, Ui.GOLD, 2.0)
+				draw_string(font, q + Vector2(-8, 5), str(i + 1), HORIZONTAL_ALIGNMENT_CENTER, 16, 13, Ui.GOLD)
+				prev = q
+			if pts.size() >= 2:
+				var first := (Vector2(int(pts[0][0]), int(pts[0][1])) + Vector2(0.5, 0.5)) * T
+				draw_dashed_line(prev, first, Color(Ui.GOLD, 0.35), 2.0, 10.0)
+		for key in ["target", "link"]:
+			var t := doc.entity_by_id(int(e.get(key, -1)))
+			if t.is_empty():
+				continue
+			var to := _center(t)
+			var col: Color = Ui.RED if e.kind == "enemy" else Ui.CYAN
+			draw_line(from, to, Color(col, 0.85), 3.0)
+			var dir := (to - from).normalized()
+			draw_colored_polygon(PackedVector2Array([to - dir * 6, to - dir * 26 + dir.orthogonal() * 10, to - dir * 26 - dir.orthogonal() * 10]), col)
+			draw_arc(to, 30, 0, TAU, 24, Color(col, 0.7), 2.0)
+	if not ed.pick.is_empty() and ed.pick.key != "patrol":
+		var accept: Callable = ed.pick.accept
+		for x: Dictionary in doc.entities:
+			if int(x.id) != int(ed.pick.id) and ed.layers.entity_visible(x) and accept.call(x):
+				var r := EditorDoc.entity_rect(x)
+				draw_rect(Rect2(Vector2(r.position) * T, Vector2(r.size) * T).grow(4), Color(Ui.GOLD, 0.25 + 0.2 * sin(Time.get_ticks_msec() * 0.008)))
+				draw_rect(Rect2(Vector2(r.position) * T, Vector2(r.size) * T).grow(4), Ui.GOLD, false, 2.0 * px)
+
+
+func _center(e: Dictionary) -> Vector2:
+	var r := EditorDoc.entity_rect(e)
+	return (Vector2(r.position) + Vector2(r.size) * 0.5) * T
 
 
 func _cells_rect(cells: Array[Vector2i]) -> Rect2:
@@ -208,6 +258,10 @@ func draw_entity(e: Dictionary, alpha := 1.0, tint := Color.WHITE) -> void:
 				draw_texture_rect(Sprites.TOWER_LOOK[look].base, r, false, Color(1, 0.5, 0.45, m.a))
 				var k := r.size.x * 0.9
 				draw_texture_rect(Sprites.TOWER_LOOK[look].turret, Rect2(r.get_center() - Vector2(k, k) / 2, Vector2(k, k)), false, Color(1, 0.6, 0.55, m.a))
+			elif look == "generator":
+				draw_rect(r.grow(-6), Color(0.18, 0.1, 0.12, m.a))
+				draw_circle(r.get_center(), sz * 0.28, Color(1.0, 0.3, 0.25, m.a))
+				draw_arc(r.get_center(), sz * 0.36, 0, TAU, 32, Color(1.0, 0.55, 0.3, m.a), 4.0)
 			elif tx != null:
 				draw_texture_rect(tx, r, false, Color(1, 0.5, 0.45, m.a))
 			else:
@@ -218,7 +272,7 @@ func draw_entity(e: Dictionary, alpha := 1.0, tint := Color.WHITE) -> void:
 			if not lk.is_empty():
 				draw_texture_rect(lk.tex, Rect2(center - Vector2(28, 28), Vector2(56, 56)), false, m)
 			draw_arc(center, T * 0.45, 0, TAU, 20, Color(1, 0.25, 0.2, m.a), 2.5)
-			if e.get("hold", false):
+			if e.get("hold", false) or e.get("behavior", "") == "static":
 				draw_string(font, center + Vector2(-6, -18), "■", HORIZONTAL_ALIGNMENT_CENTER, 12, 14, Color(1, 0.4, 0.3, m.a))
 		"ally_tower":
 			var tl: Dictionary = Sprites.TOWER_LOOK.get(e.type, {})
@@ -234,6 +288,43 @@ func draw_entity(e: Dictionary, alpha := 1.0, tint := Color.WHITE) -> void:
 			draw_arc(center, T * 0.45, 0, TAU, 20, Color(Ui.GOLD if e.kind == "vip" else Ui.GREEN, m.a), 2.5)
 			if e.kind == "vip":
 				draw_string(font, center + Vector2(-20, -24), "VIP", HORIZONTAL_ALIGNMENT_CENTER, 40, 16, Color(Ui.GOLD, m.a))
+			elif not e.get("selectable", true):
+				draw_string(font, center + Vector2(-20, -24), "IA", HORIZONTAL_ALIGNMENT_CENTER, 40, 15, Color(Ui.GREEN, m.a))
+		"door":
+			var r := Rect2(c * T, Vector2(EditorDoc.entity_size(e)) * T)
+			if e.get("open", false):
+				draw_rect(r.grow(-4), Color(0.42, 0.46, 0.52, m.a), false, 3.0)
+			else:
+				draw_rect(r.grow(-4), Color(0.42, 0.46, 0.52, m.a))
+				var n := int(maxf(r.size.x, r.size.y) / 16.0)
+				for i in n:
+					var k := 8.0 + i * 16.0
+					if e.get("vertical", false):
+						draw_line(Vector2(r.position.x + 6, r.position.y + k), Vector2(r.end.x - 6, r.position.y + k + 8), Color(1.0, 0.78, 0.1, m.a), 4.0)
+					else:
+						draw_line(Vector2(r.position.x + k, r.end.y - 6), Vector2(r.position.x + k + 8, r.position.y + 6), Color(1.0, 0.78, 0.1, m.a), 4.0)
+			draw_rect(r.grow(-2), Color(0.05, 0.05, 0.06, m.a), false, 3.0)
+			draw_string(font, r.position + Vector2(4, -6), "PORTE" + (" (ouverte)" if e.get("open", false) else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.9, 1.0, m.a))
+		"shield":
+			var rad := float(e.get("radius", 4.0)) * T
+			draw_circle(center, rad, Color(0.35, 0.65, 1.0, 0.08 * m.a))
+			draw_arc(center, rad, 0, TAU, 48, Color(0.5, 0.8, 1.0, 0.8 * m.a), 3.0)
+			draw_circle(center, 14, Color(0.3, 0.6, 1.0, m.a))
+			draw_string(font, center + Vector2(-40, -20), "BOUCLIER", HORIZONTAL_ALIGNMENT_CENTER, 80, 14, Color(0.6, 0.85, 1.0, m.a))
+		"terminal":
+			draw_rect(Rect2(center - Vector2(22, 18), Vector2(44, 36)), Color(0.12, 0.15, 0.2, m.a))
+			draw_rect(Rect2(center - Vector2(16, 12), Vector2(32, 18)), Color(0.2, 0.7, 1.0, 0.8 * m.a))
+			draw_string(font, center + Vector2(-40, -24), "TERMINAL %d s" % int(e.get("time", 5)), HORIZONTAL_ALIGNMENT_CENTER, 80, 13, Color(0.6, 0.85, 1.0, m.a))
+		"prisoners":
+			var r := Rect2(c * T + Vector2(4, 4), Vector2(T - 8, T - 8))
+			draw_rect(r, Color(0.15, 0.12, 0.1, 0.8 * m.a))
+			for i in 5:
+				var x := r.position.x + i * (r.size.x / 4.0)
+				draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), Color(0.55, 0.58, 0.62, m.a), 3.0)
+			draw_string(font, center + Vector2(-40, -26), "PRISONNIERS ×%d" % int(e.get("count", 3)), HORIZONTAL_ALIGNMENT_CENTER, 80, 13, Color(0.6, 0.85, 1.0, m.a))
+		"pickup":
+			draw_rect(Rect2(center - Vector2(13, 11), Vector2(26, 22)), Color(0.85, 0.65, 0.2, m.a))
+			draw_string(font, center + Vector2(-50, -18), str(e.get("label", "Objet")), HORIZONTAL_ALIGNMENT_CENTER, 100, 13, Color(1.0, 0.9, 0.5, m.a))
 		"escortee":
 			draw_rect(Rect2(center - Vector2(22, 16), Vector2(44, 32)), Color(0.3, 0.6, 0.4, m.a))
 			draw_arc(center, T * 0.5, 0, TAU, 20, Color(Ui.GREEN, m.a), 3.0)
@@ -247,10 +338,11 @@ func draw_entity(e: Dictionary, alpha := 1.0, tint := Color.WHITE) -> void:
 			draw_string(font, Vector2(r.position.x, r.position.y - 6), "★ À DÉFENDRE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(Ui.GOLD, m.a))
 		"zone":
 			var rad := float(e.get("radius", 2.5)) * T
-			var col: Color = Ui.GREEN if e.get("role", "") == "goal" else Ui.GOLD
+			var role := str(e.get("role", "capture"))
+			var col: Color = {"goal": Ui.GREEN, "capture": Ui.GOLD, "extraction": Ui.CYAN, "passage": Color(0.7, 0.6, 1.0), "trigger": Ui.MAGENTA}.get(role, Ui.GOLD)
 			draw_circle(center, rad, Color(col, 0.12 * m.a))
 			draw_arc(center, rad, 0, TAU, 40, Color(col, m.a), 3.0)
-			var lbl := "ARRIVÉE" if e.get("role", "") == "goal" else "PRISE %d s" % int(e.get("time", 30))
+			var lbl := str(e.get("name", "")) if role != "capture" else "%s · %d s" % [e.get("name", ""), int(e.get("time", 30))]
 			draw_string(font, center + Vector2(-60, 6), lbl, HORIZONTAL_ALIGNMENT_CENTER, 120, 18, Color(col, m.a))
 		"deco":
 			var sp := str(e.get("sprite", ""))

@@ -848,6 +848,18 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			u.path = _path_toward(u.cell(), Vector2i(u.target.pos.floor()))
 		_follow_path(u, st.speed, delta)
 		return
+	# Escorte / patrouille (unités posées dans l'éditeur) : le poste se déplace.
+	if u.follow_eid >= 0:
+		var f: Variant = find_by_eid(u.follow_eid)
+		if f == null:
+			u.follow_eid = -1
+		elif u.repath_timer <= 0.0 or u.guard_pos.distance_to(obj_pos(f)) > 2.5:
+			u.guard_pos = obj_pos(f) + Vector2(-1.0, 0.8)
+			u.path.clear()
+	elif not u.patrol.is_empty() and u.pos.distance_to(u.guard_pos) <= 0.7:
+		u.patrol_i = (u.patrol_i + 1) % u.patrol.size()
+		u.guard_pos = Vector2(u.patrol[u.patrol_i]) + Vector2(0.5, 0.5)
+		u.path.clear()
 	# Garde sans cible : retour au poste (s'il est bloqué par un voisin, son poste devient sa position).
 	var gd := u.pos.distance_to(u.guard_pos)
 	if gd > 0.7:
@@ -1001,6 +1013,10 @@ func _separate_units() -> void:
 func _damage_enemy(e: Enemy, amount: int) -> void:
 	if e.hp <= 0:
 		return
+	if e.invulnerable or e.shielded:
+		if e.shielded:
+			_emit({"type": "shield_hit", "pos": e.pos})
+		return
 	e.hp -= maxi(1, amount - e.armor)
 	if e.hp <= 0 and e.neutral:
 		_objective_destroyed(e)
@@ -1074,10 +1090,73 @@ func _tick_placed_enemy(e: Enemy, delta: float) -> void:
 				spawn_enemy(def.spawn, spots[_rng.randi() % spots.size()], waves.hp_scale())
 	if e.attack_range <= 0.0:
 		return
-	var aggro := e.attack_range if e.mode == "static" else e.attack_range + 4.0
+	# Repli sous X % de PV : retour au point de départ sans combattre (une seule fois).
+	if e.retreat_pct > 0.0 and not e.retreating and e.hp < e.max_hp * e.retreat_pct:
+		e.retreating = true
+	if e.retreating:
+		if e.pos.distance_to(e.home) < 0.7:
+			e.retreating = false
+			e.retreat_pct = 0.0
+			e.mode = "guard"
+			e.guard_pos = e.home
+		else:
+			_enemy_walk(e, e.home, delta)
+			return
+	# Comportement : point d'ancrage, distance de repérage, laisse.
+	var anchor := e.guard_pos
+	var aggro := e.attack_range + 4.0
+	var leash := 9.0
+	var focus_obj: Variant = null
+	match e.mode:
+		"static":
+			aggro = e.attack_range
+		"aggressive":
+			aggro = e.attack_range + 7.0
+			leash = INF
+		"defend":
+			focus_obj = find_by_eid(e.target_eid)
+			if focus_obj == null:
+				e.mode = "aggressive"
+			else:
+				anchor = obj_pos(focus_obj)
+				aggro = e.attack_range + 6.0
+				leash = 10.0
+		"follow":
+			focus_obj = find_by_eid(e.target_eid)
+			if focus_obj == null:
+				e.mode = "guard"
+				e.guard_pos = e.pos
+			else:
+				anchor = obj_pos(focus_obj) + Vector2(-1.0, 0.6)
+				leash = 5.0
+		"patrol":
+			if e.patrol.is_empty():
+				e.mode = "guard"
+			else:
+				anchor = Vector2(e.patrol[e.patrol_i % e.patrol.size()]) + Vector2(0.5, 0.5)
+		"attack_target":
+			focus_obj = find_by_eid(e.target_eid)
+			if focus_obj == null or focus_obj is Enemy:
+				e.mode = "march" # cible détruite : on marche sur la base
+				return
+			anchor = obj_pos(focus_obj)
+			aggro = e.attack_range
+			leash = INF
+		"attack_zone":
+			if e.goal_pos == Vector2.INF or e.pos.distance_to(e.goal_pos) < 1.2:
+				e.mode = "guard"
+				e.guard_pos = e.pos if e.goal_pos == Vector2.INF else e.goal_pos
+			else:
+				anchor = e.goal_pos
+				aggro = e.attack_range + 2.0
+				leash = INF
 	if e.retarget_timer <= 0.0:
 		e.retarget_timer = 0.3
 		_pick_target(e, aggro + e.radius)
+		# Cible désignée à portée : elle passe avant le reste.
+		if e.mode == "attack_target" and focus_obj != null and e.pos.distance_to(obj_pos(focus_obj)) <= e.attack_range + 1.5:
+			e.target_kind = Enemy.Target.UNIT if focus_obj is Unit else Enemy.Target.SITE
+			e.target_ref = focus_obj
 	var dist := _target_distance(e) - e.radius
 	if e.target_kind != Enemy.Target.NONE:
 		e.aim_angle = (_target_pos(e) - e.pos).angle()
@@ -1088,11 +1167,23 @@ func _tick_placed_enemy(e: Enemy, delta: float) -> void:
 		return
 	if e.mode == "static":
 		return
-	# Garde : poursuit sa cible sans trop s'éloigner, sinon revient à son poste.
-	var goal := e.guard_pos
-	if e.target_kind != Enemy.Target.NONE and e.pos.distance_to(e.guard_pos) < 9.0:
+	# Poursuit sa cible sans trop s'éloigner de son ancrage, sinon y revient.
+	var goal := anchor
+	if e.target_kind != Enemy.Target.NONE and e.pos.distance_to(anchor) < leash:
 		goal = _target_pos(e)
+	if e.mode == "patrol" and goal == anchor and e.pos.distance_to(anchor) < 0.7:
+		e.patrol_i = (e.patrol_i + 1) % e.patrol.size()
+	_enemy_walk(e, goal, delta)
+
+
+## Déplacement d'un ennemi posé vers un point (chemin recalculé régulièrement).
+func _enemy_walk(e: Enemy, goal: Vector2, delta: float) -> void:
 	if e.pos.distance_to(goal) < 0.4:
+		return
+	var step0 := e.speed * (e.slow_mult if e.slow_timer > 0.0 else 1.0) * delta
+	if e.flying:
+		e.facing = (goal - e.pos).normalized()
+		e.pos += e.facing * minf(step0, e.pos.distance_to(goal))
 		return
 	if e.path.is_empty() or e.repath_timer <= 0.0:
 		e.repath_timer = 0.6
@@ -1107,6 +1198,28 @@ func _tick_placed_enemy(e: Enemy, delta: float) -> void:
 	else:
 		e.facing = (t - e.pos) / d
 		e.pos += e.facing * step
+
+
+## Objet du jeu créé depuis l'objet d'éditeur `eid` (ennemi, unité, bâtiment), ou null.
+func find_by_eid(eid: int) -> Variant:
+	if eid < 0:
+		return null
+	for e in enemies:
+		if e.eid == eid and e.hp > 0:
+			return e
+	for u in units:
+		if u.eid == eid and u.alive:
+			return u
+	for s in sites:
+		if s.eid == eid and s.alive:
+			return s
+	return null
+
+
+static func obj_pos(o: Variant) -> Vector2:
+	if o is BuildSite:
+		return (o as BuildSite).center()
+	return o.pos
 
 
 func _target_pos(e: Enemy) -> Vector2:
@@ -1198,11 +1311,13 @@ func _enemy_attack(e: Enemy) -> void:
 			to = w.pos
 		Enemy.Target.UNIT:
 			var u: Unit = e.target_ref
-			u.hp -= maxi(1, e.damage - int(u.eff().armor))
+			if not u.invulnerable:
+				u.hp -= maxi(1, e.damage - int(u.eff().armor))
 			to = u.pos
 		Enemy.Target.SITE:
 			var s: BuildSite = e.target_ref
-			s.hp -= e.damage
+			if not s.invulnerable:
+				s.hp -= e.damage
 			to = s.center()
 	_emit({"type": "hit", "from": e.pos, "to": to, "ranged": e.attack_range > 1.5})
 
@@ -1502,6 +1617,8 @@ func set_auto_repair(ws: Array, on: bool) -> void:
 func command_hold(us: Array) -> void:
 	for u: Unit in us:
 		if u != null and u.alive:
+			u.patrol.clear()
+			u.follow_eid = -1
 			u.order = Unit.Order.HOLD
 			u.target = null
 			u.path.clear()
@@ -1549,6 +1666,8 @@ func command_units_attack(us: Array, e: Enemy) -> void:
 		if (st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying):
 			continue # cette unité ne peut pas toucher cette cible
 		u.order = Unit.Order.ATTACK
+		u.patrol.clear()
+		u.follow_eid = -1
 		u.target = e
 		u.repath_timer = 0.0
 
@@ -1557,6 +1676,8 @@ func command_units_attack(us: Array, e: Enemy) -> void:
 func command_stop(us: Array, ws: Array) -> void:
 	for u: Unit in us:
 		if u != null:
+			u.patrol.clear()
+			u.follow_eid = -1
 			u.order = Unit.Order.GUARD
 			u.target = null
 			u.path.clear()
@@ -1570,6 +1691,8 @@ func command_stop(us: Array, ws: Array) -> void:
 func _unit_go(u: Unit, c: Vector2i) -> void:
 	if u.sieged:
 		return # un char en mode siège ne bouge pas
+	u.patrol.clear()
+	u.follow_eid = -1
 	u.order = Unit.Order.MOVE # déplacement simple : on ignore les ennemis (repli possible)
 	u.dest = Vector2(c) + Vector2(0.5, 0.5)
 	u.stuck_t = 0.0
@@ -1743,7 +1866,7 @@ func unit_at(p: Vector2, radius := 0.55) -> Unit:
 	var best: Unit = null
 	var best_d := radius
 	for u in units:
-		if u.locked:
+		if not u.controllable():
 			continue
 		var d := u.pos.distance_to(p)
 		if d <= best_d:
@@ -1774,7 +1897,7 @@ func workers_in_rect(r: Rect2) -> Array[Worker]:
 func units_in_rect(r: Rect2) -> Array[Unit]:
 	var result: Array[Unit] = []
 	for u in units:
-		if r.has_point(u.pos) and not u.locked:
+		if r.has_point(u.pos) and u.controllable():
 			result.append(u)
 	return result
 

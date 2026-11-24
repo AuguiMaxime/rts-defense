@@ -25,6 +25,11 @@ var producer: Producer = null # file de production (caserne, usine), créée à 
 
 const MAX_LEVEL := 3
 
+## Réglages de la fiche de l'éditeur.
+var eid := -1
+var invulnerable := false
+var mul_dmg := 1.0
+var mul_rng := 1.0
 var _stats_cache := {}
 var _stats_level := 0
 var _stats_version := -1
@@ -79,8 +84,16 @@ func stats() -> Dictionary:
 			_stats_cache.range = _stats_cache.range * (1.0 + 0.10 * k)
 			_stats_cache.hp = roundi(_stats_cache.hp * (1.0 + 0.25 * k))
 			Research.apply_tower(_stats_cache)
+			_stats_cache.damage = roundi(_stats_cache.damage * mul_dmg)
+			_stats_cache.range = _stats_cache.range * mul_rng
 		_stats_level = level
 	return _stats_cache
+
+
+func set_mults(dmg: float, rng: float) -> void:
+	mul_dmg = dmg
+	mul_rng = rng
+	_stats_level = -1
 
 
 ## Coût du prochain niveau : 60 % du prix de base par niveau visé.

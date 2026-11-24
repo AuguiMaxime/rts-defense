@@ -4,11 +4,6 @@ extends VBoxContainer
 
 signal picked(tool_id: String)
 
-const ENEMY_NAMES := {
-	"normal": "Rampant", "fast": "Coureur", "armored": "Blindé", "flying": "Volant", "boss": "Boss",
-	"swarmer": "Nuée", "spitter": "Cracheur", "brute": "Brute", "shell": "Carapace", "siege": "Char de siège",
-	"mothership": "Vaisseau-mère",
-}
 
 var _search: LineEdit
 var _list: VBoxContainer
@@ -16,6 +11,9 @@ var _items := {} # tool_id -> Button
 var _cats: Array = [] # [{header: Button, box: Container, items: [[id, label, button]]}]
 var _closed := {}
 var current := ""
+const PREFS := "user://editor/prefs.json"
+var favorites: Array = []
+var recent: Array = []
 
 
 func _init() -> void:
@@ -31,7 +29,58 @@ func _init() -> void:
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_list)
 	add_child(scroll)
+	_load_prefs()
 	_build()
+
+
+func _load_prefs() -> void:
+	var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(PREFS)) if FileAccess.file_exists(PREFS) else null
+	if raw is Dictionary:
+		favorites = raw.get("fav", [])
+		recent = raw.get("recent", [])
+
+
+func _save_prefs() -> void:
+	DirAccess.make_dir_recursive_absolute(PREFS.get_base_dir())
+	var f := FileAccess.open(PREFS, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"fav": favorites, "recent": recent}))
+
+
+static func label_of(id: String) -> String:
+	for cat in palette():
+		for it in cat[1]:
+			if it[0] == id:
+				return it[1]
+	return id
+
+
+func toggle_favorite(id: String) -> void:
+	if favorites.has(id):
+		favorites.erase(id)
+	else:
+		favorites.append(id)
+	_save_prefs()
+	_rebuild()
+
+
+func add_recent(id: String) -> void:
+	if not recent.is_empty() and recent[0] == id:
+		return
+	recent.erase(id)
+	recent.push_front(id)
+	recent = recent.slice(0, 8)
+	_save_prefs()
+	_rebuild()
+
+
+func _rebuild() -> void:
+	for c in _list.get_children():
+		c.queue_free()
+	_items.clear()
+	_cats.clear()
+	_build()
+	select(current)
 
 
 static var _palette_cache: Array = []
@@ -43,11 +92,13 @@ static func palette() -> Array:
 	var cats := []
 	var structs := []
 	for k in Balance.ENEMY_STRUCTURES:
+		if k == "e_generator":
+			continue
 		structs.append(["structure:" + k, str(Balance.ENEMY_STRUCTURES[k].name)])
 	cats.append(["Ennemis · structures", structs])
 	var foes := []
 	for k in Balance.ENEMIES:
-		foes.append(["enemy:" + k, str(ENEMY_NAMES.get(k, k.capitalize()))])
+		foes.append(["enemy:" + k, str(EditorDoc.ENEMY_NAMES.get(k, k.capitalize()))])
 	cats.append(["Ennemis · unités", foes])
 	var towers := []
 	for k in Content.TOWER_ORDER:
@@ -58,8 +109,13 @@ static func palette() -> Array:
 		if k not in ["worker", "escort_truck", "commander"]:
 			allies.append(["ally_unit:" + k, str(Content.UNITS[k].name)])
 	cats.append(["Alliés · unités", allies])
-	cats.append(["Mission", [["vip:commander", "VIP à escorter"], ["escortee:", "Départ convoi allié"], ["waypoint:", "Point de passage"],
-			["zone:goal", "Zone d'arrivée"], ["zone:capture", "Zone de prise"]]])
+	cats.append(["Mission", [["vip:commander", "VIP à escorter"], ["escortee:", "Départ convoi allié"], ["waypoint:", "Point de passage"]]])
+	var zones := []
+	for r in EditorDoc.ZONE_ROLES:
+		zones.append(["zone:" + r, EditorDoc.ZONE_ROLES[r]])
+	cats.append(["Zones", zones])
+	cats.append(["Interactifs", [["door:", "Porte"], ["structure:e_generator", "Générateur ennemi"], ["shield:", "Bouclier (lié à un générateur)"],
+			["terminal:", "Terminal à activer"], ["prisoners:", "Prisonniers à libérer"], ["pickup:", "Objet à récupérer"]]])
 	var defend := []
 	for k in Content.BUILDING_ORDER:
 		defend.append(["defend:" + k, str(Content.building(k).name) + " à défendre"])
@@ -111,7 +167,17 @@ static func icon_for(tool_id: String) -> Texture2D:
 
 
 func _build() -> void:
+	var cats: Array = []
+	var known := {}
 	for cat in palette():
+		for it in cat[1]:
+			known[it[0]] = it[1]
+	if not favorites.is_empty():
+		cats.append(["★ Favoris", favorites.filter(func(id: String) -> bool: return known.has(id)).map(func(id: String) -> Array: return [id, known[id]])])
+	if not recent.is_empty():
+		cats.append(["Récents", recent.filter(func(id: String) -> bool: return known.has(id)).map(func(id: String) -> Array: return [id, known[id]])])
+	cats.append_array(palette())
+	for cat in cats:
 		var header := EditorUi.button("", "Replier / déplier")
 		header.flat = true
 		header.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -133,8 +199,17 @@ func _build() -> void:
 				b.expand_icon = true
 				b.add_theme_constant_override("icon_max_width", 24)
 			b.pressed.connect(func() -> void: picked.emit(id))
+			b.tooltip_text = "%s\nClic droit : %s les favoris" % [id, "retirer des" if favorites.has(id) else "ajouter aux"]
+			if favorites.has(id):
+				b.text = "★ " + b.text
+			b.gui_input.connect(func(ev: InputEvent) -> void:
+				if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
+					toggle_favorite.call_deferred(id))
 			box.add_child(b)
-			_items[id] = b
+			if not _items.has(id):
+				_items[id] = b
+			else:
+				_items[id + "#" + str(box.get_instance_id())] = b
 			entry.items.append([id, str(it[1]).to_lower(), b])
 		header.pressed.connect(func() -> void:
 			_closed[entry.name] = not _closed.get(entry.name, false)
@@ -161,4 +236,4 @@ func _filter() -> void:
 func select(tool_id: String) -> void:
 	current = tool_id
 	for id in _items:
-		(_items[id] as Button).set_pressed_no_signal(id == tool_id)
+		(_items[id] as Button).set_pressed_no_signal(str(id).split("#")[0] == tool_id)
