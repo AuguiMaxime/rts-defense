@@ -47,6 +47,7 @@ func _init() -> void:
 	_test_coop_base()
 	_test_chain_build()
 	_test_missions()
+	_test_editor_core()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -1012,3 +1013,104 @@ func _test_missions() -> void:
 	var wa := _mission_world({"type": "waves"}, [{"kind": "ally_tower", "type": "cannon", "cell": [10, 4], "level": 2}])
 	_check(wa.sites.size() == 1 and wa.sites[0].built and wa.sites[0].level == 2, "tourelle alliée déjà construite au niveau 2")
 	_check(wa.metal == Balance.START_METAL, "sans coûter de métal")
+
+
+func _editor_doc(w := 12, h := 8) -> EditorDoc:
+	var m := MapData.new()
+	var r: Array[String] = []
+	for y in h:
+		r.append(".".repeat(w))
+	m.LAYOUT = "\n".join(r)
+	return EditorDoc.from_map(m)
+
+
+func _test_editor_core() -> void:
+	print("Éditeur : document, historique, calques, opérations")
+	# Migration : identifiants et noms
+	var m := MapData.load_from("res://maps/map_07.gd")
+	var d := EditorDoc.from_map(m)
+	var ids := {}
+	for e: Dictionary in d.entities:
+		ids[e.id] = true
+	_check(ids.size() == d.entities.size() and d.entities.all(func(e: Dictionary) -> bool: return str(e.name) != ""), "migration : chaque objet a un identifiant unique et un nom")
+	var back := EditorDoc.from_map(d.to_map())
+	_check(JSON.stringify(back.entities) == JSON.stringify(d.entities) and back.rows == d.rows, "aller-retour document <-> fichier sans perte")
+	_check(MapData.new().to_dict().version == EditorDoc.VERSION, "le fichier porte sa version")
+	var all_ok := true
+	for lv in Content.LEVELS:
+		var src := MapData.load_from(lv.map)
+		var conv := EditorDoc.from_map(src).to_map()
+		if conv.LAYOUT != src.LAYOUT.strip_edges() and "\n".join(EditorDoc.from_map(src).rows) != conv.LAYOUT:
+			all_ok = false
+		if not MapData.validate(MapLoader.from_layout(conv.LAYOUT), conv.mission).is_empty():
+			all_ok = false
+	_check(all_ok, "les 7 cartes de campagne s'ouvrent dans l'éditeur et restent valides")
+	# Peinture, ponts, verrou
+	d = _editor_doc()
+	var L := EditorLayers.new()
+	var H := EditorHistory.new(d)
+	H.begin("eau")
+	EditorOps.paint_line(d, L, Vector2i(5, 0), Vector2i(5, 7), "~")
+	H.commit()
+	H.record("route", func() -> void: EditorOps.paint_line(d, L, Vector2i(0, 3), Vector2i(11, 3), "="))
+	_check(d.get_char(Vector2i(5, 3)) == "H" and d.get_char(Vector2i(4, 3)) == "=", "route sur l'eau = pont")
+	H.record("rocher", func() -> void: EditorOps.paint(d, L, Vector2i(4, 5), "#"))
+	L.locked["water"] = true
+	H.record("gomme", func() -> void: EditorOps.paint(d, L, Vector2i(5, 5), ".", 2))
+	_check(d.get_char(Vector2i(5, 5)) == "~" and d.get_char(Vector2i(4, 5)) == ".", "calque verrouillé protégé de la gomme")
+	L.locked.clear()
+	_check(H.undo() == "gomme" and H.undo() == "rocher" and H.undo() == "route" and d.get_char(Vector2i(5, 3)) == "~", "annuler revient en arrière action par action")
+	_check(H.redo() == "route" and d.get_char(Vector2i(5, 3)) == "H", "rétablir")
+	_check(not H.record("rien", func() -> void: pass), "une action sans effet n'est pas enregistrée")
+	# Remplissage
+	d = _editor_doc()
+	EditorOps.paint_line(d, L, Vector2i(4, 0), Vector2i(4, 7), "#")
+	_check(EditorOps.fill(d, L, Vector2i(1, 1), "~") == 32 and d.get_char(Vector2i(6, 1)) == ".", "remplissage limité par les rochers")
+	# Base unique
+	EditorOps.paint(d, L, Vector2i(8, 4), "B")
+	EditorOps.paint(d, L, Vector2i(8, 2), "B")
+	var nb := 0
+	for r in d.rows:
+		nb += r.count("B")
+	_check(nb == 9, "une seule base 3x3")
+	# Objets : pose, réglage, nommage
+	d = _editor_doc()
+	var o := EditorOps.DEFAULT_OPTS.duplicate()
+	var a := EditorOps.place(d, L, "ally_tower:gun", Vector2i(2, 2), o)
+	var b := EditorOps.place(d, L, "ally_tower:gun", Vector2i(3, 2), o)
+	_check(a.entity.name != b.entity.name and a.entity.id != b.entity.id, "deux tourelles : deux noms, deux identifiants")
+	o.level = 3
+	var up := EditorOps.place(d, L, "ally_tower:gun", Vector2i(2, 2), o)
+	_check(up.get("updated", false) and int(d.entity_by_id(a.entity.id).level) == 3 and d.entities.size() == 2, "retoucher un objet = lui appliquer les réglages")
+	L.locked["units"] = true
+	_check(EditorOps.place(d, L, "enemy:normal", Vector2i(6, 6), o).has("error"), "pas de pose sur un calque verrouillé")
+	L.locked.clear()
+	# Copier / coller / déplacer / pivoter / symétrie
+	d = _editor_doc()
+	EditorOps.paint(d, L, Vector2i(1, 1), "#")
+	EditorOps.paint(d, L, Vector2i(2, 1), "M")
+	var dec: Dictionary = EditorOps.place(d, L, "deco:chantier", Vector2i(1, 2), o).entity
+	EditorOps.place(d, L, "waypoint:", Vector2i(3, 2), o)
+	var clip := EditorOps.extract(d, L, Rect2i(1, 1, 3, 2), d.entities.map(func(e: Dictionary) -> int: return int(e.id)))
+	_check(clip.size == Vector2i(3, 2) and clip.chars[0] == "#M?" and clip.entities.size() == 2, "extrait : lettres et objets")
+	var pasted := EditorOps.paste(d, L, clip, Vector2i(6, 4), false)
+	_check(d.get_char(Vector2i(6, 4)) == "#" and d.get_char(Vector2i(7, 4)) == "M" and pasted.size() == 2 and d.entities.size() == 4, "coller une copie")
+	_check(d.entities.filter(func(e: Dictionary) -> bool: return e.kind == "waypoint").map(func(e: Dictionary) -> int: return int(e.order)) == [0, 1], "points de passage renumérotés après copie")
+	var rc := EditorOps.rotate_clip(clip)
+	_check(rc.size == Vector2i(2, 3) and rc.chars[0] == "?#" and rc.chars[1] == "?M", "rotation d'un quart de tour")
+	var dr: Dictionary = rc.entities.filter(func(e: Dictionary) -> bool: return e.kind == "deco")[0]
+	_check(int(dr.rot) == 1 and Vector2i(int(dr.cell[0]), int(dr.cell[1])) == Vector2i(0, 0), "le décor tourne avec l'extrait")
+	var mc := EditorOps.mirror_clip(clip, true)
+	_check(mc.chars[0] == "?M#" and bool(mc.entities.filter(func(e: Dictionary) -> bool: return e.kind == "deco")[0].flip), "symétrie gauche-droite")
+	var mv := EditorOps.extract(d, L, Rect2i(1, 1, 3, 2), [dec.id])
+	EditorOps.clear(d, mv)
+	EditorOps.paste(d, L, mv, Vector2i(1, 5), true)
+	_check(d.get_char(Vector2i(1, 1)) == "." and d.get_char(Vector2i(1, 5)) == "#" and EditorDoc.cell_of(d.entity_by_id(dec.id)) == Vector2i(1, 6), "déplacer garde le même objet")
+	# Calques masqués à l'affichage
+	L.hidden["obstacles"] = true
+	_check(L.display_rows(d.rows)[5][1] == ".", "calque masqué : non affiché")
+	L.hidden.clear()
+	# Décors multi-cases et taille
+	var big := EditorOps.place(d, L, "deco:hangar_2x2", Vector2i(10, 6), o)
+	_check(big.has("entity") and EditorDoc.entity_cells(big.entity).size() == 4, "décor 2x2 posé sur 4 cases")
+	_check(EditorOps.place(d, L, "deco:hangar_2x2", Vector2i(11, 0), o).has("error"), "un décor qui déborde est refusé")

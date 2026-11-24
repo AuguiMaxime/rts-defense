@@ -154,7 +154,7 @@ func setup(w: GameWorld) -> void:
 				var sp := str(ent.get("sprite", ""))
 				var rot := int(ent.get("rot", 0)) % 4
 				var fp := deco_footprint(sp, rot)
-				decos.append({"sprite": sp, "cell": c, "size": fp, "base": deco_size(sp), "rot": rot, "block": bool(ent.get("block", false))})
+				decos.append({"sprite": sp, "cell": c, "size": fp, "base": deco_size(sp), "rot": rot, "flip": bool(ent.get("flip", false)), "block": bool(ent.get("block", false))})
 				if ent.get("block", false):
 					for dy in fp.y:
 						for dx in fp.x:

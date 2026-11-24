@@ -242,7 +242,7 @@ var _deco_cache := {}
 
 
 ## Dessine un décor de base.x × base.y cases, pivoté de rot quarts de tour, posé à partir de la case cell.
-static func draw_deco(ci: CanvasItem, tex: Texture2D, cell: Vector2i, base: Vector2i, rot: int, t: float, tint := Color.WHITE) -> void:
+static func draw_deco(ci: CanvasItem, tex: Texture2D, cell: Vector2i, base: Vector2i, rot: int, t: float, tint := Color.WHITE, flip := false) -> void:
 	if tex == null:
 		return
 	var fp := Vector2(base.y, base.x) if rot % 2 == 1 else Vector2(base)
@@ -251,7 +251,7 @@ static func draw_deco(ci: CanvasItem, tex: Texture2D, cell: Vector2i, base: Vect
 	# L'image garde ses proportions dans son emprise, légèrement débordante pour éviter les jours.
 	var k := minf(box.x / tex.get_width(), box.y / tex.get_height()) * 1.08
 	var sz := Vector2(tex.get_width(), tex.get_height()) * k
-	ci.draw_set_transform(center, rot * PI / 2.0)
+	ci.draw_set_transform(center, rot * PI / 2.0, Vector2(-1, 1) if flip else Vector2.ONE)
 	ci.draw_texture_rect(tex, Rect2(-sz * 0.5, sz), false, tint)
 	ci.draw_set_transform(Vector2.ZERO)
 
@@ -276,7 +276,7 @@ func _draw_mission_layer() -> void:
 	for d in m.decos:
 		if not _deco_cache.has(d.sprite):
 			_deco_cache[d.sprite] = deco_texture(d.sprite)
-		draw_deco(self, _deco_cache[d.sprite], d.cell, d.base, d.rot, float(TILE))
+		draw_deco(self, _deco_cache[d.sprite], d.cell, d.base, d.rot, float(TILE), Color.WHITE, d.get("flip", false))
 	for z in m.zones:
 		var c: Vector2 = z.pos * TILE
 		var rad: float = z.radius * TILE

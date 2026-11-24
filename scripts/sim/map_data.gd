@@ -81,7 +81,7 @@ func to_dict() -> Dictionary:
 	for line in LAYOUT.split("\n"):
 		if line.strip_edges() != "":
 			rows.append(line.strip_edges())
-	return {"name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives,
+	return {"version": EditorDoc.VERSION, "name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives,
 			"mission": mission, "entities": entities, "layout": rows}
 
 

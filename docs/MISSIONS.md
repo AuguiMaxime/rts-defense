@@ -2,23 +2,41 @@
 
 L'éditeur s'ouvre depuis le menu principal, bouton **ÉDITEUR**. Il n'est visible que tant que `Content.DEV_TOOLS` vaut `true`.
 
-## 1. Onglet TERRAIN : le sol
+## 0. L'écran de l'éditeur (PC, souris et clavier)
 
-| Pinceau | Effet |
+- **En haut** : Menu, Fichier (nouvelle, ouvrir, enregistrer, enregistrer sous, paramètres de la carte, raccourcis), nom de la carte, onglets **Carte / Objets / Mission** (touches 1, 2, 3), annuler / rétablir, copier, coller, dupliquer, supprimer, Valider, Enregistrer, **▶ Tester** (F5).
+- **À gauche** : les outils et le contenu de l'onglet.
+- **À droite** : les réglages de l'outil ou de la sélection, les **calques** (œil = afficher, cadenas = verrouiller ; un calque masqué ou verrouillé ne peut pas être modifié), la grille et la **vérification des passages** (chemins des vagues en orange, zones inaccessibles et gisements bloqués en rouge).
+- **En bas** : la case sous la souris, l'aide de l'outil, l'état d'enregistrement, la validation (clic = liste des problèmes) et le zoom.
+- **Vue** : molette = zoom sur le curseur, clic milieu / clic droit / Espace + glisser = déplacer, flèches, Ctrl+0 = cadrer.
+- **Historique** : Ctrl+Z / Ctrl+Y sur 100 actions. Le travail est sauvegardé automatiquement toutes les 30 s ; s'il n'a pas été enregistré, l'éditeur propose de le reprendre à la prochaine ouverture. Tester puis revenir garde l'historique, les outils et la vue.
+- F1 affiche tous les raccourcis.
+
+### Sélection (V), commune aux onglets Carte et Objets
+
+Clic sur un objet pour le choisir, Maj+clic pour en ajouter, glisser sur du vide pour un rectangle (dans Carte, le rectangle prend aussi le terrain ; dans Objets, seulement les objets). Glisser la sélection la déplace. Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+D, Suppr, Ctrl+A. **R** pivote d'un quart de tour, **M** fait un miroir gauche-droite, **Maj+M** haut-bas (aussi pendant un collage). Le sol nu n'est jamais collé : copier un groupe de rochers ne recouvre pas le terrain autour. Les bases ne se dupliquent pas.
+
+Un seul objet sélectionné : son nom (unique, modifiable) et ses réglages s'affichent à droite.
+
+## 1. Onglet CARTE : le terrain
+
+Outils : **Sélection (V)**, **Pinceau (B)** (Maj+clic = ligne droite, Alt+clic = pipette, [ ] = taille 1×1 à 7×7), **Remplissage (F)** (remplit la zone de même terrain), **Pipette (I)**. **E** prend la gomme de terrain.
+
+| Terrain | Effet |
 |---|---|
 | Gomme | Remet du sol libre |
 | Rocher, Mur | Bloquent le passage. On ne peut pas construire dessus |
 | Métal, Essence | Gisements, 1200 unités chacun |
-| Base 3x3 | Base du joueur (obligatoire, une seule) |
-| Base J2 | Base du 2e joueur en coop. En solo, c'est du sol libre |
+| Base joueur 1 | Base du joueur (obligatoire, une seule, 3x3) |
+| Base joueur 2 | Base du 2e joueur en coop. En solo, c'est du sol libre |
 | Apparition | Point d'arrivée des vagues ennemies |
 | Eau, Route, Rails | Les ponts se posent tout seuls quand une route ou des rails traversent l'eau |
 
-Les tailles de pinceau vont de 1 à 3. Le sol se choisit entre herbe, sable, terre, Mars et métal. Les dimensions de la carte se règlent en haut.
+Le sol se choisit entre herbe, sable, terre, Mars et métal. La taille de la carte se règle dans Fichier → Paramètres de la carte.
 
 ## 2. Onglet OBJETS : ce qu'on pose sur la carte
 
-Choisis un objet, puis touche la carte. Toucher un autre objet le remplace. Retoucher un objet avec **le même outil** lui applique les réglages affichés (pause, durée, rayon, rotation…). **GOMME OBJETS** retire ce que tu touches. Sous la palette, seuls les réglages utiles à l'outil choisi s'affichent.
+Outils : **Sélection (V)**, **Poser (P)**, **Gomme (E)**, **Pipette (I)** (reprend un objet et ses réglages). Le catalogue a une recherche et des catégories repliables. Choisis un objet, règle-le à droite, puis clique sur la carte ; en glissant, il se pose sur chaque case libre. Poser sur un autre objet le remplace. Recliquer un objet avec **le même outil** lui applique les réglages affichés. Chaque objet reçoit un nom unique (« Tourelle canon 2 ») modifiable dans la sélection.
 
 - **Ennemis · structures** : tourelle, canon, lance-missiles, laser, char en siège (portée 8), bunker (2x2), caserne ennemie (2x2, envoie un ennemi toutes les 30 s), **base ennemie** (3x3, la cible des missions « Détruire la base », envoie un blindé toutes les 45 s).
 - **Ennemis · unités** : tous les ennemis du jeu. Ils gardent leur poste, attaquent ce qui s'approche, puis reviennent. Avec **IMMOBILE**, ils ne bougent plus du tout.

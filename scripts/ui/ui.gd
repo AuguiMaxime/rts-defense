@@ -41,6 +41,8 @@ var survival := false
 var custom_map: MapData = null
 ## Carte ouverte dans l'éditeur (pour y revenir après un test).
 var editor_map: MapData = null
+## Session de l'éditeur gardée pendant un test (historique, outils, caméra).
+var editor_session: Variant = null
 
 var _fade: ColorRect
 var _toast_layer: CanvasLayer
