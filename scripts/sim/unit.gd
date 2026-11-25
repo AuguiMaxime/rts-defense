@@ -37,6 +37,8 @@ var stuck_pos := Vector2.INF # position de référence (détection de blocage)
 var stuck_tries := 0 # destination d'un déplacement offensif
 ## Réglages de la fiche de l'éditeur.
 var eid := -1
+var faction := "p1" # voir Factions
+var hunt := false # allié IA : part chercher les ennemis hostiles sur la carte
 var ai := false # unité alliée pilotée par l'ordinateur (non sélectionnable)
 var invulnerable := false
 var mul_dmg := 1.0

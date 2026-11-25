@@ -29,6 +29,8 @@ var entities: Array = []
 var scenario: Dictionary = {}
 ## Vagues personnalisées et noms des points d'apparition (voir WaveManager).
 var wave_plan: Dictionary = {}
+## Factions personnalisées et relations (voir Factions).
+var factions: Dictionary = {}
 var path := "" # fichier d'origine
 
 
@@ -55,6 +57,8 @@ static func load_from(p: String) -> MapData:
 			m.scenario = script.SCENARIO.duplicate(true)
 		if consts.has("WAVE_PLAN"):
 			m.wave_plan = script.WAVE_PLAN.duplicate(true)
+		if consts.has("FACTIONS"):
+			m.factions = script.FACTIONS.duplicate(true)
 		return m
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
 	if not parsed is Dictionary:
@@ -72,6 +76,7 @@ static func load_from(p: String) -> MapData:
 	m.entities = parsed.get("entities", [])
 	m.scenario = parsed.get("scenario", {})
 	m.wave_plan = parsed.get("wave_plan", {})
+	m.factions = parsed.get("factions", {})
 	return m
 
 
@@ -92,7 +97,7 @@ func to_dict() -> Dictionary:
 		if line.strip_edges() != "":
 			rows.append(line.strip_edges())
 	return {"version": EditorDoc.VERSION, "name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives,
-			"mission": mission, "entities": entities, "scenario": scenario, "wave_plan": wave_plan, "layout": rows}
+			"mission": mission, "entities": entities, "scenario": scenario, "wave_plan": wave_plan, "factions": factions, "layout": rows}
 
 
 func save_to(p: String) -> Error:

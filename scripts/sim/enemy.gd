@@ -53,6 +53,7 @@ var target_eid := -1 # défendre / attaquer / suivre cet objet
 var goal_pos := Vector2.INF # zone à attaquer
 var retreat_pct := 0.0 # se replie sous cette part de PV (0 = jamais)
 var retreating := false
+var faction := "enemy"
 var wave_no := 0 # numéro de la vague qui l'a fait apparaître (0 = posé ou produit)
 var visual_offset := Vector2.ZERO # petit décalage pour ne pas tous se superposer à l'écran
 

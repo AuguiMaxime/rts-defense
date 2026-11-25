@@ -52,6 +52,7 @@ func _init() -> void:
 	_test_scenario()
 	_test_templates()
 	_test_custom_waves()
+	_test_factions()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -1478,4 +1479,66 @@ func _test_custom_waves() -> void:
 	var back := MapData.load_from(p)
 	_check(back.wave_plan.list.size() == 4 and back.wave_plan.spawn_names["25,9"] == "Est", "vagues et noms des apparitions sauvegardés")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+
+
+func _test_factions() -> void:
+	print("Factions")
+	var f := Factions.new({"list": [{"id": "f1", "name": "Pirates", "camp": "enemy", "color": "ff00ff"}],
+			"rel": {"ally|f1": "neutral", "p1|f1": "provoked"}})
+	_check(f.relation("p1", "ally") == "ally" and f.relation("enemy", "neutral") == "ally", "même camp = alliés")
+	_check(f.hostile("p1", "enemy") and f.hostile("enemy", "p1"), "joueur / ennemis : hostiles par défaut")
+	_check(f.relation("p1", "neutral") == "neutral" and not f.hostile("neutral", "civil"), "neutres : non hostiles par défaut")
+	_check(f.relation("f1", "ally") == "neutral" and f.relation("p1", "f1") == "provoked", "relations réglées dans l'éditeur")
+	f.provoke("f1")
+	_check(f.relation("p1", "f1") == "enemy" and f.relation("ally", "f1") == "neutral" and f.pending.size() == 1, "hostile si attaqué : bascule à la 1re attaque")
+	# En jeu
+	var fac := {"list": [{"id": "f1", "name": "Pirates", "camp": "enemy", "color": "ff00ff"}], "rel": {"p1|f1": "provoked"}}
+	var cfg := {"mission": {"type": "waves", "waves_enabled": false}, "factions": fac, "entities": [
+		{"kind": "enemy", "type": "normal", "cell": [12, 4], "id": 1, "faction": "neutral", "behavior": "guard"},
+		{"kind": "enemy", "type": "normal", "cell": [20, 4], "id": 2, "faction": "f1", "behavior": "guard"},
+		{"kind": "ally_unit", "type": "soldier", "cell": [12, 6], "id": 3, "behavior": "hold"},
+		{"kind": "ally_unit", "type": "soldier", "cell": [20, 6], "id": 4, "behavior": "hold"},
+		{"kind": "ally_unit", "type": "soldier", "cell": [4, 2], "id": 5, "faction": "ally", "behavior": "hunt"},
+		{"kind": "enemy", "type": "normal", "cell": [4, 9], "id": 6, "behavior": "static"},
+	], "scenario": {"triggers": [{"id": "t1", "name": "R", "enabled": true, "once": true, "event": {"type": "relation_changed", "a": "f1", "b": ""},
+			"cond": {"op": "and", "items": []}, "actions": [{"type": "message", "text": "Les pirates attaquent !"}], "else": []}]}}
+	var w := GameWorld.new(MapLoader.from_layout(MISSION_MAP), cfg)
+	var neu: Enemy = w.find_by_eid(1)
+	var pir: Enemy = w.find_by_eid(2)
+	var al: Unit = w.find_by_eid(5)
+	_check(neu.faction == "neutral" and pir.faction == "f1" and al.faction == "ally" and al.ai, "factions posées dans l'éditeur")
+	_check((w.find_by_eid(3) as Unit).faction == "p1" and not (w.find_by_eid(3) as Unit).ai, "unité du joueur par défaut")
+	var hp_n := neu.hp
+	var hp_p := pir.hp
+	_run(w, 3.0)
+	_check(neu.hp == hp_n and pir.hp == hp_p, "les unités du joueur ignorent les neutres")
+	_check((w.find_by_eid(3) as Unit).hp == (w.find_by_eid(3) as Unit).max_hp, "et les neutres ne les attaquent pas")
+	_check(al.pos.distance_to(Vector2(4.5, 9.5)) < Vector2(4.5, 2.5).distance_to(Vector2(4.5, 9.5)) - 1.0, "allié IA « chasse » : part vers l'ennemi")
+	# Provocation : le joueur attaque un pirate
+	var u4: Unit = w.find_by_eid(4)
+	u4.target = pir
+	u4.order = Unit.Order.ATTACK
+	_run(w, 2.0)
+	_check(w.factions.relation("p1", "f1") == "enemy", "pirates provoqués : deviennent ennemis")
+	_check(w.scenario.log.any(func(l: String) -> bool: return l.contains("relation")), "événement « relation changée »")
+	# Déclencheur : changer une relation, changer de faction
+	w.scenario.execute({"type": "set_relation", "a": "p1", "b": "neutral", "rel": "enemy"})
+	_check(w.factions.hostile("neutral", "p1"), "action : changer une relation")
+	w.scenario.execute({"type": "set_faction", "obj": 3, "faction": "ally"})
+	_check((w.find_by_eid(3) as Unit).faction == "ally" and (w.find_by_eid(3) as Unit).ai, "action : l'unité passe aux alliés IA")
+	w.scenario.execute({"type": "set_faction", "obj": 3, "faction": "enemy"})
+	_check((w.find_by_eid(3) as Unit).faction == "ally", "changement de camp refusé")
+	_check(w.scenario.eval_cond({"op": "and", "items": [{"type": "relation", "a": "p1", "b": "neutral", "rel": "enemy"}, {"type": "faction_of", "obj": 1, "faction": "neutral"}]}), "conditions relation et faction")
+	# Vagues d'une autre faction
+	var wv := WaveManager.new_wave("w", "w")
+	wv.faction = "neutral"
+	wv.delay = 0.5
+	var w2 := GameWorld.new(MapLoader.from_layout(MISSION_MAP), {"mission": {"type": "waves"}, "wave_plan": {"mode": "custom", "list": [wv]}})
+	_run(w2, 2.0)
+	_check(not w2.enemies.is_empty() and w2.enemies.all(func(e: Enemy) -> bool: return e.faction == "neutral"), "vague d'une faction choisie")
+	# Coop : relations et factions transmises
+	var snap := NetSync.snapshot(w)
+	var c := GameWorld.new(MapLoader.from_layout(MISSION_MAP), cfg)
+	NetSync.apply(c, snap)
+	_check(c.factions.relation("p1", "f1") == "enemy" and c.enemies.any(func(e: Enemy) -> bool: return e.faction == "f1"), "coop : relations et factions transmises")
 

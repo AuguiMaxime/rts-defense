@@ -196,6 +196,10 @@ func _run_sequences(delta: float) -> void:
 func _detect() -> void:
 	var p := _prev
 	var cur := {}
+	for ch: Array in w.factions.pending:
+		_queue.append({"type": "relation_changed", "a": ch[0], "b": ch[1], "rel": ch[2]})
+		_log("relation %s / %s : %s" % [w.factions.name_of(ch[0]), w.factions.name_of(ch[1]), ch[2]])
+	w.factions.pending.clear()
 	# Morts / créations
 	var alive := {}
 	var created: Array[Dictionary] = []
@@ -379,6 +383,11 @@ func _matches(ev: Dictionary, got: Dictionary) -> bool:
 			return _eid(ev.get("obj", -1)) < 0 or int(got.eid) == _eid(ev.get("obj", -1))
 		"building_built":
 			return ev.get("kind", "any") == "any" or ev.kind == got.kind
+		"relation_changed":
+			var a := str(ev.get("a", ""))
+			var b := str(ev.get("b", ""))
+			var pair := [str(got.a), str(got.b)]
+			return (a == "" or pair.has(a)) and (b == "" or pair.has(b))
 		"wave_started", "wave_ended":
 			if str(ev.get("wave", "")) != "":
 				return str(ev.wave) == str(got.get("id", ""))
@@ -570,6 +579,11 @@ func _leaf(c: Dictionary) -> bool:
 			return ScenarioDefs.compare(have, str(c.get("cmp", ">=")), value(c.get("value", 0)))
 		"wave":
 			return ScenarioDefs.compare(w.waves.wave, str(c.get("cmp", ">=")), value(c.get("value", 0)))
+		"relation":
+			return w.factions.relation(str(c.get("a", "p1")), str(c.get("b", "neutral"))) == str(c.get("rel", "enemy"))
+		"faction_of":
+			var fo: Variant = obj(c.get("obj", -1))
+			return (fo is Unit or fo is Enemy) and str(fo.faction) == str(c.get("faction", ""))
 		"enemies_left":
 			return ScenarioDefs.compare(w.waves.left, str(c.get("cmp", "<=")), value(c.get("value", 0)))
 		"players":
@@ -999,13 +1013,34 @@ func execute(a: Dictionary, ev := {}) -> void:
 					e.home = p
 					if e.mode == "attack_zone":
 						e.goal_pos = place_of(a.get("target", -1))
+					var ef := str(a.get("faction", ""))
+					if ef != "" and w.factions.camp(ef) == "enemy":
+						e.faction = ef
 					w.enemies.append(e)
 				else:
 					var u := Unit.create(str(a.get("unit_type", "soldier")), p)
 					u.id = w._next_unit_id
 					w._next_unit_id += 1
+					var uf := str(a.get("faction", ""))
+					if uf != "" and w.factions.camp(uf) == "player":
+						u.faction = uf
+						u.ai = not (uf in ["p1", "p2"])
 					w.units.append(u)
 			_log("  créer %d %s" % [n, a.get("enemy_type", "") if a.get("team", "enemy") == "enemy" else a.get("unit_type", "")])
+		"set_relation":
+			w.factions.set_relation(str(a.get("a", "p1")), str(a.get("b", "neutral")), str(a.get("rel", "enemy")))
+		"set_faction":
+			var fo: Variant = obj(a.get("obj", -1))
+			var nf := str(a.get("faction", ""))
+			if fo is Unit and w.factions.camp(nf) == "player":
+				var u: Unit = fo
+				u.faction = nf
+				u.ai = not (nf in ["p1", "p2"])
+			elif fo is Enemy and w.factions.camp(nf) == "enemy":
+				(fo as Enemy).faction = nf
+				(fo as Enemy).target_kind = Enemy.Target.NONE
+			else:
+				_log("  faction impossible : %s ne peut pas rejoindre %s (autre camp)" % [str(a.get("obj", -1)), w.factions.name_of(nf)])
 		"activate":
 			var id := _eid(a.get("obj", -1))
 			if not w.mission.spawn_late(w, id):
@@ -1176,7 +1211,7 @@ func _text(s: Variant) -> String:
 func net_state() -> Array:
 	return [objectives.map(func(o: Dictionary) -> Array: return [o.state, o.text]),
 			timers.values().filter(func(t: Dictionary) -> bool: return t.show).map(func(t: Dictionary) -> Array: return [t.label, t.left]),
-			markers.map(func(m: Dictionary) -> Array: return [m.pos.x, m.pos.y, m.text])]
+			markers.map(func(m: Dictionary) -> Array: return [m.pos.x, m.pos.y, m.text]), w.factions.rel]
 
 
 var net_timers: Array = []
@@ -1187,6 +1222,9 @@ func apply_net_state(a: Array) -> void:
 		objectives[i].state = a[0][i][0]
 		objectives[i].text = a[0][i][1]
 	net_timers = a[1]
+	if a.size() > 3 and a[3] != w.factions.rel:
+		w.factions.rel = a[3].duplicate()
+		w.factions._refresh()
 	markers.clear()
 	for m in a[2]:
 		markers.append({"pos": Vector2(m[0], m[1]), "text": m[2], "until": 0.0})

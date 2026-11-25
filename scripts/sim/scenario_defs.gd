@@ -3,7 +3,7 @@ extends RefCounted
 ## Catalogues du moteur de scénario : déclencheurs (QUAND), conditions (SI), actions (ALORS),
 ## types d'objectifs et objectifs prédéfinis. Partagés par le jeu et l'éditeur.
 ##
-## Paramètre : [clé, type, libellé, défaut, (options pour "choice")]
+## Paramètre : [clé, type, libellé, défaut, (options pour "choice")] — type "faction" : une faction de la mission
 ## Types : obj (n'importe quel objet), obj_enemy, obj_player, zone, objs, zones, int, float, text,
 ##   bool, choice, team, who, cmp, var, value, objective, objectives, trigger, timer, sound,
 ##   unit_type, enemy_type, build_type, behavior, res
@@ -48,6 +48,7 @@ const EVENTS := {
 	"interaction": {"label": "Interaction effectuée", "cat": "Objets", "params": [["obj", "obj", "Objet interactif (vide = n'importe lequel)", -1]]},
 	"base_destroyed": {"label": "Base du joueur détruite", "cat": "Mission", "params": []},
 	"var_changed": {"label": "Variable modifiée", "cat": "Variables", "params": [["var", "var", "Variable", ""]]},
+	"relation_changed": {"label": "Relation changée", "cat": "Factions", "params": [["a", "faction", "Faction", ""], ["b", "faction", "Avec (vide = n'importe laquelle)", ""]]},
 }
 
 # --- SI -----------------------------------------------------------------------------------------
@@ -67,12 +68,15 @@ const CONDITIONS := {
 	"enemies_left": {"label": "Ennemis des vagues restants", "params": [["cmp", "cmp", "Comparaison", "<="], ["value", "value", "Nombre", 0]]},
 	"players": {"label": "Nombre de joueurs", "params": [["cmp", "cmp", "Comparaison", "=="], ["value", "value", "Joueurs", 2]]},
 	"random": {"label": "Hasard", "params": [["percent", "float", "Chance (%)", 50.0]]},
+	"relation": {"label": "Relation entre factions", "params": [["a", "faction", "Faction", "p1"], ["b", "faction", "Avec", "neutral"], ["rel", "choice", "Relation", "enemy", Factions.RELATIONS]]},
+	"faction_of": {"label": "Faction d'un objet", "params": [["obj", "obj", "Objet", -1], ["faction", "faction", "Faction", "ally"]]},
 }
 
 # --- ALORS --------------------------------------------------------------------------------------
 const ACTIONS := {
 	"spawn": {"label": "Créer des unités", "cat": "Unités", "params": [["team", "team", "Camp", "enemy"], ["enemy_type", "enemy_type", "Type ennemi", "normal"],
-			["unit_type", "unit_type", "Type allié", "soldier"], ["count", "int", "Nombre", 3], ["zone", "zone", "Dans la zone", -1], ["behavior", "behavior", "Comportement", "march"]]},
+			["unit_type", "unit_type", "Type allié", "soldier"], ["count", "int", "Nombre", 3], ["zone", "zone", "Dans la zone", -1], ["behavior", "behavior", "Comportement", "march"],
+			["faction", "faction", "Faction (vide = par défaut)", ""]]},
 	"activate": {"label": "Faire apparaître / réveiller", "cat": "Unités", "params": [["obj", "obj", "Objet", -1]]},
 	"remove": {"label": "Retirer un objet", "cat": "Unités", "params": [["obj", "obj", "Objet", -1]]},
 	"move": {"label": "Envoyer vers une zone", "cat": "Unités", "params": [["obj", "obj", "Objet", -1], ["zone", "zone", "Zone", -1]]},
@@ -111,6 +115,8 @@ const ACTIONS := {
 	"trigger_run": {"label": "Exécuter un déclencheur", "cat": "Flux", "params": [["trigger", "trigger", "Déclencheur", ""]]},
 	"victory": {"label": "Victoire", "cat": "Mission", "params": [["text", "text", "Message", ""]]},
 	"defeat": {"label": "Défaite", "cat": "Mission", "params": [["text", "text", "Message", ""]]},
+	"set_relation": {"label": "Changer une relation", "cat": "Factions", "params": [["a", "faction", "Faction", "p1"], ["b", "faction", "Avec", "neutral"], ["rel", "choice", "Relation", "enemy", Factions.RELATIONS]]},
+	"set_faction": {"label": "Changer la faction d'un objet", "cat": "Factions", "params": [["obj", "obj", "Unité ou structure", -1], ["faction", "faction", "Nouvelle faction (même camp)", "ally"]]},
 }
 
 # --- Objectifs ----------------------------------------------------------------------------------

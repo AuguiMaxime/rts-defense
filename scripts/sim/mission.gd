@@ -217,10 +217,15 @@ func _spawn(w: GameWorld, ent: Dictionary, waypoints: Array) -> void:
 							u.patrol.append(Vector2i(int(pc[0]), int(pc[1])))
 					"follow":
 						u.follow_eid = int(ent.get("target", -1))
-				u.ai = not ent.get("selectable", true)
+					"hunt":
+						u.hunt = true
+				u.faction = str(ent.get("faction", "p1" if ent.get("selectable", true) else "ally"))
+				# Hors des factions des joueurs, l'unité est pilotée par l'ordinateur.
+				u.ai = not ent.get("selectable", true) or not (u.faction in ["p1", "p2"])
 				if ent.get("sieged", false) and u.ability() == "siege":
 					u.sieged = true
 			if ent.kind == "vip":
+				u.faction = str(ent.get("faction", "p1"))
 				u.vip = true
 				vip = u
 		"escortee":
@@ -284,6 +289,7 @@ func spawn_late(w: GameWorld, eid: int) -> bool:
 
 ## Réglages de la fiche communs aux ennemis et structures.
 static func _enemy_props(e: Enemy, ent: Dictionary) -> void:
+	e.faction = str(ent.get("faction", "enemy"))
 	e.eid = int(ent.get("id", -1))
 	e.invulnerable = ent.get("inv", false)
 	e.max_hp = roundi(e.max_hp * float(ent.get("hp_mul", 1.0)))

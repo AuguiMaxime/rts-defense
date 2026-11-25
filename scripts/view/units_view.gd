@@ -453,6 +453,11 @@ func _draw_unit(u: Unit) -> void:
 	if sel_units.has(u):
 		draw_circle(p, ring, Color(COLOR_SELECTED, 0.18))
 		draw_arc(p, ring, 0, TAU, 32, COLOR_SELECTED, 3.0)
+	elif u.faction != "p1":
+		# Allié IA, civil, faction personnalisée : anneau à sa couleur.
+		var fc := world.factions.color_of(u.faction)
+		draw_circle(p, ring - 2, Color(fc, 0.14))
+		draw_arc(p, ring - 2, 0, TAU, 24, Color(fc, 0.85), 2.5)
 	else:
 		draw_arc(p, ring - 2, 0, TAU, 24, Color(0.4, 1.0, 0.45, 0.35), 2.0)
 	if look.get("upright", false):
@@ -614,6 +619,15 @@ func _draw_enemy(e: Enemy) -> void:
 		var pulse := 0.5 + 0.5 * sin(_anim * 5.0)
 		draw_circle(p, size * 0.55, Color(1.0, 0.1, 0.2, 0.18 + 0.12 * pulse))
 		draw_arc(p, size * 0.55, 0, TAU, 40, Color(1.0, 0.3, 0.35, 0.8), 3.0)
+	elif e.faction != "enemy":
+		# Créature neutre ou faction personnalisée : cercle à sa couleur (en pointillé si non hostile).
+		var fc := world.factions.color_of(e.faction)
+		draw_circle(p, size * 0.42, Color(fc, 0.22))
+		if not world.factions.hostile(e.faction, "p1"):
+			for k in 12:
+				draw_arc(p, size * 0.46, TAU * k / 12.0, TAU * (k + 0.5) / 12.0, 4, Color(fc, 0.9), 2.5)
+		else:
+			draw_arc(p, size * 0.46, 0, TAU, 28, Color(fc, 0.9), 2.5)
 	elif not e.flying:
 		draw_circle(p, size * 0.42, Color(0.9, 0.1, 0.1, 0.28))
 		draw_set_transform(p + Vector2(6, 10), e.facing.angle() + look.get("rot", 0.0))

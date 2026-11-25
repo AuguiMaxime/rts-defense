@@ -220,7 +220,7 @@ func launch(i: int) -> void:
 		st.next = _time + maxf(1.0, float(d.get("every", 30.0)))
 	var gap := 0.05 if str(d.get("order", "progressive")) == "simultaneous" else maxf(0.05, float(d.get("spacing", Balance.SPAWN_INTERVAL)))
 	var base := {"tag": wave, "hp": float(d.get("hp", 1.0)), "beh": str(d.get("behavior", "base")),
-			"target": int(d.get("target", -1)), "zone": int(d.get("zone", -1)), "gap": gap}
+			"target": int(d.get("target", -1)), "zone": int(d.get("zone", -1)), "gap": gap, "fac": str(d.get("faction", "enemy"))}
 	for g: Dictionary in d.get("groups", []):
 		var cell: Variant = _parse_cell(str(g.get("spawn", "")))
 		for k in maxi(0, int(g.get("count", 0))):
@@ -267,6 +267,7 @@ func _spawn(q: Dictionary, world: GameWorld) -> void:
 		t = "normal"
 	var e := world.spawn_enemy(t, cell, float(q.hp))
 	e.wave_no = int(q.tag)
+	e.faction = str(q.get("fac", "enemy"))
 	e.home = e.pos
 	match str(q.get("beh", "base")):
 		"aggressive":

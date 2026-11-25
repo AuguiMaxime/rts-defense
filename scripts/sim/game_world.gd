@@ -36,6 +36,7 @@ var hq_site: BuildSite = null
 var mission: Mission
 ## Objectifs, déclencheurs, variables (onglets Objectifs et Événements de l'éditeur).
 var scenario: Scenario
+var factions: Factions = Factions.new()
 ## Outils de test (lancement depuis l'éditeur).
 var cheat_invincible := false
 var cheat_resources := false
@@ -106,6 +107,7 @@ func _init(g: GameGrid, config := {}) -> void:
 	waves.difficulty = config.get("difficulty", 1.0)
 	waves.interval = config.get("wave_interval", Balance.WAVE_INTERVAL)
 	waves.setup_plan(config.get("wave_plan", {}))
+	factions = Factions.new(config.get("factions", {}))
 	Research.levels = upgrades
 	Research.version += 1
 	for c in g.metal_deposits:
@@ -655,7 +657,7 @@ func _can_hit(st: Dictionary, e: Enemy) -> bool:
 	return e.hp > 0 and not ((st.targets == "air" and not e.flying) or (st.targets == "ground" and e.flying))
 
 
-func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
+func _find_target(center: Vector2, st: Dictionary, r: float = -1.0, fac := "p1") -> Enemy:
 	if r < 0.0:
 		r = st.range
 	var best: Enemy = null
@@ -671,7 +673,7 @@ func _find_target(center: Vector2, st: Dictionary, r: float = -1.0) -> Enemy:
 			if list == null:
 				continue
 			for e: Enemy in list:
-				if not _can_hit(st, e):
+				if not _can_hit(st, e) or not factions.hostile(fac, e.faction):
 					continue
 				var d := center.distance_squared_to(e.pos)
 				if e.radius > 0.0:
@@ -812,7 +814,7 @@ func _tick_unit(u: Unit, delta: float) -> void:
 			# Déplacement offensif : on engage tout ennemi croisé, puis on reprend la route.
 			if u.target == null and u.retarget_timer <= 0.0:
 				u.retarget_timer = 0.3
-				u.target = _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA)
+				u.target = _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA, u.faction)
 			if u.target != null and u.pos.distance_to(u.target.pos) - u.target.radius > rng + Unit.AGGRO_EXTRA + 2.0:
 				u.target = null
 			if u.target == null:
@@ -843,9 +845,18 @@ func _tick_unit(u: Unit, delta: float) -> void:
 		Unit.Order.GUARD:
 			if u.target == null and u.retarget_timer <= 0.0:
 				u.retarget_timer = 0.3
-				var t := _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA)
+				var t := _find_target(u.pos, st, rng + Unit.AGGRO_EXTRA, u.faction)
 				if t != null and t.pos.distance_to(u.guard_pos) <= Unit.LEASH + rng:
 					u.target = t
+				elif t == null and u.hunt:
+					# Allié IA « chasse » : part vers l'ennemi hostile le plus proche.
+					var far := _find_target(u.pos, st, 40.0, u.faction)
+					if far != null:
+						u.order = Unit.Order.AMOVE
+						u.dest = far.pos
+						u.path.clear()
+						u.repath_timer = 0.0
+						return
 			if u.target != null and u.target.pos.distance_to(u.guard_pos) > Unit.LEASH + rng:
 				u.target = null # trop loin de son poste : on lâche
 	if u.target != null:
@@ -926,7 +937,7 @@ func _tick_sieged(u: Unit, st: Dictionary) -> void:
 		u.target = null
 	if u.target == null and u.retarget_timer <= 0.0:
 		u.retarget_timer = 0.3
-		u.target = _find_target(u.pos, st, rng)
+		u.target = _find_target(u.pos, st, rng, u.faction)
 	if u.target == null:
 		return
 	u.aim_angle = (u.target.pos - u.pos).angle()
@@ -1035,6 +1046,8 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 			_emit({"type": "shield_hit", "pos": e.pos})
 		return
 	e.hp -= maxi(1, amount - e.armor)
+	if factions.provocable:
+		factions.provoke(e.faction)
 	if e.hp <= 0 and e.neutral:
 		_objective_destroyed(e)
 		return
@@ -1268,7 +1281,12 @@ func _pick_target(e: Enemy, reach := -1.0) -> void:
 	var best_d := e.attack_range if reach < 0.0 else reach
 	# Cibles prioritaires à portée : on les attaque avant tout le reste.
 	var fd := best_d
+	var vs_p1 := factions.hostile(e.faction, "p1")
 	for f: Variant in focus:
+		if f is Unit and not factions.hostile(e.faction, (f as Unit).faction):
+			continue
+		if f is BuildSite and not vs_p1:
+			continue
 		var dd := _focus_dist(e, f)
 		if dd <= fd:
 			fd = dd
@@ -1279,10 +1297,12 @@ func _pick_target(e: Enemy, reach := -1.0) -> void:
 	if not focus.is_empty() and e.mode == "march":
 		best_d = minf(best_d, 0.6) # en route vers le convoi : seulement ce qui barre le passage
 	var d := _dist_to_rect(e.pos, _base_rect)
-	if d <= best_d:
+	if d <= best_d and vs_p1:
 		best_d = d
 		e.target_kind = Enemy.Target.BASE
 	for w in workers:
+		if not vs_p1:
+			break
 		d = e.pos.distance_to(w.pos) - 0.3
 		if d < best_d:
 			best_d = d
@@ -1290,11 +1310,13 @@ func _pick_target(e: Enemy, reach := -1.0) -> void:
 			e.target_ref = w
 	for u in units:
 		d = e.pos.distance_to(u.pos) - 0.35
-		if d < best_d:
+		if d < best_d and factions.hostile(e.faction, u.faction):
 			best_d = d
 			e.target_kind = Enemy.Target.UNIT
 			e.target_ref = u
 	for s in sites:
+		if not vs_p1:
+			break
 		d = _dist_to_rect(e.pos, s.rect())
 		if d < best_d:
 			best_d = d
