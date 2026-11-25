@@ -144,6 +144,16 @@ La validation signale en plus : paramètres manquants, références cassées, au
 - **Déclencheurs** : QUAND « Vague commencée / éliminée » (par numéro ou par nom), SI « Ennemis des vagues restants », ALORS « Lancer une vague », « Arrêter une vague » (ou toutes), « Suspendre », « Reprendre », « Accélérer » (×2 = deux fois plus vite).
 - En jeu, le panneau des vagues affiche le compte à rebours et les **ennemis restants**. Les outils de test (F2) permettent de lancer ▶ ou d'arrêter ■ chaque vague.
 
+## 3e. Factions et relations (onglet Mission, bouton « Factions et relations… »)
+
+- **6 factions de base** : Joueur 1, Joueur 2, Alliés IA, Civils (camp du joueur) ; Ennemis, Neutres (camp ennemi). Tu peux ajouter des **factions personnalisées** (nom, couleur, camp).
+- **Deux camps.** Les factions d'un même camp sont toujours alliées. Entre les deux camps, le tableau règle chaque paire : **Ennemi**, **Neutre** (on s'ignore) ou **Hostile si attaqué** (neutre jusqu'à ce que cette faction du joueur tire dessus). Par défaut : tout le monde est ennemi, sauf les Neutres.
+- **Fiche d'un objet** : champ **Faction** (ennemis, structures, unités alliées, VIP). Joueur 1 / 2 = contrôlée par le joueur ; Alliés IA, Civils et factions personnalisées = pilotées par l'ordinateur, avec leur comportement (dont **Chasse les ennemis** : l'allié part seul vers l'ennemi hostile le plus proche).
+- **Vagues** : chaque vague personnalisée a sa faction (camp ennemi).
+- **Déclencheurs** : QUAND « Relation changée », SI « Relation entre factions » / « Faction d'un objet », ALORS « Changer une relation », « Changer la faction d'un objet » (dans le même camp : un soldat du joueur peut passer aux Alliés IA, un ennemi aux Neutres), « Créer des unités » avec une faction.
+- En jeu, une unité ou un ennemi d'une autre faction porte un anneau à sa couleur (en pointillé s'il n'est pas hostile).
+- Limite : deux factions du même camp ne peuvent pas se battre entre elles.
+
 ## 4. Tester puis m'envoyer la mission
 
 1. **▶ TESTER** lance la mission tout de suite. Le menu de fin ramène dans l'éditeur.

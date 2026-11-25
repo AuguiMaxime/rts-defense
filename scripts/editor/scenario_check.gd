@@ -85,6 +85,7 @@ static func check(doc: EditorDoc) -> Array:
 		if str(e.get("behavior", "")) == "wait" and not _activated(trigs, int(e.id)):
 			warns.append("%s : attend un événement, mais aucun déclencheur ne le réveille" % e.name)
 	_check_waves(doc, trigs, obj_ids, errors, warns)
+	_check_factions(doc, trigs, errors)
 	# Victoire / défaite
 	var rules: Dictionary = sc.get("rules", {})
 	var actions_all: Array = []
@@ -193,4 +194,29 @@ static func _check_waves(doc: EditorDoc, trigs: Array, obj_ids: Array, errors: A
 			if str(g.get("spawn", "")) != "" and not spawns.has(str(g.spawn)):
 				warns.append("%s : un point d'apparition n'existe plus (toutes les apparitions seront utilisées)" % where)
 				break
+
+
+static func _check_factions(doc: EditorDoc, trigs: Array, errors: Array[String]) -> void:
+	var f := Factions.new(doc.factions)
+	var known := f.ids().map(func(x: Array) -> String: return x[0])
+	for e: Dictionary in doc.entities:
+		if not e.has("faction"):
+			continue
+		var want := "enemy" if str(e.kind) in ["enemy", "structure"] else "player"
+		if not known.has(str(e.faction)):
+			errors.append("« %s » : faction introuvable" % e.get("name", ""))
+		elif f.camp(str(e.faction)) != want:
+			errors.append("« %s » : la faction %s est dans l'autre camp" % [e.get("name", ""), f.name_of(str(e.faction))])
+	for w: Dictionary in doc.wave_plan.get("list", []):
+		if w.has("faction") and (not known.has(str(w.faction)) or f.camp(str(w.faction)) != "enemy"):
+			errors.append("Vague « %s » : faction introuvable ou du camp du joueur" % w.get("name", ""))
+	for t: Dictionary in trigs:
+		var items: Array = [t.get("event", {})]
+		items.append_array(t.get("actions", []) + t.get("else", []))
+		items.append_array(t.get("cond", {}).get("items", []))
+		for it: Dictionary in items:
+			for k in ["a", "b", "faction"]:
+				var v := str(it.get(k, ""))
+				if v != "" and str(it.get("type", "")) in ["relation_changed", "relation", "faction_of", "set_relation", "set_faction", "spawn"] and not known.has(v):
+					errors.append("Déclencheur « %s » : faction introuvable" % t.name)
 

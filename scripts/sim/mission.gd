@@ -221,7 +221,7 @@ func _spawn(w: GameWorld, ent: Dictionary, waypoints: Array) -> void:
 						u.hunt = true
 				u.faction = str(ent.get("faction", "p1" if ent.get("selectable", true) else "ally"))
 				# Hors des factions des joueurs, l'unité est pilotée par l'ordinateur.
-				u.ai = not ent.get("selectable", true) or not (u.faction in ["p1", "p2"])
+				u.ai = not (u.faction in ["p1", "p2"])
 				if ent.get("sieged", false) and u.ability() == "siege":
 					u.sieged = true
 			if ent.kind == "vip":

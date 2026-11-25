@@ -1489,8 +1489,11 @@ func _test_factions() -> void:
 	_check(f.hostile("p1", "enemy") and f.hostile("enemy", "p1"), "joueur / ennemis : hostiles par défaut")
 	_check(f.relation("p1", "neutral") == "neutral" and not f.hostile("neutral", "civil"), "neutres : non hostiles par défaut")
 	_check(f.relation("f1", "ally") == "neutral" and f.relation("p1", "f1") == "provoked", "relations réglées dans l'éditeur")
-	f.provoke("f1")
+	f.provoke("f1", "p1")
 	_check(f.relation("p1", "f1") == "enemy" and f.relation("ally", "f1") == "neutral" and f.pending.size() == 1, "hostile si attaqué : bascule à la 1re attaque")
+	var f2 := Factions.new({"rel": {"p1|neutral": "provoked", "ally|neutral": "enemy"}})
+	f2.provoke("neutral", "ally")
+	_check(f2.relation("p1", "neutral") == "provoked", "attaqués par un allié IA : le joueur reste en paix")
 	# En jeu
 	var fac := {"list": [{"id": "f1", "name": "Pirates", "camp": "enemy", "color": "ff00ff"}], "rel": {"p1|f1": "provoked"}}
 	var cfg := {"mission": {"type": "waves", "waves_enabled": false}, "factions": fac, "entities": [

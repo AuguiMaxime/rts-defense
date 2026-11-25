@@ -37,6 +37,7 @@ var mission: Mission
 ## Objectifs, déclencheurs, variables (onglets Objectifs et Événements de l'éditeur).
 var scenario: Scenario
 var factions: Factions = Factions.new()
+var _shooter := "p1" # faction de l'unité qui tire (provocation « hostile si attaqué »)
 ## Outils de test (lancement depuis l'éditeur).
 var cheat_invincible := false
 var cheat_resources := false
@@ -926,7 +927,9 @@ func _unit_shoot(u: Unit, st: Dictionary) -> void:
 			u.crit_ready = false
 			mult = 3.0
 			_emit({"type": "crit", "pos": u.target.pos})
+	_shooter = u.faction
 	_fire(u.type, u.pos, u.target, st, mult)
+	_shooter = "p1"
 
 
 ## Char en mode siège : immobile, tire sur ce qui est à portée.
@@ -1047,7 +1050,7 @@ func _damage_enemy(e: Enemy, amount: int) -> void:
 		return
 	e.hp -= maxi(1, amount - e.armor)
 	if factions.provocable:
-		factions.provoke(e.faction)
+		factions.provoke(e.faction, _shooter)
 	if e.hp <= 0 and e.neutral:
 		_objective_destroyed(e)
 		return

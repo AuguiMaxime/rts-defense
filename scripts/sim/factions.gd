@@ -110,13 +110,10 @@ func set_relation(a: String, b: String, v: String) -> void:
 		_refresh()
 
 
-## Une unité d'une faction du camp ennemi est attaquée par le camp joueur.
-func provoke(victim: String) -> void:
-	if camp(victim) != "enemy":
-		return
-	for f: Dictionary in list:
-		if f.camp == "player" and relation(str(f.id), victim) == "provoked":
-			set_relation(str(f.id), victim, "enemy")
+## Une unité d'une faction du camp ennemi est attaquée par une faction du camp joueur.
+func provoke(victim: String, by := "p1") -> void:
+	if camp(victim) == "enemy" and relation(by, victim) == "provoked":
+		set_relation(by, victim, "enemy")
 
 
 func ids(camp_filter := "") -> Array:

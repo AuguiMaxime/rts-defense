@@ -730,6 +730,11 @@ func _field(getter: Callable, p: Array) -> Control:
 		"trigger":
 			var l: Array = _sc().get("triggers", []).map(func(t: Dictionary) -> Array: return [t.id, t.name])
 			return _option(l, str(cur), setv)
+		"faction":
+			var fl: Array = Factions.new(ed.doc.factions).ids()
+			if str(p[3]) == "" or str(p[2]).contains("vide"):
+				fl.push_front(["", "—"])
+			return _option(fl, str(cur), setv)
 		"wave":
 			var l: Array = [["", "—"]]
 			for wv: Dictionary in ed.doc.wave_plan.get("list", []):
@@ -1026,6 +1031,7 @@ func _wave_form(wv: Dictionary) -> void:
 	if order == "progressive":
 		_row(g, "Écart entre ennemis (s)", _spin(float(wv.get("spacing", 0.7)), 0.1, 10, 0.1, func(v: float) -> void: _setp(getter, "spacing", v)))
 	_row(g, "PV (×)", _spin(float(wv.get("hp", 1.0)), 0.1, 20, 0.05, func(v: float) -> void: _setp(getter, "hp", v)))
+	_row(g, "Faction", _option(Factions.new(ed.doc.factions).ids("enemy"), str(wv.get("faction", "enemy")), func(v: String) -> void: _setp(getter, "faction", v)))
 	var beh := str(wv.get("behavior", "base"))
 	_row(g, "Comportement", _option(WaveManager.BEHAVIOR_LABELS, beh, func(v: String) -> void: _setp(getter, "behavior", v, true)))
 	if beh == "attack_target":

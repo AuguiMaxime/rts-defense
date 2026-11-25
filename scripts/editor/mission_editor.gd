@@ -33,7 +33,8 @@ const WIDE_TABS := ["objectives", "events", "waves"]
 const ENEMY_BEHAVIORS := [["guard", "Garde son poste"], ["static", "Immobile"], ["patrol", "Patrouille"], ["defend", "Défend une structure"],
 		["aggressive", "Attaque à vue"], ["attack_target", "Attaque une cible"], ["attack_zone", "Attaque une zone"], ["follow", "Suit une unité"],
 		["march", "Marche sur la base"], ["wait", "Attend un événement"]]
-const ALLY_BEHAVIORS := [["guard", "Garde son poste"], ["hold", "Tient la position"], ["patrol", "Patrouille"], ["follow", "Suit une unité"]]
+const ALLY_BEHAVIORS := [["guard", "Garde son poste"], ["hold", "Tient la position"], ["patrol", "Patrouille"], ["follow", "Suit une unité"],
+		["hunt", "Chasse les ennemis"]]
 const AUTOSAVE_DIR := "user://editor/"
 const AUTOSAVE_PATH := "user://editor/autosave.json"
 const AUTOSAVE_EVERY := 30.0
@@ -1768,6 +1769,18 @@ func _fiche_spin(id: int, key: String, value: float, lo: float, hi: float, step:
 	return s
 
 
+## Faction d'un objet posé (valeur par défaut selon son type).
+static func entity_faction(e: Dictionary) -> String:
+	if e.has("faction"):
+		return str(e.faction)
+	match str(e.get("kind", "")):
+		"enemy", "structure":
+			return "enemy"
+		"ally_unit":
+			return "p1" if e.get("selectable", true) else "ally"
+	return "p1"
+
+
 func _fiche_options(id: int, key: String, items: Array, current: String, rebuild := true) -> OptionButton:
 	var o := OptionButton.new()
 	o.focus_mode = Control.FOCUS_NONE
@@ -1847,10 +1860,18 @@ func _fiche(e: Dictionary) -> void:
 		if kind == "enemy":
 			_fiche_row(g, "Repli sous", _fiche_spin(id, "retreat", float(e.get("retreat", 0)), 0, 90, 5, " %"), "Retourne à son point de départ quand ses PV passent sous ce seuil (0 = jamais)")
 		else:
-			_fiche_row(g, "Contrôle", _fiche_toggle(id, "selectable", e.get("selectable", true), "Joueur", "IA alliée"), "IA alliée : le joueur ne peut pas la sélectionner")
 			if Content.UNITS.get(str(e.type), {}).get("ability", "") == "siege":
 				_fiche_row(g, "Départ", _fiche_toggle(id, "sieged", e.get("sieged", false), "En siège", "Mobile"))
 		_context.add_child(g)
+	# Faction
+	if kind in ["enemy", "structure", "ally_unit", "vip"]:
+		var camp := "enemy" if kind in ["enemy", "structure"] else "player"
+		var facs := Factions.new(doc.factions).ids(camp)
+		var cur := str(e.get("faction", entity_faction(e)))
+		var gf := EditorUi.grid(2, 6)
+		var fo := _fiche_options(id, "faction", facs, cur)
+		_fiche_row(gf, "Faction", fo, "Joueur 1 / 2 : contrôlée par le joueur. Les autres factions sont pilotées par l'ordinateur." if camp == "player" else "Neutres et factions personnalisées : relations réglées dans l'onglet Mission")
+		_context.add_child(gf)
 	# Statistiques
 	if kind in ["enemy", "structure", "ally_unit", "ally_tower", "defend", "vip"]:
 		_context.add_child(EditorUi.section("Statistiques"))

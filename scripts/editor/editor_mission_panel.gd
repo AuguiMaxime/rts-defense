@@ -31,6 +31,7 @@ var _brief: TextEdit
 var _loading := false
 var _tpl_label: Label
 var _waves_info: Label
+var _fac_info: Label
 var _settings_sep: Control
 var _settings_title: Control
 
@@ -104,9 +105,17 @@ func _init(editor) -> void:
 	add_child(EditorUi.section("Vagues ennemies"))
 	_waves_info = EditorUi.muted("")
 	add_child(_waves_info)
-	var go := EditorUi.button("Régler les vagues (onglet Vagues)")
-	go.pressed.connect(func() -> void: ed.set_tab("waves"))
-	add_child(go)
+	var gw := EditorUi.button("Régler les vagues (onglet Vagues)")
+	gw.pressed.connect(func() -> void: ed.set_tab("waves"))
+	add_child(gw)
+	add_child(EditorUi.sep())
+	add_child(EditorUi.section("Factions et relations"))
+	_fac_info = EditorUi.muted("")
+	_fac_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_fac_info)
+	var fb := EditorUi.button("Factions et relations…", "Factions personnalisées et tableau des relations")
+	fb.pressed.connect(func() -> void: EditorFactions.new(ed).open())
+	add_child(fb)
 
 	add_child(EditorUi.sep())
 	add_child(EditorUi.section("Objectifs bonus"))
@@ -156,6 +165,7 @@ func refresh() -> void:
 	_settings_sep.visible = t in ["survive", "convoy", "escort_defend"]
 	_settings_title.visible = _settings_sep.visible
 	_waves_info.text = EditorMissionPanel.waves_summary(ed.doc)
+	_fac_info.text = factions_summary(ed.doc)
 	for typ in _obj_buttons:
 		(_obj_buttons[typ] as Button).set_pressed_no_signal(ed.doc.objectives.any(func(o: Dictionary) -> bool: return o.type == typ))
 	var mine: Array = ed.doc.scenario.get("objectives", []).filter(func(o: Dictionary) -> bool: return o.get("tpl", false))
@@ -222,6 +232,21 @@ func _toggle_objective(typ: String) -> void:
 			ed.doc.objectives.append({"type": typ, "wave": OBJECTIVE_DEFAULT_WAVE[typ]})
 	ed.history.record("Objectif bonus", change)
 	ed.after_change()
+
+
+static func factions_summary(doc: EditorDoc) -> String:
+	var f := Factions.new(doc.factions)
+	var custom: int = doc.factions.get("list", []).size()
+	var changed := []
+	for p in f.ids("player"):
+		for e in f.ids("enemy"):
+			var r := f.relation(p[0], e[0])
+			if r != Factions.default_rel(p[0], e[0]):
+				changed.append("%s / %s : %s" % [p[1], e[1], {"enemy": "ennemis", "neutral": "neutres", "provoked": "hostiles si attaqués"}[r]])
+	var t := "6 factions de base" + (" + %d personnalisée%s" % [custom, "s" if custom > 1 else ""] if custom > 0 else "") + "."
+	if not changed.is_empty():
+		t += " Modifié : " + ", ".join(changed.slice(0, 3)) + ("…" if changed.size() > 3 else "")
+	return t
 
 
 ## Résumé des vagues de la mission (onglets Mission et Vagues).
