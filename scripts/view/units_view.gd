@@ -315,12 +315,19 @@ static func deco_texture(name: String) -> Texture2D:
 	var p := "res://assets/deco/%s.png" % name
 	if ResourceLoader.exists(p):
 		return load(p)
-	# PNG ajouté sans passer par l'import de Godot : lu directement.
-	if FileAccess.file_exists(p):
-		var img := Image.load_from_file(p)
-		if img != null and not img.is_empty():
-			return ImageTexture.create_from_image(img)
+	if _file_decos.has(name):
+		return _file_decos[name]
+	# PNG ajouté sans passer par l'import de Godot, ou décor importé avec un pack : lu directement.
+	for path in [p, "user://deco/%s.png" % name]:
+		if FileAccess.file_exists(path):
+			var img := Image.load_from_file(path)
+			if img != null and not img.is_empty():
+				_file_decos[name] = ImageTexture.create_from_image(img)
+				return _file_decos[name]
 	return null
+
+
+static var _file_decos := {} # décors lus directement depuis un PNG
 
 
 ## Décor, zones et trajet du convoi allié (sous les unités).

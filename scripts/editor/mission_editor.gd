@@ -48,6 +48,10 @@ var layers := EditorLayers.new()
 var grid: GameGrid
 var issues: Array = [] # erreurs bloquantes (voir MissionValidator)
 var warns: Array = [] # avertissements
+var _drop_zone: Control
+var _state_saved := {}
+var _state_timer := 0.0
+var _rebinding := "" # action dont on attend la nouvelle touche (fenêtre des raccourcis)
 var flash_cell := Vector2i(-1, -1) # case signalée par « Aller » dans la validation
 var flash_time := 0.0
 var _saved_changes := 0
@@ -161,10 +165,72 @@ func _open_initial() -> void:
 		return
 	if Ui.editor_map != null:
 		_load_doc(EditorDoc.from_map(Ui.editor_map))
+		var st0: Dictionary = EditorPrefs.get_v("state", {})
+		_apply_state(st0, doc.path != "" and str(st0.get("path", "")) == doc.path)
+		return
+	# Dernière mission ouverte (état gardé d'une session à l'autre).
+	var st: Dictionary = EditorPrefs.get_v("state", {})
+	var last := str(st.get("path", ""))
+	if last != "" and FileAccess.file_exists(last) and not FileAccess.file_exists(AUTOSAVE_PATH):
+		_load_doc(EditorDoc.from_map(MapData.load_from(last)))
+		_apply_state(st, true)
+		_toast("Reprise de « %s »" % doc.name)
 		return
 	_load_doc(EditorDoc.from_map(_default_map()))
+	_apply_state(st, false)
 	if FileAccess.file_exists(AUTOSAVE_PATH):
 		_offer_autosave()
+
+
+## État de l'éditeur mémorisé : onglet, outils, calques, grille, zoom (et la vue si même mission).
+func _state_dict() -> Dictionary:
+	return {"path": doc.path, "tab": tab, "tool": tool, "terrain_mat": terrain_mat, "brush": brush, "obj_tool": obj_tool,
+			"grid": show_grid, "hidden": layers.hidden, "locked": layers.locked, "zoom": camera.zoom.x,
+			"cam": [camera.position.x, camera.position.y]}
+
+
+func _apply_state(st: Dictionary, same_map: bool) -> void:
+	if st.is_empty():
+		return
+	layers.hidden = st.get("hidden", {}).duplicate()
+	layers.locked = st.get("locked", {}).duplicate()
+	_refresh_layers()
+	show_grid = bool(st.get("grid", true))
+	_grid_btn.set_pressed_no_signal(show_grid)
+	terrain_mat = str(st.get("terrain_mat", terrain_mat))
+	for id in _mat_buttons:
+		(_mat_buttons[id] as Button).set_pressed_no_signal(id == terrain_mat)
+	set_brush(clampi(int(st.get("brush", 1)), 1, 4))
+	var ot := str(st.get("obj_tool", obj_tool))
+	if EditorCatalog.label_of(ot) != ot:
+		obj_tool = ot
+		catalog.select(obj_tool)
+	set_tab(str(st.get("tab", "map")) if TABS.any(func(t: Array) -> bool: return t[0] == str(st.get("tab", ""))) else "map")
+	set_tool(str(st.get("tool", tool)))
+	if same_map:
+		var z := clampf(float(st.get("zoom", 1.0)), 0.1, 4.0)
+		var cam: Array = st.get("cam", [])
+		var apply_view := func() -> void:
+			camera.zoom = Vector2(z, z)
+			if cam.size() == 2:
+				camera.position = Vector2(float(cam[0]), float(cam[1]))
+		apply_view.call_deferred()
+	_view_dirty = true
+	_state_saved = _state_dict()
+
+
+func _save_state() -> void:
+	if doc == null:
+		return
+	var st := _state_dict()
+	if st != _state_saved:
+		_state_saved = st
+		EditorPrefs.set_v("state", st)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
+		_save_state()
 
 
 # --- Document -----------------------------------------------------------------------------
@@ -280,6 +346,12 @@ func _check() -> void:
 
 
 func _process(delta: float) -> void:
+	_state_timer += delta
+	if _state_timer >= 3.0:
+		_state_timer = 0.0
+		_save_state()
+	var dragging := get_viewport().gui_is_dragging()
+	_drop_zone.mouse_filter = Control.MOUSE_FILTER_STOP if dragging else Control.MOUSE_FILTER_IGNORE
 	if _view_dirty:
 		_refresh_view()
 	if _check_dirty:
@@ -394,6 +466,18 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Glisser et relâcher sont suivis même au-dessus des panneaux.
 func _input(event: InputEvent) -> void:
+	if _rebinding != "" and event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo:
+		var k := event as InputEventKey
+		if not k.keycode in [KEY_SHIFT, KEY_CTRL, KEY_ALT, KEY_META]:
+			get_viewport().set_input_as_handled()
+			var id := _rebinding
+			_rebinding = ""
+			if k.keycode != KEY_ESCAPE:
+				var stolen := EditorShortcuts.bind(id, EditorShortcuts.event_string(k))
+				if stolen != "":
+					_toast("« %s » n'a plus de touche" % EditorShortcuts.label_of(stolen), Ui.GOLD)
+			_show_help()
+		return
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if not _lmb and get_viewport().gui_get_hovered_control() != null:
@@ -460,92 +544,94 @@ func _on_key(k: InputEventKey) -> void:
 		return
 	var ctrl := k.ctrl_pressed or k.meta_pressed
 	var handled := true
-	var key := k.keycode
-	if ctrl:
-		if key == KEY_Z and k.shift_pressed:
-			do_redo()
-		elif key == KEY_Z:
-			do_undo()
-		elif key == KEY_Y:
-			do_redo()
-		elif key == KEY_C:
-			do_copy()
-		elif key == KEY_X:
-			do_cut()
-		elif key == KEY_V:
-			do_paste()
-		elif key == KEY_D:
-			do_duplicate()
-		elif key == KEY_A:
-			select_all()
-		elif key == KEY_S:
-			save()
-		elif key == KEY_0:
-			fit_camera()
-		else:
-			handled = false
+	# Touches fixes
+	if ctrl and k.shift_pressed and k.keycode == KEY_Z:
+		do_redo()
+	elif k.keycode == KEY_ESCAPE:
+		escape()
+	elif k.keycode == KEY_BACKSPACE and not ctrl:
+		do_delete()
+	elif k.keycode in [KEY_ENTER, KEY_KP_ENTER] and not pick.is_empty():
+		end_pick()
 	else:
-		match key:
-			KEY_DELETE, KEY_BACKSPACE:
-				do_delete()
-			KEY_ESCAPE:
-				escape()
-			KEY_ENTER, KEY_KP_ENTER:
-				if not pick.is_empty():
-					end_pick()
-				else:
-					handled = false
-			KEY_F5:
-				test()
-			KEY_F1:
-				_show_help()
-			KEY_1:
-				set_tab("map")
-			KEY_2:
-				set_tab("objects")
-			KEY_3:
-				set_tab("objectives")
-			KEY_4:
-				set_tab("events")
-			KEY_5:
-				set_tab("waves")
-			KEY_6:
-				set_tab("mission")
-			KEY_V:
-				set_tool("select")
-			KEY_B:
-				if tab != "map":
-					set_tab("map")
-				set_tool("paint")
-			KEY_F:
-				if tab != "map":
-					set_tab("map")
-				set_tool("fill")
-			KEY_I:
-				set_tool("pipette")
-			KEY_P:
-				if tab != "objects":
-					set_tab("objects")
-				set_tool("place")
-			KEY_E:
-				if tab == "objects":
-					set_tool("erase")
-				else:
-					set_terrain_mat(".")
-			KEY_G:
-				toggle_grid()
-			KEY_R:
-				rotate_any()
-			KEY_M:
-				mirror_any(not k.shift_pressed)
-			KEY_BRACKETLEFT:
-				set_brush(maxi(1, brush - 1))
-			KEY_BRACKETRIGHT:
-				set_brush(mini(4, brush + 1))
-			_:
-				handled = false
+		# Raccourcis modifiables (F1)
+		var id := EditorShortcuts.action_for(k)
+		handled = id != "" and run_action(id)
 	if handled:
 		get_viewport().set_input_as_handled()
+
+
+## Exécute une action de l'éditeur (raccourci clavier ou menu). Faux si inconnue.
+func run_action(id: String) -> bool:
+	match id:
+		"undo":
+			do_undo()
+		"redo":
+			do_redo()
+		"copy":
+			do_copy()
+		"cut":
+			do_cut()
+		"paste":
+			do_paste()
+		"duplicate":
+			do_duplicate()
+		"select_all":
+			select_all()
+		"delete":
+			do_delete()
+		"save":
+			save()
+		"missions":
+			_show_missions()
+		"test":
+			test()
+		"validate":
+			_show_issues()
+		"help":
+			_show_help()
+		"fit":
+			fit_camera()
+		"tab_map", "tab_objects", "tab_objectives", "tab_events", "tab_waves", "tab_mission":
+			set_tab(id.trim_prefix("tab_"))
+		"tool_select":
+			set_tool("select")
+		"tool_paint":
+			if tab != "map":
+				set_tab("map")
+			set_tool("paint")
+		"tool_fill":
+			if tab != "map":
+				set_tab("map")
+			set_tool("fill")
+		"tool_pipette":
+			set_tool("pipette")
+		"tool_place":
+			if tab != "objects":
+				set_tab("objects")
+			set_tool("place")
+		"tool_erase":
+			if tab == "objects":
+				set_tool("erase")
+			else:
+				set_terrain_mat(".")
+		"grid":
+			toggle_grid()
+		"rotate":
+			rotate_any()
+		"mirror":
+			mirror_any(true)
+		"mirror_v":
+			mirror_any(false)
+		"brush_minus":
+			set_brush(maxi(1, brush - 1))
+		"brush_plus":
+			set_brush(mini(4, brush + 1))
+		"paths":
+			toggle_paths()
+		_:
+			return false
+	return true
 
 
 # --- Outils : souris --------------------------------------------------------------------------
@@ -872,9 +958,62 @@ func do_delete() -> void:
 	var clip := _selection_clip()
 	if clip.is_empty():
 		return
-	history.record("Supprimer", func() -> void: EditorOps.clear(doc, clip))
-	clear_selection()
-	after_change()
+	var go := func() -> void:
+		history.record("Supprimer", func() -> void: EditorOps.clear(doc, clip))
+		clear_selection()
+		after_change()
+	# Sécurité : prévenir si un objectif, un déclencheur ou une vague utilise ces objets.
+	var uses: Array[String] = []
+	for id in sel_ids:
+		for u in entity_uses(id):
+			if not uses.has(u):
+				uses.append(u)
+	if uses.is_empty():
+		go.call()
+		return
+	_confirm("Supprimer ?", "Utilisé par %d élément%s : %s.\nCes références seront signalées par la validation." % [uses.size(), "s" if uses.size() > 1 else "",
+			", ".join(uses.slice(0, 6)) + ("…" if uses.size() > 6 else "")], "Supprimer", go)
+
+
+func _can_drop(at: Vector2, data: Variant) -> bool:
+	if not (data is Dictionary and data.has("rts_tool")):
+		return false
+	# Aperçu de l'objet sous le curseur pendant le glisser.
+	if obj_tool != str(data.rts_tool) or tool != "place":
+		obj_tool = str(data.rts_tool)
+		if tab != "objects":
+			set_tab("objects")
+		catalog.select(obj_tool)
+		set_tool("place")
+	_set_hover(_cell_at(at))
+	canvas.queue_redraw()
+	return doc.inside(_cell_at(at))
+
+
+func _drop(at: Vector2, data: Variant) -> void:
+	var c := _cell_at(at)
+	obj_tool = str(data.rts_tool)
+	set_tool("place")
+	_on_press(c, false, false)
+	_on_release(c)
+
+
+## Objectifs, déclencheurs, vagues et objets qui font référence à l'objet `id`.
+func entity_uses(id: int) -> Array[String]:
+	var out: Array[String] = []
+	for o: Dictionary in doc.scenario.get("objectives", []):
+		if MissionValidator._uses(JSON.stringify(o), id):
+			out.append("objectif « %s »" % o.get("name", ""))
+	for t: Dictionary in doc.scenario.get("triggers", []):
+		if MissionValidator._uses(JSON.stringify(t), id):
+			out.append("déclencheur « %s »" % t.get("name", ""))
+	for w: Dictionary in doc.wave_plan.get("list", []):
+		if int(w.get("target", -1)) == id or int(w.get("zone", -1)) == id:
+			out.append("vague « %s »" % w.get("name", ""))
+	for e: Dictionary in doc.entities:
+		if int(e.id) != id and (int(e.get("target", -1)) == id or int(e.get("link", -1)) == id):
+			out.append(str(e.get("name", "")))
+	return out
 
 
 func rotate_any() -> void:
@@ -1264,6 +1403,13 @@ func set_ground(gk: String) -> void:
 # =============================================================================================
 
 func _build_ui() -> void:
+	# Zone de dépôt (glisser-déposer depuis le catalogue) : sous les panneaux, active seulement
+	# pendant un glisser, pour ne pas gêner la souris sur la carte.
+	_drop_zone = Control.new()
+	_drop_zone.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.add_child(_drop_zone)
+	_drop_zone.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_drop_zone.set_drag_forwarding(Callable(), _can_drop, _drop)
 	var root := EditorUi.vbox(0)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.add_child(root)
@@ -1316,26 +1462,17 @@ func _build_top() -> Control:
 	file.add_theme_font_size_override("font_size", EditorUi.FONT)
 	var pm := file.get_popup()
 	pm.add_theme_font_size_override("font_size", 14)
-	pm.add_item("Nouvelle carte", 0)
-	pm.add_item("Ouvrir…", 1)
+	pm.add_item("Nouvelle mission", 0)
+	pm.add_item("Mes missions…  (Ctrl+O)", 1)
 	pm.add_item("Enregistrer  (Ctrl+S)", 2)
 	pm.add_item("Enregistrer sous…", 3)
 	pm.add_separator()
+	pm.add_item("Importer…", 6)
+	pm.add_item("Exporter cette mission…", 7)
+	pm.add_separator()
 	pm.add_item("Paramètres de la carte…", 4)
-	pm.add_item("Raccourcis clavier  (F1)", 5)
-	pm.id_pressed.connect(func(id: int) -> void:
-		if id == 0:
-			new_map()
-		elif id == 1:
-			_show_open()
-		elif id == 2:
-			save()
-		elif id == 3:
-			_show_save_as()
-		elif id == 4:
-			_show_params()
-		elif id == 5:
-			_show_help())
+	pm.add_item("Raccourcis clavier…  (F1)", 5)
+	pm.id_pressed.connect(_file_menu)
 	h.add_child(file)
 	_name_edit = EditorUi.line_edit("Nom de la carte", 170)
 	_name_edit.text_submitted.connect(func(_t: String) -> void:
@@ -1658,15 +1795,65 @@ func _right_click(c: Vector2i) -> void:
 		escape()
 		return
 	var e := doc.entity_at(c, func(x: Dictionary) -> bool: return layers.entity_visible(x))
+	var pm := PopupMenu.new()
+	pm.add_theme_font_size_override("font_size", 14)
 	if e.is_empty():
 		clear_selection()
-		return
-	if tab == "mission":
-		set_tab("objects")
-	set_tool("select")
-	sel_rect = Rect2i()
-	sel_ids = [int(e.id)]
-	_refresh_context()
+		pm.add_item("Coller ici  (Ctrl+V)", 20)
+		pm.set_item_disabled(pm.get_item_index(20), clipboard.is_empty())
+		if doc.inside(c):
+			pm.add_item("Pipette : %s" % _char_name(doc.get_char(c)), 21)
+		pm.add_item("Centrer la vue ici", 22)
+		pm.add_separator()
+		pm.add_item("Tout sélectionner  (Ctrl+A)", 23)
+	else:
+		if tab == "mission":
+			set_tab("objects")
+		set_tool("select")
+		sel_rect = Rect2i()
+		sel_ids = [int(e.id)]
+		_refresh_context()
+		pm.add_separator(str(e.get("name", "")))
+		pm.add_item("Renommer", 1)
+		pm.add_item("Dupliquer  (Ctrl+D)", 2)
+		pm.add_item("Copier  (Ctrl+C)", 3)
+		pm.add_item("Pivoter  (R)", 4)
+		var uses := entity_uses(int(e.id))
+		pm.add_item("Utilisé par : %d élément%s" % [uses.size(), "s" if uses.size() > 1 else ""] if not uses.is_empty() else "Utilisé par : rien", 5)
+		pm.set_item_disabled(pm.get_item_index(5), uses.is_empty())
+		pm.add_separator()
+		pm.add_item("Supprimer  (Suppr)", 6)
+	var eid := int(e.get("id", -1))
+	pm.id_pressed.connect(func(id: int) -> void: _context_action(id, c, eid))
+	pm.popup_hide.connect(pm.queue_free)
+	_ui.add_child(pm)
+	pm.popup(Rect2i(Vector2i(get_viewport().get_mouse_position()), Vector2i.ZERO))
+
+
+func _context_action(id: int, c: Vector2i, eid: int) -> void:
+	match id:
+		1:
+			if _fiche_name != null:
+				_fiche_name.grab_focus()
+				_fiche_name.select_all()
+		2:
+			do_duplicate()
+		3:
+			do_copy()
+		4:
+			rotate_any()
+		5:
+			_toast("Utilisé par : " + ", ".join(entity_uses(eid)))
+		6:
+			do_delete()
+		20:
+			do_paste()
+		21:
+			pipette(c)
+		22:
+			look_at_cell(c)
+		23:
+			select_all()
 
 
 func start_pick(id: int, key: String, accept: Callable, hint: String) -> void:
@@ -2190,19 +2377,46 @@ func _flash(c: Vector2i) -> void:
 
 
 func _show_open() -> void:
-	var v := _modal_frame("Ouvrir une carte", 520)
+	_show_missions()
+
+
+## Écran « Mes missions » : ouvrir, dupliquer, renommer, exporter, supprimer, importer.
+func _show_missions() -> void:
+	var v := _modal_frame("Mes missions", 760)
+	var top := EditorUi.hbox(6)
+	var nw := EditorUi.primary("+ Nouvelle mission")
+	nw.pressed.connect(func() -> void:
+		_close_modal()
+		new_map())
+	top.add_child(nw)
+	var imp := EditorUi.button("Importer…", "Une mission (.json) ou un pack (.%s) avec ses décors" % MissionLibrary.PACK_EXT)
+	imp.pressed.connect(_import_dialog)
+	top.add_child(imp)
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(sp)
+	var exp := EditorUi.button("Exporter la sélection…", "Un pack avec les missions cochées et leurs décors")
+	top.add_child(exp)
+	v.add_child(top)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(480, 380)
+	scroll.custom_minimum_size = Vector2(720, 440)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var list := EditorUi.vbox(4)
+	var list := EditorUi.vbox(6)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_child(EditorUi.section("Mes cartes"))
-	var customs := MapData.list_custom()
-	if customs.is_empty():
-		list.add_child(EditorUi.muted("Aucune carte enregistrée pour l'instant", 13))
-	for path in customs:
-		var md := MapData.load_from(path)
-		_open_entry(list, "%s   ·   %s" % [md.NAME, path.get_file()], md)
+	scroll.add_child(list)
+	v.add_child(scroll)
+	var checked: Array = []
+	var infos := MissionLibrary.list()
+	list.add_child(EditorUi.section("Mes missions (%d)" % infos.size()))
+	if infos.is_empty():
+		list.add_child(EditorUi.muted("Aucune mission enregistrée pour l'instant. « Enregistrer » (Ctrl+S) range la mission ici.", 13))
+	for inf: Dictionary in infos:
+		list.add_child(_mission_row(inf, checked))
+	exp.pressed.connect(func() -> void:
+		if checked.is_empty():
+			_toast("Coche les missions à exporter", Ui.GOLD)
+			return
+		_export_dialog(checked.duplicate()))
 	list.add_child(EditorUi.section("Campagne (ouverte en copie)"))
 	for l in Content.LEVELS:
 		var md := MapData.load_from(l.map)
@@ -2211,9 +2425,188 @@ func _show_open() -> void:
 		md.difficulty = l.difficulty
 		md.interval = l.get("interval", 30.0)
 		_open_entry(list, "%02d · %s" % [l.id, md.NAME], md)
-	scroll.add_child(list)
-	v.add_child(scroll)
 	_close_row(v)
+
+
+func _mission_row(inf: Dictionary, checked: Array) -> Control:
+	var path: String = inf.path
+	var row := PanelContainer.new()
+	var sb := EditorUi.panel_style(6)
+	sb.bg_color = Color(0.1, 0.13, 0.17)
+	sb.border_color = Color(Ui.CYAN, 0.7) if path == doc.path else Color(0.25, 0.3, 0.36)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	row.add_theme_stylebox_override("panel", sb)
+	var h := EditorUi.hbox(10)
+	row.add_child(h)
+	var cb := CheckBox.new()
+	cb.focus_mode = Control.FOCUS_NONE
+	cb.tooltip_text = "À inclure dans le pack exporté"
+	var on_toggle := func(on: bool) -> void:
+		if on:
+			checked.append(path)
+		else:
+			checked.erase(path)
+	cb.toggled.connect(on_toggle)
+	h.add_child(cb)
+	var thumb := TextureRect.new()
+	thumb.custom_minimum_size = Vector2(96, 60)
+	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	thumb.texture = MissionPreview.texture(str(inf.preview))
+	if thumb.texture == null:
+		thumb.texture = ImageTexture.create_from_image(MissionPreview.render(EditorDoc.from_map(inf.map)))
+	h.add_child(thumb)
+	var txt := EditorUi.vbox(2)
+	txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	txt.add_child(EditorUi.label(str(inf.name) + ("   · ouverte" if path == doc.path else ""), 15, Ui.CYAN if path == doc.path else Color.WHITE))
+	var date := Time.get_datetime_string_from_unix_time(int(inf.modified) + int(Time.get_time_zone_from_system().bias) * 60, true)
+	var players: String = {"solo": "Solo", "coop": "Coop", "both": "Solo / coop"}.get(str(inf.players), "Solo")
+	var sub := "%s  ·  %s  ·  %s  ·  modifiée le %s" % [Mission.TYPE_NAMES.get(str(inf.type), str(inf.type)),
+			"★".repeat(int(inf.stars)) + "☆".repeat(5 - int(inf.stars)), players, date.replace(" ", " à ").left(-3)]
+	txt.add_child(EditorUi.label(sub, 12, Ui.MUTED))
+	txt.add_child(EditorUi.label(path.get_file() + ("   ⚠ version plus récente (v%d)" % int(inf.version) if int(inf.version) > EditorDoc.VERSION else ""), 11, Color(0.5, 0.56, 0.64)))
+	h.add_child(txt)
+	var open := EditorUi.button("Ouvrir")
+	open.pressed.connect(func() -> void:
+		_close_modal()
+		open_map(MapData.load_from(path)))
+	h.add_child(open)
+	var more := MenuButton.new()
+	more.text = "⋯"
+	more.flat = false
+	more.focus_mode = Control.FOCUS_NONE
+	more.custom_minimum_size = Vector2(36, EditorUi.BTN_H)
+	var pm := more.get_popup()
+	pm.add_theme_font_size_override("font_size", 14)
+	pm.add_item("Dupliquer", 0)
+	pm.add_item("Renommer…", 1)
+	pm.add_item("Exporter…", 2)
+	pm.add_separator()
+	pm.add_item("Supprimer…", 3)
+	pm.id_pressed.connect(func(id: int) -> void: _mission_action(id, path, str(inf.name)))
+	h.add_child(more)
+	return row
+
+
+func _mission_action(id: int, path: String, name: String) -> void:
+	match id:
+		0:
+			var np := MissionLibrary.duplicate_mission(path)
+			_toast("Copie créée : %s" % np.get_file() if np != "" else "Échec de la copie", Ui.GREEN if np != "" else Ui.RED)
+			_show_missions()
+		1:
+			_rename_dialog(path, name)
+		2:
+			_export_dialog([path])
+		3:
+			var go := func() -> void:
+				if MissionLibrary.delete(path):
+					_toast("« %s » supprimée (corbeille)" % name, Ui.GOLD)
+					if path == doc.path:
+						doc.path = ""
+						_saved_changes = -1
+				else:
+					_toast("Suppression impossible", Ui.RED)
+				_show_missions()
+			_confirm("Supprimer « %s » ?" % name, "Le fichier %s part à la corbeille.%s" % [path.get_file(),
+					"\nC'est la mission ouverte : elle reste à l'écran, non enregistrée." if path == doc.path else ""],
+					"Supprimer", go, "Annuler", _show_missions)
+
+
+func _rename_dialog(path: String, name: String) -> void:
+	var v := _modal_frame("Renommer la mission")
+	var e := EditorUi.line_edit("Nom")
+	e.text = name
+	v.add_child(e)
+	var ok := EditorUi.primary("Renommer")
+	var go := func() -> void:
+		var n := e.text.strip_edges()
+		if n == "" or n == name:
+			_show_missions()
+			return
+		var np := MissionLibrary.rename(path, n)
+		if np == "":
+			_toast("Échec du renommage", Ui.RED)
+		elif path == doc.path:
+			doc.path = np
+			history.record("Renommer la carte", func() -> void: doc.name = n)
+			_name_edit.text = n
+			_saved_changes = history.changes
+		_show_missions()
+	ok.pressed.connect(go)
+	e.text_submitted.connect(func(_t: String) -> void: go.call())
+	_close_row(v, [ok])
+	e.grab_focus.call_deferred()
+	e.select_all.call_deferred()
+
+
+## Boîte de dialogue de fichier du système.
+func _file_dialog(save_mode: bool, filters: PackedStringArray, title: String, default_name: String, cb: Callable) -> void:
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE if save_mode else FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.filters = filters
+	fd.title = title
+	fd.use_native_dialog = true
+	fd.current_dir = str(EditorPrefs.get_v("last_dir", OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)))
+	if default_name != "":
+		fd.current_file = default_name
+	fd.file_selected.connect(func(p: String) -> void:
+		EditorPrefs.set_v("last_dir", p.get_base_dir())
+		fd.queue_free()
+		cb.call(p))
+	fd.canceled.connect(fd.queue_free)
+	add_child(fd)
+	fd.popup_centered_ratio(0.6)
+
+
+func _export_dialog(paths: Array) -> void:
+	var first := MapData.load_from(paths[0]).NAME if paths.size() == 1 else "pack-%d-missions" % paths.size()
+	_file_dialog(true, PackedStringArray(["*.%s ; Pack RTS Defense" % MissionLibrary.PACK_EXT]), "Exporter", MapData.slug(first) + "." + MissionLibrary.PACK_EXT,
+			func(dest: String) -> void:
+				if not dest.ends_with("." + MissionLibrary.PACK_EXT):
+					dest += "." + MissionLibrary.PACK_EXT
+				var err := MissionLibrary.export_pack(paths, dest)
+				_toast(("Exporté : %s" % dest.get_file()) if err == OK else "Échec de l'export (%d)" % err, Ui.GREEN if err == OK else Ui.RED))
+
+
+func _import_dialog() -> void:
+	_file_dialog(false, PackedStringArray(["*.%s, *.json ; Missions RTS Defense" % MissionLibrary.PACK_EXT]), "Importer", "",
+			func(src: String) -> void: _show_import_report(MissionLibrary.import_file(src)))
+
+
+func _show_import_report(rep: Dictionary) -> void:
+	var v := _modal_frame("Import", 560)
+	if not rep.ok:
+		v.add_child(EditorUi.label("✖ " + str(rep.error), 14, Ui.RED))
+	else:
+		var n: int = rep.missions.size()
+		v.add_child(EditorUi.label("✔ %d mission%s importée%s : %s" % [n, "s" if n > 1 else "", "s" if n > 1 else "", ", ".join(rep.missions)], 14, Ui.GREEN))
+		if int(rep.decos) > 0:
+			v.add_child(EditorUi.label("%d image%s de décor ajoutée%s." % [rep.decos, "s" if rep.decos > 1 else "", "s" if rep.decos > 1 else ""], 13))
+	if not rep.missing.is_empty():
+		var l := EditorUi.label("⚠ Décors introuvables (ils ne s'afficheront pas) : " + ", ".join(rep.missing), 13, Ui.GOLD)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(l)
+	for w in rep.warnings:
+		var l := EditorUi.label("⚠ " + str(w), 13, Ui.GOLD)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(l)
+	var extra: Array = []
+	if rep.ok and rep.paths.size() == 1:
+		var open := EditorUi.primary("Ouvrir")
+		var p: String = rep.paths[0]
+		open.pressed.connect(func() -> void:
+			_close_modal()
+			open_map(MapData.load_from(p)))
+		extra.append(open)
+	var back := EditorUi.button("Mes missions")
+	back.pressed.connect(_show_missions)
+	extra.append(back)
+	_close_row(v, extra)
 
 
 func _open_entry(list: VBoxContainer, text: String, md: MapData) -> void:
@@ -2224,6 +2617,29 @@ func _open_entry(list: VBoxContainer, text: String, md: MapData) -> void:
 		_close_modal()
 		open_map(md))
 	list.add_child(b)
+
+
+func _file_menu(id: int) -> void:
+	match id:
+		0:
+			new_map()
+		1:
+			_show_missions()
+		2:
+			save()
+		3:
+			_show_save_as()
+		4:
+			_show_params()
+		5:
+			_show_help()
+		6:
+			_import_dialog()
+		7:
+			if doc.path == "" or _unsaved():
+				save()
+			if doc.path != "":
+				_export_dialog([doc.path])
 
 
 func _show_save_as() -> void:
@@ -2280,20 +2696,42 @@ func _show_params() -> void:
 
 
 func _show_help() -> void:
-	var v := _modal_frame("Raccourcis", 560)
-	var g := EditorUi.grid(2, 6)
-	for row in [
-		["Molette", "Zoom sur le curseur"], ["Clic milieu / clic droit / Espace + glisser", "Déplacer la vue"],
-		["Flèches", "Déplacer la vue"], ["Ctrl+0", "Cadrer la carte"],
-		["1 à 5", "Onglets Carte, Objets, Objectifs, Événements, Mission"],
-		["V  B  F  I", "Sélection, pinceau, remplissage, pipette"], ["P  E", "Poser, gomme (objets) · E = gomme de terrain dans Carte"],
-		["[  ]", "Taille du pinceau"], ["Maj+clic", "Pinceau : ligne droite · Sélection : ajouter"], ["Alt+clic", "Pipette"],
-		["Ctrl+Z / Ctrl+Y", "Annuler / rétablir (100 actions)"], ["Ctrl+C  Ctrl+X  Ctrl+V", "Copier, couper, coller"],
-		["Ctrl+D", "Dupliquer"], ["Suppr", "Supprimer la sélection"], ["Ctrl+A", "Tout sélectionner"],
-		["R", "Pivoter (sélection, collage, décor à poser)"], ["M / Maj+M", "Miroir gauche-droite / haut-bas"],
-		["G", "Grille"], ["Échap", "Annuler le collage / désélectionner"], ["Ctrl+S", "Enregistrer"], ["F5", "Tester"],
-	]:
-		g.add_child(EditorUi.label(row[0], 13, Ui.CYAN))
-		g.add_child(EditorUi.label(row[1], 13))
-	v.add_child(g)
-	_close_row(v)
+	var v := _modal_frame("Raccourcis clavier", 640)
+	v.add_child(EditorUi.muted("Clique sur une touche pour la changer, puis appuie sur la nouvelle (Échap : annuler). Les réglages sont gardés.", 12))
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(600, 400)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var g := EditorUi.grid(4, 6)
+	g.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(g)
+	var keys := EditorShortcuts.keys()
+	for a in EditorShortcuts.ACTIONS:
+		var id: String = a[0]
+		var l := EditorUi.label(a[1], 13)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		g.add_child(l)
+		var cur: String = keys[id]
+		var b := EditorUi.button(("…" if _rebinding == id else (EditorShortcuts.pretty(cur) if cur != "" else "—")), "Changer la touche", false, 120)
+		if _rebinding == id:
+			b.add_theme_color_override("font_color", Ui.GOLD)
+		b.pressed.connect(func() -> void:
+			_rebinding = id
+			_show_help())
+		g.add_child(b)
+	v.add_child(scroll)
+	v.add_child(EditorUi.section("Souris (fixes)"))
+	var g2 := EditorUi.grid(2, 4)
+	for row in [["Molette", "Zoom sur le curseur"], ["Clic milieu / Espace + glisser", "Déplacer la vue"], ["Clic droit", "Menu de l'objet ou de la case"],
+			["Glisser depuis le catalogue", "Poser l'objet là où on lâche"], ["Maj+clic", "Pinceau : ligne droite · Sélection : ajouter"], ["Alt+clic", "Pipette"],
+			["Double clic", "Renommer l'objet"], ["Échap / Retour arrière", "Désélectionner / supprimer"]]:
+		g2.add_child(EditorUi.label(row[0], 12, Ui.CYAN))
+		g2.add_child(EditorUi.label(row[1], 12))
+	v.add_child(g2)
+	var reset := EditorUi.button("Touches par défaut")
+	reset.pressed.connect(func() -> void:
+		EditorShortcuts.reset()
+		_rebinding = ""
+		_show_help())
+	_close_row(v, [reset])
+
+

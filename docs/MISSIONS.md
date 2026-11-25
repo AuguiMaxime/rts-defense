@@ -172,6 +172,22 @@ Vérifié notamment : base, apparitions, chemins vers la base, gisements accessi
 
 Pendant un test : **Zones** (cercle, nom, rôle, progression de prise, noms des apparitions), **Chemins** (trajet de chaque ennemi et unité), **Portées** (tourelles, unités, ennemis). Le panneau F2 affiche aussi l'état des objectifs, des déclencheurs, des variables et des vagues.
 
+## 3i. Mes missions, import et export (Fichier → Mes missions…, Ctrl+O)
+
+- La liste montre l'aperçu, le type, les étoiles, solo/coop et la date de chaque mission. Boutons : **Ouvrir**, et **⋯** pour **Dupliquer**, **Renommer**, **Exporter**, **Supprimer** (avec confirmation, le fichier part à la corbeille).
+- **+ Nouvelle mission**, **Importer…** : une mission (.json) ou un pack (.rtspack).
+- **Exporter la sélection…** : coche plusieurs missions, elles partent dans un seul pack **avec leurs images de décor**.
+- À l'import : les décors du pack sont ajoutés, une mission dont le nom existe déjà est renommée (« (2) »), les anciennes versions sont converties. Un rapport signale les décors introuvables et les fichiers d'une version plus récente.
+- Fichier → **Exporter cette mission…** fait la même chose pour la mission ouverte.
+
+## 3j. Confort
+
+- **Glisser-déposer** : glisse un objet du catalogue sur la carte, il est posé là où tu lâches.
+- **Clic droit** sur un objet : renommer, dupliquer, copier, pivoter, voir **où il est utilisé**, supprimer. Sur une case vide : coller ici, pipette, centrer la vue, tout sélectionner.
+- **Supprimer** un objet utilisé par un objectif, un déclencheur ou une vague demande confirmation et dit lesquels.
+- **Raccourcis modifiables** (F1) : clique sur une touche puis appuie sur la nouvelle ; « Touches par défaut » remet tout.
+- **L'éditeur se souvient** de la dernière mission ouverte, de l'onglet, des outils, des calques masqués ou verrouillés, de la grille, du zoom et de la vue.
+
 ## 4. Tester puis m'envoyer la mission
 
 1. **▶ TESTER** lance la mission tout de suite. Le menu de fin ramène dans l'éditeur.

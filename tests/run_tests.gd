@@ -54,6 +54,7 @@ func _init() -> void:
 	_test_custom_waves()
 	_test_factions()
 	_test_validator_params()
+	_test_library()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -1606,4 +1607,60 @@ func _test_validator_params() -> void:
 	var b64 := MissionPreview.encode(img)
 	var tex := MissionPreview.texture(b64)
 	_check(img.get_width() <= MissionPreview.MAX_SIZE.x and tex != null and tex.get_width() == img.get_width(), "aperçu généré, rangé en base64, relu")
+
+
+func _test_library() -> void:
+	print("Mes missions, import et export")
+	var before := MapData.list_custom().size()
+	var md := MapData.load_from("res://maps/map_01.gd")
+	md.NAME = "Zz Test Bibliothèque"
+	md.entities = [{"id": 1, "kind": "deco", "sprite": "zz_test_deco", "cell": [2, 2]}]
+	var img := Image.create(8, 8, false, Image.FORMAT_RGB8)
+	img.fill(Color.RED)
+	var deco_file := MissionLibrary.deco_dir() + "zz_test_deco.png"
+	img.save_png(deco_file)
+	var p := MissionLibrary.free_path(md.NAME)
+	md.save_to(p)
+	_check(MapData.list_custom().size() == before + 1, "mission enregistrée dans la liste")
+	var dup := MissionLibrary.duplicate_mission(p)
+	_check(dup != "" and dup != p and MapData.load_from(dup).NAME.contains("(copie)"), "dupliquer")
+	var ren := MissionLibrary.rename(dup, "Zz Test Renommée")
+	_check(ren != "" and not FileAccess.file_exists(dup) and MapData.load_from(ren).NAME == "Zz Test Renommée", "renommer (fichier déplacé)")
+	var pk := "user://zz_test.rtspack"
+	_check(MissionLibrary.export_pack([p, ren], pk) == OK, "export d'un pack")
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(pk))
+	_check(raw.format == MissionLibrary.PACK_FORMAT and raw.missions.size() == 2 and raw.decos.has("zz_test_deco"), "le pack contient les missions et leurs décors")
+	# Import sur une autre machine : le décor manque, les missions existent déjà
+	DirAccess.remove_absolute(deco_file)
+	var rep := MissionLibrary.import_file(pk)
+	_check(rep.ok and rep.missions.size() == 2 and rep.decos == 1 and rep.missing.is_empty(), "import : missions et décor ajoutés")
+	_check(rep.missions.has("Zz Test Bibliothèque (2)"), "nom déjà pris : la mission importée est renommée")
+	_check(MissionLibrary.deco_path("zz_test_deco") != "", "décor importé disponible")
+	# Version plus récente, fichier invalide, décor manquant
+	raw.version = EditorDoc.VERSION + 1
+	raw.decos = {}
+	raw.missions = [raw.missions[0]]
+	var f := FileAccess.open(pk, FileAccess.WRITE)
+	f.store_string(JSON.stringify(raw))
+	f.close()
+	DirAccess.remove_absolute(MissionLibrary.deco_path("zz_test_deco"))
+	var rep2 := MissionLibrary.import_file(pk)
+	_check(rep2.ok and not rep2.warnings.is_empty() and rep2.missing == ["zz_test_deco"], "version plus récente et décor manquant signalés")
+	f = FileAccess.open(pk, FileAccess.WRITE)
+	f.store_string("pas du json")
+	f.close()
+	_check(not MissionLibrary.import_file(pk).ok, "fichier invalide refusé")
+	DirAccess.remove_absolute(pk)
+	for path in rep.paths + rep2.paths + [p, ren]:
+		_check(MissionLibrary.delete(path) and not FileAccess.file_exists(path), "supprimer %s" % path.get_file())
+	_check(MapData.list_custom().size() == before, "liste revenue à l'état initial")
+	# Raccourcis
+	var k := InputEventKey.new()
+	k.keycode = KEY_S
+	k.ctrl_pressed = true
+	_check(EditorShortcuts.action_for(k) == "save", "raccourci par défaut")
+	var keep: Variant = EditorPrefs.get_v("keys", {})
+	var stolen := EditorShortcuts.bind("test", "Ctrl+S")
+	_check(stolen == "save" and EditorShortcuts.action_for(k) == "test" and EditorShortcuts.keys().save == "", "raccourci modifié (l'ancien perd sa touche)")
+	EditorPrefs.set_v("keys", keep)
 

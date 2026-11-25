@@ -112,6 +112,10 @@ func save_to(p: String) -> Error:
 
 static func slug(name: String) -> String:
 	var s := name.to_lower().strip_edges()
+	# Lettres accentuées → sans accent (« Vallée des Échos » → vallee-des-echos).
+	for pair in [["àâä", "a"], ["éèêë", "e"], ["îï", "i"], ["ôö", "o"], ["ùûü", "u"], ["ç", "c"], ["œ", "oe"], ["æ", "ae"]]:
+		for ch in pair[0]:
+			s = s.replace(ch, pair[1])
 	var out := ""
 	for ch in s:
 		if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9"):

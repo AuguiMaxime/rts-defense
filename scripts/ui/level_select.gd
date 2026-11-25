@@ -104,17 +104,30 @@ func _custom_card(md: MapData) -> PanelContainer:
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var v := Ui.vbox(10)
 	card.add_child(v)
+	var p: Dictionary = md.mission.get("params", {})
 	var top := Ui.hbox(8)
-	top.add_child(Ui.label("CARTE PERSO", 18, Ui.GOLD, true))
+	top.add_child(Ui.label(str(Mission.TYPE_NAMES.get(str(md.mission.get("type", "waves")), "MISSION")).to_upper(), 18, Ui.GOLD, true))
 	top.add_child(Ui.spacer())
-	top.add_child(Ui.label("%d VAGUES" % md.waves, 18, Ui.MUTED, true))
+	var stars := int(p.get("stars", 0))
+	top.add_child(Ui.label("★".repeat(stars) + "☆".repeat(5 - stars) if stars > 0 else "%d VAGUES" % md.waves, 18, Ui.GOLD if stars > 0 else Ui.MUTED, true))
 	v.add_child(top)
 	v.add_child(Ui.title(md.NAME.to_upper(), 21))
-	var preview := MapPreview.new()
-	preview.grid = MapLoader.from_layout(md.LAYOUT)
-	preview.ground = md.GROUND
-	preview.custom_minimum_size = Vector2(286, 170)
-	v.add_child(preview)
+	var tex := MissionPreview.texture(str(p.get("preview", "")))
+	if tex != null:
+		var img := TextureRect.new()
+		img.texture = tex
+		img.custom_minimum_size = Vector2(286, 170)
+		img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		v.add_child(img)
+	else:
+		var preview := MapPreview.new()
+		preview.grid = MapLoader.from_layout(md.LAYOUT)
+		preview.ground = md.GROUND
+		preview.custom_minimum_size = Vector2(286, 170)
+		v.add_child(preview)
+	if str(p.get("players", "solo")) != "solo":
+		v.add_child(Ui.label("Coop (2 joueurs)" if str(p.players) == "coop" else "Solo ou coop", 16, Ui.CYAN))
 	var row := Ui.hbox(10)
 	var play := Ui.button("JOUER", true, Vector2(0, 62))
 	play.size_flags_horizontal = Control.SIZE_EXPAND_FILL

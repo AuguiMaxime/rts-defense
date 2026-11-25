@@ -157,8 +157,10 @@ static func _has_terrain(g: GameGrid, kind: String) -> bool:
 
 
 static func _deco_exists(sprite: String) -> bool:
-	var p := "res://assets/deco/%s.png" % sprite
-	return ResourceLoader.exists(p) or FileAccess.file_exists(p)
+	for p in ["res://assets/deco/%s.png" % sprite, "user://deco/%s.png" % sprite]:
+		if ResourceLoader.exists(p) or FileAccess.file_exists(p):
+			return true
+	return false
 
 
 # --- Type de mission ------------------------------------------------------------------------

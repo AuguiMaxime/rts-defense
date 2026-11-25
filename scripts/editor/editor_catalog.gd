@@ -11,7 +11,6 @@ var _items := {} # tool_id -> Button
 var _cats: Array = [] # [{header: Button, box: Container, items: [[id, label, button]]}]
 var _closed := {}
 var current := ""
-const PREFS := "user://editor/prefs.json"
 var favorites: Array = []
 var recent: Array = []
 
@@ -34,17 +33,13 @@ func _init() -> void:
 
 
 func _load_prefs() -> void:
-	var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(PREFS)) if FileAccess.file_exists(PREFS) else null
-	if raw is Dictionary:
-		favorites = raw.get("fav", [])
-		recent = raw.get("recent", [])
+	favorites = EditorPrefs.get_v("fav", [])
+	recent = EditorPrefs.get_v("recent", [])
 
 
 func _save_prefs() -> void:
-	DirAccess.make_dir_recursive_absolute(PREFS.get_base_dir())
-	var f := FileAccess.open(PREFS, FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify({"fav": favorites, "recent": recent}))
+	EditorPrefs.data()["fav"] = favorites
+	EditorPrefs.set_v("recent", recent)
 
 
 static func label_of(id: String) -> String:
@@ -127,6 +122,8 @@ static func palette() -> Array:
 	var decos := []
 	var seen := {}
 	var files := Array(DirAccess.get_files_at("res://assets/deco"))
+	if DirAccess.dir_exists_absolute("user://deco"):
+		files.append_array(Array(DirAccess.get_files_at("user://deco"))) # décors importés (jeu exporté)
 	files.sort()
 	for f in files:
 		var fname: String = f.trim_suffix(".import")
@@ -203,6 +200,23 @@ func _build() -> void:
 				b.expand_icon = true
 				b.add_theme_constant_override("icon_max_width", 24)
 			b.pressed.connect(func() -> void: picked.emit(id))
+			# Glisser-déposer sur la carte : l'objet est posé là où on lâche.
+			var ic2 := ic
+			var txt := str(it[1])
+			b.set_drag_forwarding(func(_at: Vector2) -> Variant:
+				var pv := EditorUi.label(("   " + txt) if ic2 == null else txt, 14, Ui.CYAN)
+				if ic2 != null:
+					var tr := TextureRect.new()
+					tr.texture = ic2
+					tr.custom_minimum_size = Vector2(40, 40)
+					tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+					tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+					tr.position = Vector2(-20, -20)
+					tr.modulate.a = 0.85
+					b.set_drag_preview(tr)
+				else:
+					b.set_drag_preview(pv)
+				return {"rts_tool": id}, Callable(), Callable())
 			b.tooltip_text = "%s\nClic droit : %s les favoris" % [id, "retirer des" if favorites.has(id) else "ajouter aux"]
 			if favorites.has(id):
 				b.text = "★ " + b.text
