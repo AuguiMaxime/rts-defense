@@ -97,6 +97,13 @@ func tick(delta: float) -> void:
 			if o.state == "active":
 				_activate(o, false)
 	_detect()
+	# Durée maximale de la mission (onglet Mission, paramètres).
+	var limit := time_limit()
+	if limit > 0.0 and w.time >= limit and forced == "":
+		var win := str(w.mission.data.get("params", {}).get("time_out", "defeat")) == "victory"
+		forced = "won" if win else "lost"
+		end_text = "Temps écoulé : mission réussie" if win else "Temps écoulé"
+		_log("durée maximale atteinte")
 	# Chronos
 	for name in timers.keys():
 		var t: Dictionary = timers[name]
@@ -1234,4 +1241,12 @@ func apply_net_state(a: Array) -> void:
 func shown_timers() -> Array:
 	if not net_timers.is_empty():
 		return net_timers
-	return timers.values().filter(func(t: Dictionary) -> bool: return t.show).map(func(t: Dictionary) -> Array: return [t.label, t.left])
+	var out: Array = timers.values().filter(func(t: Dictionary) -> bool: return t.show).map(func(t: Dictionary) -> Array: return [t.label, t.left])
+	if time_limit() > 0.0:
+		out.append(["Temps restant", maxf(0.0, time_limit() - w.time)])
+	return out
+
+
+## Durée maximale de la mission en secondes (0 = aucune).
+func time_limit() -> float:
+	return float(w.mission.data.get("params", {}).get("time_limit", 0.0)) if w.mission != null else 0.0

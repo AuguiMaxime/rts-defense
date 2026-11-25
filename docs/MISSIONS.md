@@ -154,6 +154,24 @@ La validation signale en plus : paramètres manquants, références cassées, au
 - En jeu, une unité ou un ennemi d'une autre faction porte un anneau à sa couleur (en pointillé s'il n'est pas hostile).
 - Limite : deux factions du même camp ne peuvent pas se battre entre elles.
 
+## 3f. Paramètres de la partie et aperçu (onglet Mission)
+
+- **Métal, essence, ouvriers de départ, PV de la base** : remplacent les valeurs du jeu. Les technos du joueur (Réserves, Coque…) s'ajoutent toujours.
+- **Unités et bâtiments de départ** : pose-les dans l'onglet Objets (Alliés · unités, tourelles, et la nouvelle catégorie **Alliés · bâtiments de départ** : caserne, usine, maison… construits ou en chantier).
+- **Durée maximale** (0 = aucune) : au bout du temps, défaite ou victoire au choix. Le temps restant s'affiche avec les objectifs.
+- **Joueurs** : solo, coop ou les deux (en coop, la base du joueur 2 est obligatoire). **Difficulté affichée** : de 1 à 5 étoiles.
+- **Aperçu** : « Générer depuis la carte » ou « Choisir une image… ». L'image est rangée dans le fichier de la mission.
+
+## 3g. Validation (bouton Valider ou statut en bas à droite)
+
+Chaque problème a un bouton **Aller** qui ouvre le bon onglet et montre l'élément : l'objet (sélectionné, la case clignote), l'objectif, le déclencheur, la vague ou la case de la carte. Les **erreurs** (rouge) empêchent de tester ; les **avertissements** (orange) signalent un oubli probable.
+
+Vérifié notamment : base, apparitions, chemins vers la base, gisements accessibles, base du joueur 2 ; objets hors carte, sur un obstacle, sur la même case, noms en double, liens cassés ; objectifs, déclencheurs, variables, vagues et factions incomplets ou introuvables ; victoire et défaite possibles ; paramètres incohérents (durée maximale plus courte que la survie, départ sans ressources) ; nom, briefing et aperçu manquants.
+
+## 3h. Affichage debug (outils de test F2)
+
+Pendant un test : **Zones** (cercle, nom, rôle, progression de prise, noms des apparitions), **Chemins** (trajet de chaque ennemi et unité), **Portées** (tourelles, unités, ennemis). Le panneau F2 affiche aussi l'état des objectifs, des déclencheurs, des variables et des vagues.
+
 ## 4. Tester puis m'envoyer la mission
 
 1. **▶ TESTER** lance la mission tout de suite. Le menu de fin ramène dans l'éditeur.

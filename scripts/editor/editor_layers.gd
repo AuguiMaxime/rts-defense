@@ -22,7 +22,7 @@ const CHAR_LAYER := {
 	"H": "water", "Y": "water", "M": "resources", "E": "resources", "B": "bases", "b": "bases", "S": "spawns",
 }
 const KIND_LAYER := {
-	"structure": "units", "enemy": "units", "ally_tower": "units", "ally_unit": "units",
+	"structure": "units", "enemy": "units", "ally_tower": "units", "building": "units", "ally_unit": "units",
 	"vip": "mission", "escortee": "mission", "waypoint": "mission", "defend": "mission",
 	"zone": "zones", "deco": "deco",
 	"door": "mission", "shield": "mission", "terminal": "mission", "prisoners": "mission", "pickup": "mission",

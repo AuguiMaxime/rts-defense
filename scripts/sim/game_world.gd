@@ -88,6 +88,7 @@ var _buckets := {}
 func _init(g: GameGrid, config := {}) -> void:
 	grid = g
 	metal = config.get("start_metal", Balance.START_METAL)
+	essence = config.get("start_essence", Balance.START_ESSENCE)
 	max_base_hp = config.get("base_hp", Balance.BASE_HP)
 	base_hp = max_base_hp
 	damage_mult = config.get("damage_mult", 1.0)

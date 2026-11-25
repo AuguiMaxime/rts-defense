@@ -754,7 +754,7 @@ static func accept_for(type: String) -> Callable:
 		"obj_enemy":
 			return func(x: Dictionary) -> bool: return x.kind in ["enemy", "structure"]
 		"obj_player":
-			return func(x: Dictionary) -> bool: return x.kind in ["ally_tower", "defend", "ally_unit", "vip"]
+			return func(x: Dictionary) -> bool: return x.kind in ["ally_tower", "defend", "building", "ally_unit", "vip"]
 	return func(x: Dictionary) -> bool: return x.kind not in ["waypoint", "deco"]
 
 

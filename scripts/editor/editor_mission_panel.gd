@@ -31,6 +31,23 @@ var _brief: TextEdit
 var _loading := false
 var _tpl_label: Label
 var _waves_info: Label
+var _params := {}
+var _time_out: OptionButton
+var _players: OptionButton
+var _stars: OptionButton
+var _preview: TextureRect
+var _preview_info: Label
+var _preview_key := ""
+
+## [clé, libellé, min, max, pas, aide] ; valeur absente = réglage par défaut du jeu.
+const PARAMS := [
+	["metal", "Métal de départ", 0, 99999, 10, "Les technos « Réserves » du joueur s'ajoutent"],
+	["essence", "Essence de départ", 0, 99999, 10, ""],
+	["workers", "Ouvriers de départ", 0, 30, 1, "Les unités et bâtiments de départ se posent dans l'onglet Objets"],
+	["base_hp", "PV de la base", 100, 50000, 50, "Les technos « Coque » du joueur s'ajoutent"],
+	["time_limit", "Durée maximale (s, 0 = aucune)", 0, 7200, 10, "Au bout de ce temps, la partie s'arrête"],
+]
+const PLAYERS := [["solo", "Solo"], ["coop", "Coop (2 joueurs)"], ["both", "Solo ou coop"]]
 var _fac_info: Label
 var _settings_sep: Control
 var _settings_title: Control
@@ -130,6 +147,66 @@ func _init(editor) -> void:
 	add_child(oh)
 
 	add_child(EditorUi.sep())
+	add_child(EditorUi.section("Paramètres de la partie"))
+	var gp := EditorUi.grid(2, 6)
+	for row in PARAMS:
+		var l := EditorUi.label(row[1])
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.tooltip_text = row[5]
+		l.mouse_filter = Control.MOUSE_FILTER_PASS
+		var sp := EditorUi.spin(row[2], row[3], row[4], 0)
+		var key: String = row[0]
+		sp.value_changed.connect(func(v: float) -> void: _set_param(key, v))
+		gp.add_child(l)
+		gp.add_child(sp)
+		_params[key] = sp
+	var tl := EditorUi.label("À la fin du temps")
+	gp.add_child(tl)
+	_time_out = OptionButton.new()
+	_time_out.focus_mode = Control.FOCUS_NONE
+	_time_out.add_item("Défaite", 0)
+	_time_out.add_item("Victoire", 1)
+	_time_out.item_selected.connect(func(i: int) -> void: _set_param("time_out", "victory" if i == 1 else "defeat"))
+	gp.add_child(_time_out)
+	gp.add_child(EditorUi.label("Joueurs"))
+	_players = OptionButton.new()
+	_players.focus_mode = Control.FOCUS_NONE
+	for i in PLAYERS.size():
+		_players.add_item(PLAYERS[i][1], i)
+	_players.item_selected.connect(func(i: int) -> void: _set_param("players", PLAYERS[i][0]))
+	gp.add_child(_players)
+	gp.add_child(EditorUi.label("Difficulté affichée"))
+	_stars = OptionButton.new()
+	_stars.focus_mode = Control.FOCUS_NONE
+	for i in 5:
+		_stars.add_item("★".repeat(i + 1) + "☆".repeat(4 - i), i)
+	_stars.item_selected.connect(func(i: int) -> void: _set_param("stars", i + 1))
+	gp.add_child(_stars)
+	add_child(gp)
+	add_child(EditorUi.muted("Unités et bâtiments de départ : pose-les dans l'onglet Objets (Alliés · unités, tourelles, bâtiments de départ)."))
+	add_child(EditorUi.section("Aperçu"))
+	_preview = TextureRect.new()
+	_preview.custom_minimum_size = Vector2(0, 150)
+	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	add_child(_preview)
+	_preview_info = EditorUi.muted("")
+	add_child(_preview_info)
+	var ph := EditorUi.hbox()
+	var gen := EditorUi.button("Générer depuis la carte", "Miniature de la carte, rangée dans le fichier de la mission")
+	gen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gen.pressed.connect(func() -> void: _set_param("preview", MissionPreview.encode(MissionPreview.render(ed.doc))))
+	ph.add_child(gen)
+	var pick := EditorUi.button("Choisir une image…", "PNG ou JPG (réduite à 360 × 225)")
+	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pick.pressed.connect(_pick_preview)
+	ph.add_child(pick)
+	var clear := EditorUi.button("✕", "Retirer l'aperçu", false, 30)
+	clear.pressed.connect(func() -> void: _set_param("preview", ""))
+	ph.add_child(clear)
+	add_child(ph)
+
+	add_child(EditorUi.sep())
 	add_child(EditorUi.section("Briefing"))
 	_brief = TextEdit.new()
 	_brief.custom_minimum_size = Vector2(0, 110)
@@ -140,10 +217,76 @@ func _init(editor) -> void:
 	add_child(_brief)
 
 
+func _param_default(key: String) -> float:
+	match key:
+		"metal":
+			return Balance.START_METAL
+		"essence":
+			return Balance.START_ESSENCE
+		"workers":
+			return Balance.START_WORKERS
+		"base_hp":
+			return Balance.BASE_HP
+	return 0.0
+
+
+func _set_param(key: String, v: Variant) -> void:
+	if _loading:
+		return
+	var change := func() -> void:
+		if not ed.doc.mission.has("params"):
+			ed.doc.mission["params"] = {}
+		var p: Dictionary = ed.doc.mission.params
+		if v is float and key in ["metal", "essence", "workers", "base_hp"]:
+			p[key] = int(v)
+		elif key == "preview" and str(v) == "":
+			p.erase("preview")
+		else:
+			p[key] = v
+	ed.history.record("Paramètre : " + key, change)
+	ed.after_change()
+
+
+func _pick_preview() -> void:
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp ; Images"])
+	fd.title = "Image d'aperçu de la mission"
+	fd.use_native_dialog = true
+	fd.file_selected.connect(func(path: String) -> void:
+		var b64 := MissionPreview.from_file(path)
+		if b64 == "":
+			ed._toast("Image illisible", Ui.RED)
+		else:
+			_set_param("preview", b64)
+		fd.queue_free())
+	fd.canceled.connect(fd.queue_free)
+	add_child(fd)
+	fd.popup_centered_ratio(0.6)
+
+
 ## Relit le document (chargement, annuler / rétablir).
 func refresh() -> void:
 	_loading = true
 	var m: Dictionary = ed.doc.mission
+	var pp: Dictionary = m.get("params", {})
+	for k in _params:
+		(_params[k] as SpinBox).set_value_no_signal(float(pp.get(k, _param_default(k))))
+	_time_out.select(1 if str(pp.get("time_out", "defeat")) == "victory" else 0)
+	_time_out.disabled = float(pp.get("time_limit", 0.0)) <= 0.0
+	var pi := 0
+	for i in PLAYERS.size():
+		if PLAYERS[i][0] == str(pp.get("players", "solo")):
+			pi = i
+	_players.select(pi)
+	_stars.select(clampi(int(pp.get("stars", 2)) - 1, 0, 4))
+	var b64 := str(pp.get("preview", ""))
+	if b64 != _preview_key:
+		_preview_key = b64
+		_preview.texture = MissionPreview.texture(b64)
+	_preview.visible = _preview.texture != null
+	_preview_info.text = "" if _preview.texture != null else "Pas d'aperçu : génère-le depuis la carte ou choisis une image."
 	var t := str(m.get("type", "waves"))
 	var ally := t == "escort_defend"
 	for k in _type_buttons:
@@ -257,62 +400,3 @@ static func waves_summary(doc: EditorDoc) -> String:
 		var n: int = doc.wave_plan.get("list", []).size()
 		return "Vagues personnalisées : %d vague%s." % [n, "s" if n > 1 else ""]
 	return "Vagues automatiques : %d vagues, difficulté ×%.2f, toutes les %d s." % [doc.waves, doc.difficulty, int(doc.interval)]
-
-
-## Avertissements propres au type de mission (ne bloquent pas le test).
-static func warnings(doc: EditorDoc, grid: GameGrid) -> Array[String]:
-	var w: Array[String] = []
-	var kinds := {}
-	var wps := 0
-	for e: Dictionary in doc.entities:
-		kinds[str(e.kind) + ":" + str(e.get("type", e.get("role", "")))] = true
-		kinds[e.kind] = true
-		if e.kind == "waypoint":
-			wps += 1
-		if e.kind == "deco" and UnitsView.deco_texture(str(e.get("sprite", ""))) == null:
-			w.append("Image de décor introuvable : %s" % e.get("sprite", ""))
-	# Fiches : liens et réglages incomplets
-	for e: Dictionary in doc.entities:
-		var beh := str(e.get("behavior", ""))
-		if beh == "patrol" and e.get("patrol", []).size() < 2:
-			w.append("%s : la patrouille a besoin d'au moins 2 points" % e.name)
-		if beh in ["defend", "attack_target", "attack_zone", "follow"] and int(e.get("target", -1)) < 0:
-			w.append("%s : choisis sa cible dans sa fiche" % e.name)
-		for key in ["target", "link"]:
-			if int(e.get(key, -1)) >= 0 and doc.entity_by_id(int(e[key])).is_empty():
-				w.append("%s : l'objet lié n'existe plus" % e.name)
-		if e.kind == "shield" and int(e.get("link", -1)) < 0:
-			w.append("%s : sans générateur, il reste actif toute la partie" % e.name)
-	var t := str(doc.mission.get("type", "waves"))
-	match t:
-		"destroy_base":
-			if not kinds.has("structure:e_hq"):
-				w.append("Pose une BASE ENNEMIE (onglet Objets)")
-		"escort":
-			if not kinds.has("vip") or not kinds.has("zone:goal"):
-				w.append("Il faut un VIP et une ZONE D'ARRIVÉE")
-		"escort_defend":
-			if wps < (1 if kinds.has("escortee") else 2):
-				w.append("Trace le trajet du convoi : au moins 2 POINTS DE PASSAGE")
-		"capture":
-			if not kinds.has("zone:capture"):
-				w.append("Pose au moins une ZONE DE PRISE")
-		"convoy":
-			if wps == 1:
-				w.append("Un trajet a besoin d'au moins 2 POINTS DE PASSAGE")
-			var kind := str(doc.mission.get("convoy_kind", "convoy"))
-			if wps < 2 and not _has_terrain(grid, kind):
-				w.append("Les convois ont besoin de %s" % {"train": "rails", "convoy": "route", "boat": "eau"}[kind])
-	for o: Dictionary in doc.objectives:
-		if not _has_terrain(grid, o.type):
-			w.append("%s sans %s" % [Balance.OBJECTIVES[o.type].name, {"train": "rails", "convoy": "route", "boat": "eau"}[o.type]])
-	return w
-
-
-static func _has_terrain(grid: GameGrid, kind: String) -> bool:
-	var need: Callable = {"train": grid.is_rail, "convoy": grid.is_road, "boat": grid.is_water}[kind]
-	for y in grid.height:
-		for x in grid.width:
-			if need.call(Vector2i(x, y)):
-				return true
-	return false

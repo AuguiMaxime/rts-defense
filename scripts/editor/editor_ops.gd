@@ -148,7 +148,7 @@ static func make_entity(tool_id: String, c: Vector2i, opts: Dictionary) -> Dicti
 	var parts := tool_id.split(":")
 	var e := {"kind": parts[0], "cell": [c.x, c.y]}
 	match parts[0]:
-		"structure", "enemy", "ally_tower", "ally_unit", "vip", "defend":
+		"structure", "enemy", "ally_tower", "ally_unit", "vip", "defend", "building":
 			e.type = parts[1]
 		"zone":
 			e.role = parts[1]

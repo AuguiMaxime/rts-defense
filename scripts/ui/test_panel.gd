@@ -69,6 +69,21 @@ func _init(g: Node) -> void:
 	restart.pressed.connect(func() -> void: Ui.play_custom(Ui.custom_map))
 	row.add_child(restart)
 	_body.add_child(row)
+	_body.add_child(EditorUi.section("Affichage debug"))
+	var dh := EditorUi.hbox(3)
+	for pair in [["zones", "Zones"], ["paths", "Chemins"], ["ranges", "Portées"]]:
+		var key: String = pair[0]
+		var b := EditorUi.button(pair[1], "", true)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.button_pressed = Ui.debug_view.get(key, false)
+		var tog := func(on: bool) -> void:
+			if on:
+				Ui.debug_view[key] = true
+			else:
+				Ui.debug_view.erase(key)
+		b.toggled.connect(tog)
+		dh.add_child(b)
+	_body.add_child(dh)
 	_body.add_child(EditorUi.section("Vagues"))
 	_waves = EditorUi.label("", 13)
 	_waves.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

@@ -17,6 +17,7 @@ extends RefCounted
 ##   structure  {type}                    structure ennemie (Balance.ENEMY_STRUCTURES)
 ##   enemy      {type, hold}              unité ennemie en garde (hold = ne bouge pas)
 ##   ally_tower {type, level}             tourelle alliée déjà construite
+##   building {type, building}            bâtiment du joueur posé au départ (construit ou en chantier)
 ##   ally_unit  {type, hold}              unité alliée déjà présente
 ##   defend     {type}                    bâtiment allié à défendre (détruit = défaite, cible prioritaire des ennemis)
 ##   vip        {type}                    unité à escorter (mission escort)
@@ -61,7 +62,7 @@ var pickups: Array[Dictionary] = [] # {eid, cell, label, taken}
 var collected := 0
 ## Objets absents au départ (apparaissent par un déclencheur) : eid -> objet d'éditeur.
 var absent := {}
-const LATE_KINDS := ["structure", "enemy", "ally_tower", "ally_unit", "vip", "prisoners", "pickup", "terminal", "defend"]
+const LATE_KINDS := ["structure", "enemy", "ally_tower", "ally_unit", "vip", "prisoners", "pickup", "terminal", "defend", "building"]
 const BEHAVIORS_ENEMY := ["guard", "static", "patrol", "defend", "aggressive", "attack_target", "attack_zone", "follow", "march", "wait"]
 
 
@@ -178,7 +179,7 @@ func _spawn(w: GameWorld, ent: Dictionary, waypoints: Array) -> void:
 			e.target_eid = int(ent.get("target", -1))
 			e.retreat_pct = float(ent.get("retreat", 0)) / 100.0
 			w.enemies.append(e)
-		"ally_tower", "defend":
+		"ally_tower", "defend", "building":
 			var s := _place_free(w, str(ent.get("type", "")), c, not ent.get("building", false))
 			if s == null:
 				return
@@ -187,7 +188,7 @@ func _spawn(w: GameWorld, ent: Dictionary, waypoints: Array) -> void:
 			s.set_mults(float(ent.get("dmg_mul", 1.0)), float(ent.get("rng_mul", 1.0)))
 			if ent.kind == "ally_tower":
 				s.level = clampi(int(ent.get("level", 1)), 1, BuildSite.MAX_LEVEL)
-			else:
+			elif ent.kind == "defend":
 				defend_ids.append(s.id)
 			if s.built:
 				s.max_hp = roundi((s.stats().hp if s.is_tower() else Content.building(s.kind).hp) * float(ent.get("hp_mul", 1.0)))

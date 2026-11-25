@@ -45,6 +45,8 @@ var editor_map: MapData = null
 var editor_session: Variant = null
 ## Partie lancée depuis l'éditeur (outils de test disponibles).
 var testing := false
+## Affichage de debug pendant un test (outils F2) : "zones", "paths", "ranges".
+var debug_view := {}
 
 var _fade: ColorRect
 var _toast_layer: CanvasLayer

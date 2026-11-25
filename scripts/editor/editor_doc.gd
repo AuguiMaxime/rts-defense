@@ -165,7 +165,7 @@ static func entity_size(e: Dictionary) -> Vector2i:
 		"structure":
 			if Balance.ENEMY_STRUCTURES.has(e.get("type", "")):
 				return Vector2i.ONE * int(Balance.ENEMY_STRUCTURES[e.type].size)
-		"defend":
+		"defend", "building":
 			return Vector2i.ONE * int(Content.building(str(e.type)).get("size", 1))
 		"deco":
 			return Mission.deco_footprint(str(e.get("sprite", "")), int(e.get("rot", 0)))
@@ -227,6 +227,8 @@ static func base_name(e: Dictionary) -> String:
 			return "Départ convoi"
 		"defend":
 			return str(Content.building(t).get("name", "Bâtiment")) + " à défendre"
+		"building":
+			return str(Content.building(t).get("name", "Bâtiment"))
 		"waypoint":
 			return "Point"
 		"zone":

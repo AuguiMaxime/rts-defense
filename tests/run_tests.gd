@@ -53,6 +53,7 @@ func _init() -> void:
 	_test_templates()
 	_test_custom_waves()
 	_test_factions()
+	_test_validator_params()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -1544,4 +1545,65 @@ func _test_factions() -> void:
 	var c := GameWorld.new(MapLoader.from_layout(MISSION_MAP), cfg)
 	NetSync.apply(c, snap)
 	_check(c.factions.relation("p1", "f1") == "enemy" and c.enemies.any(func(e: Enemy) -> bool: return e.faction == "f1"), "coop : relations et factions transmises")
+
+
+func _test_validator_params() -> void:
+	print("Validation et paramètres")
+	# Cartes de la campagne : aucune erreur bloquante
+	for i in range(1, 8):
+		var d := EditorDoc.from_map(MapData.load_from("res://maps/map_%02d.gd" % i))
+		var res := MissionValidator.run(d, MapLoader.from_layout("\n".join(d.rows)))
+		_check(MissionValidator.errors(res).is_empty(), "campagne carte %d : aucune erreur" % i)
+	# Erreurs avec « aller à »
+	var d := EditorDoc.from_map(MapData.load_from("res://maps/map_01.gd"))
+	var g := MapLoader.from_layout("\n".join(d.rows))
+	var rock := Vector2i(-1, -1)
+	for y in g.height:
+		for x in g.width:
+			if rock.x < 0 and g.get_cell(Vector2i(x, y)) == GameGrid.Cell.ROCK:
+				rock = Vector2i(x, y)
+	d.entities.append({"id": 900, "kind": "enemy", "type": "normal", "cell": [rock.x, rock.y], "name": "Coincé"})
+	d.entities.append({"id": 901, "kind": "enemy", "type": "normal", "cell": [2, 2], "name": "Doublon"})
+	d.entities.append({"id": 902, "kind": "enemy", "type": "normal", "cell": [3, 2], "name": "Doublon"})
+	d.scenario = {"objectives": [{"id": "o1", "name": "Tenir", "kind": "main", "type": "hold", "zone": -1}],
+			"triggers": [{"id": "t1", "name": "Cassé", "enabled": true, "once": true, "event": {"type": "start"}, "cond": {"op": "and", "items": []},
+				"actions": [{"type": "wave_launch", "wave": "nope"}], "else": []}]}
+	d.wave_plan = {"mode": "custom", "list": [{"id": "w1", "name": "V", "start": "objective", "objective": "zz", "groups": []}]}
+	d.mission["params"] = {"players": "coop", "time_limit": 100, "metal": 0, "workers": 0}
+	d.mission["type"] = "survive"
+	d.mission["time"] = 200
+	var res := MissionValidator.run(d, g)
+	var find := func(part: String) -> Dictionary:
+		for it: Dictionary in res:
+			if str(it.text).contains(part):
+				return it
+		return {}
+	_check(find.call("Coincé : posé sur un obstacle").get("go", {}).get("id", -1) == 900, "objet sur un obstacle → aller à l'objet")
+	_check(not find.call("s'appellent « Doublon »").is_empty(), "noms en double signalés")
+	_check(find.call("paramètre « zone »").get("go", {}) == {"tab": "objectives", "id": "o1"}, "objectif incomplet → aller à l'objectif")
+	_check(find.call("Cassé").get("go", {}).get("tab", "") == "events", "déclencheur cassé → aller au déclencheur")
+	_check(find.call("choisis l'objectif qui la lance").get("go", {}) == {"tab": "waves", "id": "w1"}, "vague cassée → aller à la vague")
+	_check(find.call("base du joueur 2").get("lvl", "") == ("" if g.base2_cells.size() == 9 else "error"), "coop sans 2e base = erreur")
+	_check(not find.call("plus courte que la survie").is_empty(), "durée maximale incohérente")
+	_check(find.call("ni ouvrier").get("lvl", "") == "warn", "départ sans ressources signalé")
+	_check(res.find(find.call("posé sur un obstacle")) < res.find(find.call("ni ouvrier")), "erreurs avant les avertissements")
+	# Paramètres en jeu
+	var cfg := {"mission": {"type": "waves", "params": {"time_limit": 5.0}}, "start_metal": 777, "start_essence": 55, "start_workers": 1,
+		"entities": [{"kind": "building", "type": "barracks", "cell": [12, 6], "id": 1}, {"kind": "building", "type": "house", "cell": [16, 6], "id": 2, "building": true}]}
+	var w := GameWorld.new(MapLoader.from_layout(MISSION_MAP), cfg)
+	_check(w.metal == 777 and w.essence == 55 and w.workers.size() == 1, "ressources et ouvriers de départ")
+	var bar := w.sites.filter(func(s: BuildSite) -> bool: return s.kind == "barracks")
+	var hou := w.sites.filter(func(s: BuildSite) -> bool: return s.kind == "house")
+	_check(bar.size() == 1 and bar[0].built and hou.size() == 1 and not hou[0].built, "bâtiments de départ (construit / en chantier)")
+	_check(w.scenario.shown_timers().any(func(t: Array) -> bool: return t[0] == "Temps restant"), "durée maximale affichée")
+	_run(w, 5.5)
+	_check(w.state == GameWorld.State.LOST and w.scenario.end_text == "Temps écoulé", "durée maximale atteinte = défaite")
+	var w2 := GameWorld.new(MapLoader.from_layout(MISSION_MAP), {"mission": {"type": "waves", "params": {"time_limit": 2.0, "time_out": "victory"}}})
+	_run(w2, 2.5)
+	_check(w2.state == GameWorld.State.WON, "ou victoire si choisi")
+	# Aperçu
+	var img := MissionPreview.render(d)
+	var b64 := MissionPreview.encode(img)
+	var tex := MissionPreview.texture(b64)
+	_check(img.get_width() <= MissionPreview.MAX_SIZE.x and tex != null and tex.get_width() == img.get_width(), "aperçu généré, rangé en base64, relu")
 

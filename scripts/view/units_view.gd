@@ -129,6 +129,59 @@ func _draw() -> void:
 	if selection_rect.has_area():
 		draw_rect(selection_rect, COLOR_SELECT_FILL)
 		draw_rect(selection_rect, COLOR_SELECTED, false, 2.0)
+	if not Ui.debug_view.is_empty():
+		_draw_debug()
+
+
+## Affichage de debug (outils de test F2) : zones, chemins, portées.
+func _draw_debug() -> void:
+	var font := ThemeDB.fallback_font
+	if Ui.debug_view.get("zones", false):
+		if world.mission != null:
+			for z: Dictionary in world.mission.zones:
+				var c: Vector2 = z.pos * TILE
+				var rad := float(z.radius) * TILE
+				var col: Color = {"capture": Color(1, 0.8, 0.2), "goal": Color(0.4, 1, 0.5), "extraction": Color(0.3, 0.8, 1), "trigger": Color(1, 0.4, 1)}.get(str(z.role), Color.WHITE)
+				draw_circle(c, rad, Color(col, 0.08))
+				draw_arc(c, rad, 0, TAU, 48, Color(col, 0.9), 2.0)
+				var txt := "%s  [%s]" % [z.get("name", ""), z.role]
+				if z.role == "capture":
+					txt += "  %d %%" % roundi(float(z.progress) * 100.0) if not z.captured else "  prise"
+				draw_string(font, c + Vector2(-120, -rad - 6), txt, HORIZONTAL_ALIGNMENT_CENTER, 240, 15, col)
+		var names: Dictionary = world.waves.plan_spawn_names
+		for sp in world.grid.spawn_points:
+			var c := (Vector2(sp) + Vector2(0.5, 0.5)) * TILE
+			draw_arc(c, TILE * 0.6, 0, TAU, 24, Color(1, 0.3, 0.3), 2.5)
+			draw_string(font, c + Vector2(-90, -TILE * 0.7), str(names.get("%d,%d" % [sp.x, sp.y], "Apparition (%d, %d)" % [sp.x, sp.y])), HORIZONTAL_ALIGNMENT_CENTER, 180, 14, Color(1, 0.6, 0.6))
+	if Ui.debug_view.get("paths", false):
+		for e in world.enemies:
+			_draw_debug_path(e.pos, e.path, Color(1, 0.35, 0.3, 0.75))
+			if e.goal_pos != Vector2.INF:
+				draw_dashed_line(e.pos * TILE, e.goal_pos * TILE, Color(1, 0.6, 0.2, 0.6), 1.5, 8.0)
+		for u in world.units:
+			_draw_debug_path(u.pos, u.path, Color(0.4, 1, 0.5, 0.75))
+	if Ui.debug_view.get("ranges", false):
+		for s in world.sites:
+			if s.built and s.is_tower():
+				var c := s.center() * TILE
+				draw_arc(c, s.stats().range * TILE, 0, TAU, 64, Color(0.13, 0.83, 0.93, 0.6), 1.5)
+		for u in world.units:
+			var r := float(u.stats().get("range", 0.0))
+			if r > 0.0:
+				draw_arc(u.pos * TILE, r * TILE, 0, TAU, 40, Color(0.4, 1, 0.5, 0.5), 1.5)
+		for e in world.enemies:
+			if e.hp > 0 and e.attack_range > 0.0:
+				draw_arc(e.pos * TILE, e.attack_range * TILE, 0, TAU, 32, Color(1, 0.35, 0.3, 0.45), 1.5)
+
+
+func _draw_debug_path(from: Vector2, path: Array[Vector2i], col: Color) -> void:
+	if path.is_empty():
+		return
+	var pts := PackedVector2Array([from * TILE])
+	for c in path:
+		pts.append((Vector2(c) + Vector2(0.5, 0.5)) * TILE)
+	draw_polyline(pts, col, 2.0)
+	draw_circle(pts[pts.size() - 1], 5, col)
 
 
 func _draw_worker(w: Worker) -> void:

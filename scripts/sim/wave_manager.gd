@@ -28,6 +28,7 @@ var speed := 1.0 # accéléré par un déclencheur (comptes à rebours et appari
 var auto_on := true # vagues lancées seules (sinon seulement par déclencheur)
 var left := 0 # ennemis des vagues encore en jeu ou à venir (copie pour le 2e joueur)
 var last_id := ""
+var plan_spawn_names := {} # noms des points d'apparition (affichage de debug)
 var net_skip := -1 # coop, 2e joueur : bouton ▶▶ disponible chez l'hôte (-1 = inconnu) # vague personnalisée lancée en dernier
 
 var plan: Array = [] # vagues personnalisées
@@ -116,6 +117,7 @@ static func from_auto(count: int, diff: float, gap: float) -> Array:
 
 ## Mode personnalisé : `p` = {"mode": "custom", "list": [...]} (sinon rien ne change).
 func setup_plan(p: Dictionary) -> void:
+	plan_spawn_names = p.get("spawn_names", {})
 	if str(p.get("mode", "auto")) != "custom" or p.get("list", []).is_empty():
 		return
 	plan = p.list.duplicate(true)

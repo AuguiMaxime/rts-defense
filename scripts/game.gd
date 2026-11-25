@@ -120,6 +120,16 @@ func _build_config() -> Dictionary:
 		"wave_plan": {} if survival else map_script.wave_plan,
 		"factions": {} if survival else map_script.factions,
 	}
+	# Paramètres de la mission (éditeur) : remplacent les valeurs de base, les technos s'ajoutent.
+	var p: Dictionary = {} if survival else map_script.mission.get("params", {})
+	if p.has("metal"):
+		cfg.start_metal += int(p.metal) - Balance.START_METAL
+	if p.has("essence"):
+		cfg.start_essence = int(p.essence)
+	if p.has("workers"):
+		cfg.start_workers = int(p.workers)
+	if p.has("base_hp"):
+		cfg.base_hp = roundi(cfg.base_hp * float(p.base_hp) / Balance.BASE_HP)
 	var used: Array[String] = []
 	if Net.is_client():
 		return cfg # en coop, c'est la partie de l'hôte (ses technos et augments) qui compte

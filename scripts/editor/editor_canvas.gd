@@ -70,6 +70,12 @@ func _draw() -> void:
 			draw_rect(_cells_rect(g.base_cells).grow(2), Ui.CYAN, false, 3.0)
 	if ed.show_paths:
 		_draw_paths()
+	if ed.flash_time > 0.0:
+		# Case montrée par « Aller » (validation) : anneau pulsant.
+		var fc := (Vector2(ed.flash_cell) + Vector2(0.5, 0.5)) * T
+		var k := 0.5 + 0.5 * sin(ed.flash_time * 10.0)
+		draw_arc(fc, T * (0.8 + 0.4 * k), 0, TAU, 32, Color(1, 0.3, 0.3, minf(1.0, ed.flash_time)), 4.0)
+		draw_arc(fc, T * 1.6, 0, TAU, 40, Color(1, 0.3, 0.3, 0.35 * minf(1.0, ed.flash_time)), 2.0)
 	# Objets
 	var wps: Array = []
 	for e: Dictionary in doc.entities:
@@ -358,12 +364,12 @@ func draw_entity(e: Dictionary, alpha := 1.0, tint := Color.WHITE) -> void:
 			draw_rect(Rect2(center - Vector2(22, 16), Vector2(44, 32)), Color(0.3, 0.6, 0.4, m.a))
 			draw_arc(center, T * 0.5, 0, TAU, 20, Color(Ui.GREEN, m.a), 3.0)
 			draw_string(font, center + Vector2(-30, -26), "DÉPART", HORIZONTAL_ALIGNMENT_CENTER, 60, 14, Color(Ui.GREEN, m.a))
-		"defend":
+		"defend", "building":
 			var sz := float(Content.building(str(e.type)).get("size", 1)) * T
 			var r := Rect2(c * T, Vector2(sz, sz))
 			var lk: Array = Sprites.PRODUCER_LOOK.get(e.type, [Sprites.W_HOUSE, Color.WHITE])
-			draw_texture_rect(lk[0], r, false, Color(lk[1], m.a))
-			draw_rect(r.grow(3), Color(Ui.GOLD, m.a), false, 4.0)
+			draw_texture_rect(lk[0], r, false, Color(lk[1], m.a * (0.55 if e.get("building", false) else 1.0)))
+			draw_rect(r.grow(3), Color(Ui.GOLD if e.kind == "defend" else Ui.GREEN, m.a), false, 4.0 if e.kind == "defend" else 2.5)
 			draw_string(font, Vector2(r.position.x, r.position.y - 6), "★ À DÉFENDRE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(Ui.GOLD, m.a))
 		"zone":
 			var rad := float(e.get("radius", 2.5)) * T

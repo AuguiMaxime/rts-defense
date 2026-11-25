@@ -120,6 +120,10 @@ static func palette() -> Array:
 	for k in Content.BUILDING_ORDER:
 		defend.append(["defend:" + k, str(Content.building(k).name) + " à défendre"])
 	cats.append(["Mission · bâtiment à défendre", defend])
+	var start := []
+	for k in Content.BUILDING_ORDER:
+		start.append(["building:" + k, str(Content.building(k).name)])
+	cats.append(["Alliés · bâtiments de départ", start])
 	var decos := []
 	var seen := {}
 	var files := Array(DirAccess.get_files_at("res://assets/deco"))
@@ -159,7 +163,7 @@ static func icon_for(tool_id: String) -> Texture2D:
 			return Sprites.TOWER_LOOK.get(t, {}).get("turret", null)
 		"ally_unit", "vip":
 			return Sprites.UNIT_LOOK.get(t, {}).get("tex", null)
-		"defend":
+		"defend", "building":
 			return Sprites.PRODUCER_LOOK.get(t, [Sprites.W_HOUSE])[0]
 		"deco":
 			return UnitsView.deco_texture(t)

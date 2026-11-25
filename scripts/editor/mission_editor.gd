@@ -46,8 +46,10 @@ var doc: EditorDoc
 var history: EditorHistory
 var layers := EditorLayers.new()
 var grid: GameGrid
-var issues: Array[String] = []
-var warns: Array[String] = []
+var issues: Array = [] # erreurs bloquantes (voir MissionValidator)
+var warns: Array = [] # avertissements
+var flash_cell := Vector2i(-1, -1) # case signalée par « Aller » dans la validation
+var flash_time := 0.0
 var _saved_changes := 0
 var _autosaved_changes := 0
 var _autosave_timer := 0.0
@@ -148,6 +150,7 @@ func _ready() -> void:
 	_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
 	Ui.testing = false
+	Ui.debug_view.clear()
 	_open_initial()
 
 
@@ -262,11 +265,9 @@ func _refresh_view() -> void:
 
 func _check() -> void:
 	_check_dirty = false
-	issues = MapData.validate(grid, doc.mission)
-	warns = EditorMissionPanel.warnings(doc, grid)
-	var sc := ScenarioCheck.check(doc)
-	issues.append_array(sc[0])
-	warns.append_array(sc[1])
+	var all := MissionValidator.run(doc, grid)
+	issues = MissionValidator.errors(all)
+	warns = MissionValidator.warnings(all)
 	if issues.is_empty() and warns.is_empty():
 		_status_check.text = "✔ Mission valide"
 		_status_check.add_theme_color_override("font_color", Ui.GREEN)
@@ -283,6 +284,9 @@ func _process(delta: float) -> void:
 		_refresh_view()
 	if _check_dirty:
 		_check()
+	if flash_time > 0.0:
+		flash_time -= delta
+		canvas.queue_redraw()
 	# Défilement au clavier
 	var dir := Vector2.ZERO
 	var focus := get_viewport().gui_get_focus_owner()
@@ -1849,7 +1853,7 @@ func _fiche(e: Dictionary) -> void:
 			"defend":
 				_fiche_link(id, "target", "Structure", func(x: Dictionary) -> bool: return x.kind == "structure", "Une structure ennemie à défendre")
 			"attack_target":
-				_fiche_link(id, "target", "Cible", func(x: Dictionary) -> bool: return x.kind in ["ally_tower", "ally_unit", "defend", "vip"], "Une tourelle, une unité ou un bâtiment allié")
+				_fiche_link(id, "target", "Cible", func(x: Dictionary) -> bool: return x.kind in ["ally_tower", "ally_unit", "defend", "building", "vip"], "Une tourelle, une unité ou un bâtiment allié")
 			"attack_zone":
 				_fiche_link(id, "target", "Zone", func(x: Dictionary) -> bool: return x.kind == "zone", "Une zone")
 			"follow":
@@ -1873,11 +1877,11 @@ func _fiche(e: Dictionary) -> void:
 		_fiche_row(gf, "Faction", fo, "Joueur 1 / 2 : contrôlée par le joueur. Les autres factions sont pilotées par l'ordinateur." if camp == "player" else "Neutres et factions personnalisées : relations réglées dans l'onglet Mission")
 		_context.add_child(gf)
 	# Statistiques
-	if kind in ["enemy", "structure", "ally_unit", "ally_tower", "defend", "vip"]:
+	if kind in ["enemy", "structure", "ally_unit", "ally_tower", "defend", "building", "vip"]:
 		_context.add_child(EditorUi.section("Statistiques"))
 		var g := EditorUi.grid(2, 6)
 		_fiche_row(g, "Points de vie", _fiche_spin(id, "hp_mul", float(e.get("hp_mul", 1.0)), 10, 1000, 10, " %", 100.0))
-		if kind != "defend" and kind != "vip" and e.get("type", "") != "e_generator":
+		if kind not in ["defend", "building", "vip"] and e.get("type", "") != "e_generator":
 			_fiche_row(g, "Dégâts", _fiche_spin(id, "dmg_mul", float(e.get("dmg_mul", 1.0)), 0, 1000, 10, " %", 100.0))
 			_fiche_row(g, "Portée", _fiche_spin(id, "rng_mul", float(e.get("rng_mul", 1.0)), 10, 400, 10, " %", 100.0))
 		if kind in ["enemy", "ally_unit"]:
@@ -1889,7 +1893,7 @@ func _fiche(e: Dictionary) -> void:
 			var lv := EditorUi.spin(1, BuildSite.MAX_LEVEL, 1, int(e.get("level", 1)), 104)
 			lv.value_changed.connect(func(v: float) -> void: _set_prop(id, "level", int(v)))
 			_fiche_row(g2, "Niveau", lv)
-		if kind in ["ally_tower", "defend"]:
+		if kind in ["ally_tower", "defend", "building"]:
 			_fiche_row(g2, "État", _fiche_toggle(id, "building", e.get("building", false), "En chantier", "Construit"), "En chantier : les ouvriers doivent le terminer")
 		_context.add_child(g2)
 	# Réglages propres
@@ -1954,7 +1958,7 @@ func _fiche(e: Dictionary) -> void:
 		_fiche_row(g4, "Au départ", _fiche_toggle(id, "absent", e.get("absent", false), "Absent", "Présent"),
 				"Absent : apparaît avec l'action « Faire apparaître / réveiller » d'un déclencheur")
 		_context.add_child(g4)
-	if kind in ["ally_unit", "enemy", "structure", "ally_tower", "defend", "vip", "door", "shield", "terminal", "prisoners", "pickup"]:
+	if kind in ["ally_unit", "enemy", "structure", "ally_tower", "defend", "building", "vip", "door", "shield", "terminal", "prisoners", "pickup"]:
 		_context.add_child(EditorUi.muted("Clic droit sur un objet : sa fiche · double clic : renommer"))
 	_context.add_child(EditorUi.sep())
 
@@ -2107,25 +2111,82 @@ func _close_row(v: VBoxContainer, extra: Array = []) -> void:
 
 func _show_issues() -> void:
 	_check()
-	var v := _modal_frame("Validation de la mission", 520)
+	var v := _modal_frame("Validation de la mission", 600)
 	if issues.is_empty() and warns.is_empty():
 		v.add_child(EditorUi.label("✔ Aucun problème : la mission peut être testée.", 14, Ui.GREEN))
-	for i in issues:
-		var l := EditorUi.label("✖ " + i, 14, Ui.RED)
+	else:
+		v.add_child(EditorUi.muted("%d erreur%s (empêchent de tester), %d avertissement%s. « Aller » montre l'élément en cause." % [
+				issues.size(), "s" if issues.size() > 1 else "", warns.size(), "s" if warns.size() > 1 else ""], 12))
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(560, mini(420, 40 + 38 * (issues.size() + warns.size())))
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var list := EditorUi.vbox(4)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+	for it: Dictionary in issues + warns:
+		var err: bool = it.lvl == "error"
+		var h := EditorUi.hbox(6)
+		var l := EditorUi.label(("✖ " if err else "⚠ ") + str(it.text), 14, Ui.RED if err else Ui.GOLD)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		v.add_child(l)
-	for w in warns:
-		var l := EditorUi.label("⚠ " + w, 14, Ui.GOLD)
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		v.add_child(l)
-	if not issues.is_empty():
-		v.add_child(EditorUi.muted("Les problèmes en rouge empêchent de tester. « Passages » (à droite) montre les chemins et les zones bloquées.", 12))
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_child(l)
+		var go: Dictionary = it.get("go", {})
+		if not go.is_empty():
+			var b := EditorUi.button("Aller", "Montrer l'élément en cause", false, 64)
+			b.pressed.connect(func() -> void:
+				_close_modal()
+				go_to(go))
+			h.add_child(b)
+		list.add_child(h)
+	if not issues.is_empty() or not warns.is_empty():
+		v.add_child(scroll)
 	var paths := EditorUi.button("Voir les passages")
 	paths.pressed.connect(func() -> void:
 		_close_modal()
 		if not show_paths:
 			toggle_paths())
 	_close_row(v, [paths])
+
+
+## Montre l'élément en cause d'un problème de validation.
+func go_to(go: Dictionary) -> void:
+	var tab := str(go.get("tab", "map"))
+	match tab:
+		"objects":
+			var e := doc.entity_by_id(int(go.get("id", -1)))
+			if e.is_empty():
+				return
+			set_tab("objects")
+			sel_rect = Rect2i()
+			sel_ids = [int(e.id)]
+			_refresh_context()
+			var c := Vector2i(int(e.cell[0]), int(e.cell[1]))
+			look_at_cell(c)
+			_flash(c)
+		"map":
+			set_tab("map")
+			if go.has("cell"):
+				var c := Vector2i(int(go.cell[0]), int(go.cell[1]))
+				look_at_cell(c)
+				_flash(c)
+		"objectives", "events", "waves":
+			set_tab(tab)
+			var panel: EditorScenarioPanel = {"objectives": objectives_panel, "events": events_panel, "waves": waves_panel}[tab]
+			if tab == "events":
+				panel.view = str(go.get("view", "triggers"))
+			elif tab == "waves":
+				panel.view = "list"
+			if go.has("id"):
+				panel.selected = str(go.id)
+			panel.refresh()
+		_:
+			set_tab(tab)
+
+
+func _flash(c: Vector2i) -> void:
+	flash_cell = c
+	flash_time = 2.0
+	canvas.queue_redraw()
 
 
 func _show_open() -> void:
