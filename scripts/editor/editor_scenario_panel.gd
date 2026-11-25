@@ -1,13 +1,13 @@
 class_name EditorScenarioPanel
 extends VBoxContainer
-## Onglets OBJECTIFS et ÉVÉNEMENTS : liste à gauche en haut, formulaire en dessous.
+## Onglets OBJECTIFS, ÉVÉNEMENTS et VAGUES : liste à gauche en haut, formulaire en dessous.
 ## Toutes les modifications passent par l'historique de l'éditeur (annuler / rétablir).
 
 const KIND_LABELS := [["main", "Principal"], ["secondary", "Secondaire"], ["optional", "Facultatif"]]
 const START_LABELS := [["visible", "Visible dès le début"], ["hidden", "Caché (révélé par un déclencheur)"], ["after", "Après d'autres objectifs"]]
 
 var ed # MissionEditor
-var mode := "objectives" # ou "events"
+var mode := "objectives" # ou "events", "waves"
 var view := "triggers" # events : triggers / variables / graph
 var selected := ""
 var _list: VBoxContainer
@@ -22,9 +22,13 @@ func _init(editor, m: String) -> void:
 	mode = m
 	add_theme_constant_override("separation", 6)
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	if mode == "events":
+	if mode == "waves":
+		view = "list"
+	if mode in ["events", "waves"]:
 		var vh := EditorUi.hbox(3)
-		for pair in [["triggers", "Déclencheurs"], ["variables", "Variables"], ["graph", "Dépendances"]]:
+		var views := [["triggers", "Déclencheurs"], ["variables", "Variables"], ["graph", "Dépendances"]] if mode == "events" \
+				else [["list", "Vagues"], ["spawns", "Points d'apparition"]]
+		for pair in views:
 			var b := EditorUi.button(pair[1], "", true)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var v: String = pair[0]
@@ -80,6 +84,10 @@ func _sc() -> Dictionary:
 
 
 func _items() -> Array:
+	if mode == "waves":
+		if not ed.doc.wave_plan.has("list"):
+			ed.doc.wave_plan["list"] = []
+		return ed.doc.wave_plan.list
 	var key := "objectives" if mode == "objectives" else ("variables" if view == "variables" else "triggers")
 	if not _sc().has(key):
 		_sc()[key] = []
@@ -113,6 +121,14 @@ func _fill_add_menu(pm: PopupMenu) -> void:
 			pm.add_item(p[1], i)
 			i += 1
 		pm.id_pressed.connect(func(id: int) -> void: _add_objective(ScenarioDefs.PRESETS[id]))
+	elif mode == "waves":
+		pm.add_item("Vague vide", 0)
+		pm.add_item("Vague de boss avec escorte", 1)
+		pm.add_item("Embuscade (lancée par un déclencheur)", 2)
+		pm.add_item("Harcèlement (répétée)", 3)
+		pm.add_separator()
+		pm.add_item("Remplacer par les vagues automatiques actuelles", 10)
+		pm.id_pressed.connect(_add_wave)
 	else:
 		pm.add_item("Déclencheur vide", 0)
 		pm.add_item("Variable", 1)
@@ -210,7 +226,7 @@ func _duplicate() -> void:
 	var c: Dictionary = list[i].duplicate(true)
 	c.erase("tpl")
 	if c.has("id"):
-		c.id = _new_id("o" if mode == "objectives" else "t", list)
+		c.id = _new_id({"objectives": "o", "waves": "w"}.get(mode, "t"), list)
 		c.name = str(c.name) + " (copie)"
 		selected = c.id
 	else:
@@ -259,10 +275,11 @@ func refresh() -> void:
 	for k in _view_buttons:
 		(_view_buttons[k] as Button).set_pressed_no_signal(k == view)
 	var graph := mode == "events" and view == "graph"
+	var flat := mode == "waves" and (view == "spawns" or str(ed.doc.wave_plan.get("mode", "auto")) != "custom")
 	_graph.visible = graph
 	_form_scroll.visible = not graph
-	_list_scroll.visible = not graph
-	_list_tools.visible = not graph
+	_list_scroll.visible = not graph and not flat
+	_list_tools.visible = not graph and not flat
 	if graph:
 		_graph.call("setup", _sc())
 		return
@@ -295,6 +312,14 @@ func _refresh_list() -> void:
 
 
 func _row_text(it: Dictionary) -> String:
+	if mode == "waves":
+		var n := 0
+		for g: Dictionary in it.get("groups", []):
+			n += int(g.get("count", 0)) * (1 + int(g.get("escort", 0)))
+		var st: String = {"auto": "après %ds" % int(it.get("delay", 0)), "clear": "éliminée +%ds" % int(it.get("delay", 0)),
+				"trigger": "déclencheur", "objective": "objectif"}.get(str(it.get("start", "auto")), "")
+		var rep_txt := "  · ×%d" % (1 + int(it.get("repeat", 0))) if int(it.get("repeat", 0)) > 0 else ""
+		return "%s  ·  %s  ·  %d ennemis%s" % [it.get("name", ""), st, n, rep_txt]
 	if mode == "objectives":
 		var mark: String = {"main": "◆", "secondary": "◇", "optional": "○"}.get(str(it.get("kind", "main")), "◆")
 		var hid := "  (caché)" if it.get("start", "visible") != "visible" else ""
@@ -320,12 +345,21 @@ func _build_form() -> void:
 		c.queue_free()
 	if mode == "objectives":
 		_rules_form()
+	if mode == "waves":
+		_waves_mode_form()
+		if view == "spawns":
+			_spawns_form()
+			return
+		if str(ed.doc.wave_plan.get("mode", "auto")) != "custom":
+			return
 	var i := _sel_index()
 	if i < 0:
 		return
 	var it: Dictionary = _items()[i]
 	if mode == "objectives":
 		_objective_form(it)
+	elif mode == "waves":
+		_wave_form(it)
 	elif view == "variables":
 		_variable_form(it)
 	else:
@@ -696,6 +730,13 @@ func _field(getter: Callable, p: Array) -> Control:
 		"trigger":
 			var l: Array = _sc().get("triggers", []).map(func(t: Dictionary) -> Array: return [t.id, t.name])
 			return _option(l, str(cur), setv)
+		"wave":
+			var l: Array = [["", "—"]]
+			for wv: Dictionary in ed.doc.wave_plan.get("list", []):
+				l.append([wv.id, wv.name])
+			if l.size() == 1:
+				return EditorUi.label("Aucune vague personnalisée (onglet Vagues)", 12, Ui.MUTED)
+			return _option(l, str(cur), setv)
 		"obj", "obj_enemy", "obj_player", "zone":
 			return _obj_field(getter, key, type, cur)
 	return null
@@ -857,3 +898,241 @@ func _toggle(cur: bool, on: String, off: String, cb: Callable) -> Button:
 		b.text = on if b.button_pressed else off
 		cb.call(b.button_pressed))
 	return b
+
+
+# --- Onglet VAGUES -----------------------------------------------------------------------------
+
+func _plan() -> Dictionary:
+	return ed.doc.wave_plan
+
+
+## Points d'apparition de la carte (cases S), avec leur nom : [clé "x,y", nom, case].
+func spawn_points() -> Array:
+	var out := []
+	for y in ed.doc.rows.size():
+		var row: String = ed.doc.rows[y]
+		for x in row.length():
+			if row[x] == "S":
+				var key := "%d,%d" % [x, y]
+				out.append([key, str(_plan().get("spawn_names", {}).get(key, "Apparition %d" % (out.size() + 1))), Vector2i(x, y)])
+	return out
+
+
+func _set_plan(label: String, key: String, v: Variant) -> void:
+	edit(label, func() -> void: _plan()[key] = v, true)
+
+
+func _waves_mode_form() -> void:
+	var g := EditorUi.grid(2, 6)
+	var m: Dictionary = ed.doc.mission
+	var t := str(m.get("type", "waves"))
+	var on := Mission.new(m).waves_enabled()
+	var tog := _toggle(on, "Oui", "Non (seulement par déclencheur)", func(v: bool) -> void:
+		ed.history.record("Vagues : activer", func() -> void: ed.doc.mission["waves_enabled"] = v)
+		ed.after_change())
+	tog.disabled = t == "waves"
+	tog.tooltip_text = "En mission Défense, les vagues sont toujours actives." if t == "waves" else "Sinon, les vagues ne partent que par des déclencheurs."
+	_row(g, "Vagues automatiques", tog)
+	var cur := str(_plan().get("mode", "auto"))
+	_row(g, "Mode", _option([["auto", "Automatique (nombre, difficulté)"], ["custom", "Personnalisées (liste)"]], cur, _set_wave_mode))
+	_form.add_child(EditorUi.section("Vagues ennemies"))
+	_form.add_child(g)
+	if cur != "custom":
+		var g2 := EditorUi.grid(2, 6)
+		_row(g2, "Nombre de vagues", _spin(ed.doc.waves, 1, 60, 1, func(v: float) -> void: _set_doc_wave("waves", v)))
+		_row(g2, "Difficulté (× ennemis)", _spin(ed.doc.difficulty, 0.5, 3.0, 0.05, func(v: float) -> void: _set_doc_wave("difficulty", v)))
+		_row(g2, "Intervalle (s)", _spin(ed.doc.interval, 8, 120, 1, func(v: float) -> void: _set_doc_wave("interval", v)))
+		_form.add_child(g2)
+		_form.add_child(EditorUi.muted("Chaque vague grossit, avec un boss toutes les %d vagues. Première vague après %d s.\nPasse en « Personnalisées » pour régler chaque vague." % [Balance.BOSS_EVERY, int(Balance.FIRST_WAVE_DELAY)]))
+	else:
+		_form.add_child(EditorUi.muted("Les vagues « après la précédente » et « éliminée » s'enchaînent dans l'ordre de la liste. Les autres partent par un déclencheur ou un objectif. Actions utiles : Lancer, Arrêter, Suspendre, Accélérer."))
+	_form.add_child(EditorUi.sep())
+
+
+func _set_wave_mode(v: String) -> void:
+	if v == "custom" and _plan().get("list", []).is_empty():
+		edit("Vagues personnalisées", func() -> void:
+			_plan()["mode"] = "custom"
+			_plan()["list"] = WaveManager.from_auto(ed.doc.waves, ed.doc.difficulty, ed.doc.interval), true)
+		ed._toast("Les vagues automatiques ont été converties : modifie-les une par une")
+	else:
+		_set_plan("Mode des vagues", "mode", v)
+	selected = ""
+	refresh()
+
+
+func _set_doc_wave(key: String, v: float) -> void:
+	var change := func() -> void:
+		if key == "waves":
+			ed.doc.waves = int(v)
+		elif key == "difficulty":
+			ed.doc.difficulty = v
+		else:
+			ed.doc.interval = v
+	edit("Vagues : réglage", change)
+
+
+func _add_wave(id: int) -> void:
+	if id == 10:
+		ed._confirm("Remplacer les vagues ?", "La liste sera remplacée par %d vagues équivalentes au mode automatique." % ed.doc.waves, "Remplacer", func() -> void:
+			edit("Vagues automatiques converties", func() -> void: _plan()["list"] = WaveManager.from_auto(ed.doc.waves, ed.doc.difficulty, ed.doc.interval), true)
+			selected = ""
+			refresh())
+		return
+	var list := _items()
+	var w := WaveManager.new_wave(_new_id("w", list), "Vague %d" % (list.size() + 1))
+	if id == 1:
+		w.name = "Boss"
+		w.groups = [{"type": "boss", "count": 1, "spawn": "", "escort": 4, "escort_type": "armored"}]
+	elif id == 2:
+		w.name = "Embuscade"
+		w.start = "trigger"
+		w.order = "simultaneous"
+		w.behavior = "aggressive"
+		w.groups = [{"type": "fast", "count": 6, "spawn": "", "escort": 0, "escort_type": "normal"}]
+	elif id == 3:
+		w.name = "Harcèlement"
+		w.start = "trigger"
+		w.repeat = 5
+		w.every = 20.0
+		w.groups = [{"type": "swarmer", "count": 4, "spawn": "", "escort": 0, "escort_type": "normal"}]
+	selected = w.id
+	edit("Ajouter une vague", func() -> void: _items().append(w), true)
+	if id in [2, 3]:
+		ed._toast("Lance-la avec l'action « Lancer une vague » (onglet Événements)")
+
+
+func _enemy_types(with_random: bool) -> Array:
+	var l := [["random", "Aléatoire"]] if with_random else []
+	for k in Balance.ENEMIES:
+		l.append([k, str(EditorDoc.ENEMY_NAMES.get(k, k))])
+	return l
+
+
+func _wave_form(wv: Dictionary) -> void:
+	var id: String = wv.id
+	var getter := func() -> Dictionary: return _find_wave(id)
+	_form.add_child(EditorUi.section("Vague"))
+	var g := EditorUi.grid(2, 6)
+	_row(g, "Nom", _text(str(wv.name), func(t: String) -> void: _setp(getter, "name", t)))
+	var start := str(wv.get("start", "auto"))
+	_row(g, "Lancement", _option(WaveManager.START_LABELS, start, func(v: String) -> void: _setp(getter, "start", v, true)))
+	if start != "trigger":
+		_row(g, "Délai après la précédente (s)" if start == "auto" else "Délai (s)", _spin(float(wv.get("delay", 0.0)), 0, 900, 1, func(v: float) -> void: _setp(getter, "delay", v)))
+	if start == "objective":
+		_row(g, "Objectif", _field(getter, ["objective", "objective", "Objectif", ""]))
+	var order := str(wv.get("order", "progressive"))
+	_row(g, "Arrivée", _option(WaveManager.ORDER_LABELS, order, func(v: String) -> void: _setp(getter, "order", v, true)))
+	if order == "progressive":
+		_row(g, "Écart entre ennemis (s)", _spin(float(wv.get("spacing", 0.7)), 0.1, 10, 0.1, func(v: float) -> void: _setp(getter, "spacing", v)))
+	_row(g, "PV (×)", _spin(float(wv.get("hp", 1.0)), 0.1, 20, 0.05, func(v: float) -> void: _setp(getter, "hp", v)))
+	var beh := str(wv.get("behavior", "base"))
+	_row(g, "Comportement", _option(WaveManager.BEHAVIOR_LABELS, beh, func(v: String) -> void: _setp(getter, "behavior", v, true)))
+	if beh == "attack_target":
+		_row(g, "Cible", _obj_field(getter, "target", "obj_player", wv.get("target", -1)))
+	if beh == "attack_zone":
+		_row(g, "Zone", _obj_field(getter, "zone", "zone", wv.get("zone", -1)))
+	_row(g, "Répétitions", _spin(int(wv.get("repeat", 0)), 0, 99, 1, func(v: float) -> void: _setp(getter, "repeat", int(v), true)))
+	if int(wv.get("repeat", 0)) > 0:
+		_row(g, "Toutes les (s)", _spin(float(wv.get("every", 30.0)), 1, 900, 1, func(v: float) -> void: _setp(getter, "every", v)))
+	_form.add_child(g)
+	if start == "trigger" and not _launched_by_trigger(id):
+		var warn := EditorUi.label("⚠ Aucun déclencheur ne lance cette vague (action « Lancer une vague »).", 12, Ui.GOLD)
+		warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_form.add_child(warn)
+	_groups_editor(wv, getter)
+
+
+func _groups_editor(wv: Dictionary, getter: Callable) -> void:
+	_form.add_child(EditorUi.sep())
+	_form.add_child(EditorUi.section("Ennemis"))
+	var spawns := [["", "Toutes les apparitions"]]
+	for sp in spawn_points():
+		spawns.append([sp[0], sp[1]])
+	var groups: Array = wv.get("groups", [])
+	var total := 0
+	for i in groups.size():
+		var gi: int = i
+		var gr: Dictionary = groups[i]
+		var gget := func() -> Dictionary: return getter.call().groups[gi]
+		total += int(gr.get("count", 0)) * (1 + int(gr.get("escort", 0)))
+		var row := EditorUi.hbox(3)
+		var typ := _option(_enemy_types(true), str(gr.get("type", "normal")), func(v: String) -> void: _setp(gget, "type", v))
+		typ.custom_minimum_size.x = 120
+		typ.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(typ)
+		var cnt := _spin(int(gr.get("count", 1)), 1, 200, 1, func(v: float) -> void: _setp(gget, "count", int(v)))
+		cnt.custom_minimum_size.x = 70
+		row.add_child(cnt)
+		var sp := _option(spawns, str(gr.get("spawn", "")), func(v: String) -> void: _setp(gget, "spawn", v))
+		sp.custom_minimum_size.x = 120
+		sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(sp)
+		var x := EditorUi.button("✕", "Retirer ce groupe", false, 26)
+		x.pressed.connect(func() -> void: edit("Retirer un groupe", func() -> void: getter.call().groups.remove_at(gi), true))
+		row.add_child(x)
+		_form.add_child(row)
+		var er := EditorUi.hbox(3)
+		er.add_child(EditorUi.label("      escorte : chacun avec", 12, Ui.MUTED))
+		var esc := _spin(int(gr.get("escort", 0)), 0, 20, 1, func(v: float) -> void: _setp(gget, "escort", int(v)))
+		esc.custom_minimum_size.x = 64
+		er.add_child(esc)
+		var et := _option(_enemy_types(true), str(gr.get("escort_type", "normal")), func(v: String) -> void: _setp(gget, "escort_type", v))
+		et.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		er.add_child(et)
+		_form.add_child(er)
+	var add := EditorUi.button("+ Groupe d'ennemis")
+	add.pressed.connect(func() -> void:
+		edit("Ajouter un groupe", func() -> void: getter.call().groups.append({"type": "normal", "count": 5, "spawn": "", "escort": 0, "escort_type": "normal"}), true))
+	_form.add_child(add)
+	_form.add_child(EditorUi.muted("Total : %d ennemis%s." % [total, " par lancement" if int(wv.get("repeat", 0)) > 0 else ""]))
+	if spawn_points().is_empty():
+		_form.add_child(EditorUi.label("⚠ Aucun point d'apparition sur la carte (onglet Carte, calque Apparitions).", 12, Ui.GOLD))
+
+
+func _find_wave(id: String) -> Dictionary:
+	for x: Dictionary in _plan().get("list", []):
+		if str(x.id) == id:
+			return x
+	return {}
+
+
+func _launched_by_trigger(id: String) -> bool:
+	return _sc().get("triggers", []).any(func(t: Dictionary) -> bool:
+		return (t.get("actions", []) + t.get("else", [])).any(func(a: Dictionary) -> bool:
+			return a.get("type", "") == "wave_launch" and str(a.get("wave", "")) == id))
+
+
+func _spawns_form() -> void:
+	var sps := spawn_points()
+	_form.add_child(EditorUi.section("Points d'apparition"))
+	if sps.is_empty():
+		_form.add_child(EditorUi.muted("Aucun point d'apparition : pose-en dans l'onglet Carte (calque Apparitions)."))
+		return
+	_form.add_child(EditorUi.muted("Nomme-les pour les choisir facilement dans les vagues (« Nord », « Rivière »…)."))
+	for sp in sps:
+		var key: String = sp[0]
+		var row := EditorUi.hbox(3)
+		var e := _text(str(sp[1]), func(t: String) -> void: _rename_spawn(key, t))
+		e.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(e)
+		var at := EditorUi.label("(%s)" % key.replace(",", ", "), 12, Ui.MUTED)
+		at.custom_minimum_size.x = 70
+		row.add_child(at)
+		var c: Vector2i = sp[2]
+		var look := EditorUi.button("◎", "Voir sur la carte", false, 28)
+		look.pressed.connect(func() -> void: ed.look_at_cell(c))
+		row.add_child(look)
+		_form.add_child(row)
+		var used: Array = _plan().get("list", []).filter(func(w: Dictionary) -> bool:
+			return w.get("groups", []).any(func(gr: Dictionary) -> bool: return str(gr.get("spawn", "")) == key))
+		if not used.is_empty():
+			_form.add_child(EditorUi.muted("      utilisé par : " + ", ".join(used.map(func(w: Dictionary) -> String: return str(w.name)))))
+
+
+func _rename_spawn(key: String, t: String) -> void:
+	var change := func() -> void:
+		if not _plan().has("spawn_names"):
+			_plan()["spawn_names"] = {}
+		_plan().spawn_names[key] = t.strip_edges()
+	edit("Renommer un point d'apparition", change, true)

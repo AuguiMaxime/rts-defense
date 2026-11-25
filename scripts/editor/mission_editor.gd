@@ -27,9 +27,9 @@ const TOOL_INFO := {
 	"place": ["Poser", "P", "Clic / glisser : poser · retoucher un objet : lui appliquer les réglages · R : pivoter"],
 	"erase": ["Gomme", "E", "Clic / glisser : retirer les objets"],
 }
-const TAB_TOOLS := {"map": ["select", "paint", "fill", "pipette"], "objects": ["select", "place", "erase", "pipette"], "objectives": [], "events": [], "mission": []}
-const TABS := [["map", "Carte"], ["objects", "Objets"], ["objectives", "Objectifs"], ["events", "Événements"], ["mission", "Mission"]]
-const WIDE_TABS := ["objectives", "events"]
+const TAB_TOOLS := {"map": ["select", "paint", "fill", "pipette"], "objects": ["select", "place", "erase", "pipette"], "objectives": [], "events": [], "waves": [], "mission": []}
+const TABS := [["map", "Carte"], ["objects", "Objets"], ["objectives", "Objectifs"], ["events", "Événements"], ["waves", "Vagues"], ["mission", "Mission"]]
+const WIDE_TABS := ["objectives", "events", "waves"]
 const ENEMY_BEHAVIORS := [["guard", "Garde son poste"], ["static", "Immobile"], ["patrol", "Patrouille"], ["defend", "Défend une structure"],
 		["aggressive", "Attaque à vue"], ["attack_target", "Attaque une cible"], ["attack_zone", "Attaque une zone"], ["follow", "Suit une unité"],
 		["march", "Marche sur la base"], ["wait", "Attend un événement"]]
@@ -112,6 +112,7 @@ var catalog: EditorCatalog
 var mission_panel: EditorMissionPanel
 var objectives_panel: EditorScenarioPanel
 var events_panel: EditorScenarioPanel
+var waves_panel: EditorScenarioPanel
 var _context: VBoxContainer
 var _layer_rows := {}
 var _grid_btn: Button
@@ -227,7 +228,7 @@ func scenario_highlight() -> Array:
 		return []
 	var panel: EditorScenarioPanel = _left_boxes[tab]
 	var i := panel._sel_index()
-	if i < 0 or (tab == "events" and panel.view != "triggers"):
+	if i < 0 or (tab == "events" and panel.view != "triggers") or (tab == "waves" and panel.view != "list"):
 		return []
 	var out := []
 	_collect_refs(panel._items()[i], out)
@@ -325,6 +326,12 @@ func _toast(text: String, color := Ui.CYAN) -> void:
 
 
 # --- Caméra -------------------------------------------------------------------------------
+
+## Centre la vue sur une case (bouton ◎ des points d'apparition).
+func look_at_cell(c: Vector2i) -> void:
+	camera.position = (Vector2(c) + Vector2(0.5, 0.5)) * T + Vector2((452.0 - RIGHT_W) * -0.5, 0) / camera.zoom.x
+	_view_dirty = true
+
 
 func fit_camera() -> void:
 	var world := Vector2(doc.width(), doc.height()) * T
@@ -496,6 +503,8 @@ func _on_key(k: InputEventKey) -> void:
 			KEY_4:
 				set_tab("events")
 			KEY_5:
+				set_tab("waves")
+			KEY_6:
 				set_tab("mission")
 			KEY_V:
 				set_tool("select")
@@ -1440,6 +1449,9 @@ func _build_left() -> Control:
 	events_panel = EditorScenarioPanel.new(self, "events")
 	v.add_child(events_panel)
 	_left_boxes["events"] = events_panel
+	waves_panel = EditorScenarioPanel.new(self, "waves")
+	v.add_child(waves_panel)
+	_left_boxes["waves"] = waves_panel
 
 	# Onglet MISSION
 	var scroll := ScrollContainer.new()

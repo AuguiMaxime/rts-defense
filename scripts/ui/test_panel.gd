@@ -69,6 +69,12 @@ func _init(g: Node) -> void:
 	restart.pressed.connect(func() -> void: Ui.play_custom(Ui.custom_map))
 	row.add_child(restart)
 	_body.add_child(row)
+	_body.add_child(EditorUi.section("Vagues"))
+	_waves = EditorUi.label("", 13)
+	_waves.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_body.add_child(_waves)
+	_wave_box = EditorUi.vbox(3)
+	_body.add_child(_wave_box)
 	_body.add_child(EditorUi.section("Objectifs"))
 	_obj_box = EditorUi.vbox(3)
 	_body.add_child(_obj_box)
@@ -100,7 +106,30 @@ func _spawn_test() -> void:
 		w.spawn_enemy("normal", w.grid.spawn_points[0], w.waves.hp_scale())
 
 
+var _waves: Label
+var _wave_box: VBoxContainer
+
+
+func _build_waves() -> void:
+	var wm: WaveManager = game.world.waves
+	for wv: Dictionary in wm.plan:
+		var h := EditorUi.hbox(3)
+		var id := str(wv.get("id", ""))
+		var run := EditorUi.button("▶", "Lancer cette vague maintenant", false, 28)
+		run.pressed.connect(func() -> void: wm.launch_id(id))
+		h.add_child(run)
+		var stop := EditorUi.button("■", "Arrêter cette vague", false, 28)
+		stop.pressed.connect(func() -> void: wm.stop(id))
+		h.add_child(stop)
+		var l := EditorUi.label(str(wv.get("name", id)), 13)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.clip_text = true
+		h.add_child(l)
+		_wave_box.add_child(h)
+
+
 func _build_triggers() -> void:
+	_build_waves()
 	var sc: Scenario = game.world.scenario
 	for tr in sc.triggers:
 		var h := EditorUi.hbox(3)
@@ -162,6 +191,10 @@ func _process(delta: float) -> void:
 				var tr: Dictionary = c.get_meta("tr")
 				(c as Label).modulate = Color(1, 1, 1, 1.0 if tr.enabled else 0.45)
 				(c as Label).text = "%s  ×%d" % [tr.def.name, tr.count]
+	var wm: WaveManager = game.world.waves
+	var nxt := "prochaine dans %d s" % ceili(wm.timer) if wm.can_skip() and wm.timer != INF and wm.auto_on else "pas de vague programmée"
+	_waves.text = "Vague %d / %d  ·  %s  ·  %d ennemis restants%s%s" % [wm.wave, wm.total, nxt, wm.left,
+			"  ·  en pause" if wm.paused else "", "  ·  vitesse ×%.1f" % wm.speed if wm.speed != 1.0 else ""]
 	var vs: Array[String] = []
 	for k in sc.vars:
 		vs.append("%s = %s" % [k, str(sc.vars[k])])

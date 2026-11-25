@@ -4,7 +4,7 @@ L'éditeur s'ouvre depuis le menu principal, bouton **ÉDITEUR**. Il n'est visib
 
 ## 0. L'écran de l'éditeur (PC, souris et clavier)
 
-- **En haut** : Menu, Fichier (nouvelle, ouvrir, enregistrer, enregistrer sous, paramètres de la carte, raccourcis), nom de la carte, onglets **Carte / Objets / Mission** (touches 1, 2, 3), annuler / rétablir, copier, coller, dupliquer, supprimer, Valider, Enregistrer, **▶ Tester** (F5).
+- **En haut** : Menu, Fichier (nouvelle, ouvrir, enregistrer, enregistrer sous, paramètres de la carte, raccourcis), nom de la carte, onglets **Carte / Objets / Objectifs / Événements / Vagues / Mission** (touches 1 à 6), annuler / rétablir, copier, coller, dupliquer, supprimer, Valider, Enregistrer, **▶ Tester** (F5).
 - **À gauche** : les outils et le contenu de l'onglet.
 - **À droite** : les réglages de l'outil ou de la sélection, les **calques** (œil = afficher, cadenas = verrouiller ; un calque masqué ou verrouillé ne peut pas être modifié), la grille et la **vérification des passages** (chemins des vagues en orange, zones inaccessibles et gisements bloqués en rouge).
 - **En bas** : la case sous la souris, l'aide de l'outil, l'état d'enregistrement, la validation (clic = liste des problèmes) et le zoom.
@@ -97,7 +97,7 @@ Pour chaque type, l'onglet Mission rappelle quoi poser et propose un bouton racc
 - poser un **bâtiment à défendre** ajoute l'objectif « Défendre les bâtiments » (détruit = défaite) ;
 - les missions d'une ancienne version et les 7 cartes de la campagne sont converties automatiquement à l'ouverture.
 
-- **VAGUES ENNEMIES : OUI/NON** active ou coupe les vagues. Leur nombre, leur difficulté et leur intervalle se règlent à droite.
+- **Vagues ennemies** : se règlent dans l'onglet **Vagues** (touche 5).
 - Le **briefing** s'affiche au lancement de la mission.
 - Les **objectifs bonus** (train, convoi, bateau) se combinent avec n'importe quel type de mission.
 
@@ -128,6 +128,21 @@ La validation, en bas à droite, signale ce qui manque : base, chemins, VIP, zon
 **Fiche d'un objet** : « Au départ : Absent » le fait apparaître plus tard via un déclencheur ; le comportement ennemi « En attente » le garde immobile jusqu'à ce qu'on le réveille.
 
 La validation signale en plus : paramètres manquants, références cassées, aucune condition de victoire, objectif caché jamais révélé, déclencheur désactivé jamais réactivé, variable ou zone inutilisée, objet absent jamais activé.
+
+## 3d. Onglet VAGUES (touche 5)
+
+- **Vagues automatiques : oui / non.** « Non » : aucune vague ne part seule, seulement par des déclencheurs (toujours « oui » en Défense).
+- **Mode automatique** : nombre de vagues, difficulté, intervalle. La composition grossit à chaque vague, avec un boss toutes les 5 vagues.
+- **Mode personnalisé** : la première fois, les vagues automatiques sont converties en liste, que tu modifies une par une. Chaque vague a :
+  - un **nom** et un **lancement** : après la précédente (+ délai), quand la précédente est éliminée (+ délai), par un déclencheur, ou quand un objectif est réussi (+ délai) ;
+  - une **arrivée** progressive (écart entre ennemis) ou simultanée, et un multiplicateur de **PV** ;
+  - un **comportement** : marche sur la base, chasse les unités, attaque une cible ou une zone ;
+  - des **répétitions** (nombre et intervalle) ;
+  - des **groupes d'ennemis** : type (ou « Aléatoire »), nombre, point d'apparition, et une **escorte** optionnelle (chaque ennemi du groupe arrive avec N ennemis d'un autre type, pratique pour un boss).
+- **+ Ajouter** propose aussi : vague de boss avec escorte, embuscade (déclencheur, simultanée, agressive), harcèlement (répétée).
+- **Points d'apparition** : nomme-les (« Nord », « Rivière »…) et ◎ pour les voir. Le nom s'affiche sur la carte, et ceux de la vague sélectionnée sont surlignés en or.
+- **Déclencheurs** : QUAND « Vague commencée / éliminée » (par numéro ou par nom), SI « Ennemis des vagues restants », ALORS « Lancer une vague », « Arrêter une vague » (ou toutes), « Suspendre », « Reprendre », « Accélérer » (×2 = deux fois plus vite).
+- En jeu, le panneau des vagues affiche le compte à rebours et les **ennemis restants**. Les outils de test (F2) permettent de lancer ▶ ou d'arrêter ■ chaque vague.
 
 ## 4. Tester puis m'envoyer la mission
 

@@ -125,7 +125,8 @@ func setup_plan(p: Dictionary) -> void:
 		_state.append({"n": 0, "done": false, "next": INF})
 		if str(d.get("start", "auto")) in ["auto", "clear"]:
 			_seq.append(i)
-		total += 1 + maxi(0, int(d.get("repeat", 0)))
+			# Le total affiché compte les vagues enchaînées ; celles sur événement s'y ajoutent quand elles partent.
+			total += 1 + maxi(0, int(d.get("repeat", 0)))
 	_arm_seq()
 
 
@@ -207,6 +208,7 @@ func launch(i: int) -> void:
 	var d: Dictionary = plan[i]
 	var st: Dictionary = _state[i]
 	wave += 1
+	total = maxi(total, wave)
 	_queue_ids[wave] = i
 	last_id = str(d.get("id", ""))
 	_prev_tag = wave

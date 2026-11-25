@@ -84,6 +84,7 @@ static func check(doc: EditorDoc) -> Array:
 			warns.append("%s : absent au départ, mais aucun déclencheur ne le fait apparaître" % e.name)
 		if str(e.get("behavior", "")) == "wait" and not _activated(trigs, int(e.id)):
 			warns.append("%s : attend un événement, mais aucun déclencheur ne le réveille" % e.name)
+	_check_waves(doc, trigs, obj_ids, errors, warns)
 	# Victoire / défaite
 	var rules: Dictionary = sc.get("rules", {})
 	var actions_all: Array = []
@@ -150,3 +151,46 @@ static func _check_cond(ctx: Dictionary, where: String, node: Dictionary) -> voi
 		if c.get("who", "") == "obj":
 			req.append("obj")
 		_check_item(ctx, where + ", condition", c, req)
+
+
+static func _check_waves(doc: EditorDoc, trigs: Array, obj_ids: Array, errors: Array[String], warns: Array[String]) -> void:
+	var plan: Dictionary = doc.wave_plan
+	var list: Array = plan.get("list", [])
+	var ids := list.map(func(w: Dictionary) -> String: return str(w.get("id", "")))
+	var acts: Array = []
+	for t: Dictionary in trigs:
+		acts.append_array(t.get("actions", []) + t.get("else", []))
+	for t: Dictionary in trigs:
+		var ev: Dictionary = t.get("event", {})
+		if str(ev.get("type", "")) in ["wave_started", "wave_ended"] and str(ev.get("wave", "")) != "" and not ids.has(str(ev.wave)):
+			errors.append("Déclencheur « %s » : vague introuvable" % t.name)
+	for a: Dictionary in acts:
+		if str(a.get("type", "")) in ["wave_launch", "wave_stop"] and str(a.get("wave", "")) != "" and not ids.has(str(a.wave)):
+			errors.append("Action « %s » : vague introuvable" % ScenarioDefs.ACTIONS[a.type].label)
+	if str(plan.get("mode", "auto")) != "custom":
+		return
+	if list.is_empty():
+		warns.append("Vagues personnalisées : la liste est vide")
+	var spawns := {}
+	for y in doc.rows.size():
+		for x in doc.rows[y].length():
+			if doc.rows[y][x] == "S":
+				spawns["%d,%d" % [x, y]] = true
+	for w: Dictionary in list:
+		var where := "Vague « %s »" % w.get("name", "")
+		var start := str(w.get("start", "auto"))
+		if w.get("groups", []).is_empty():
+			warns.append("%s : aucun ennemi" % where)
+		if start == "objective" and not obj_ids.has(str(w.get("objective", ""))):
+			errors.append("%s : choisis l'objectif qui la lance" % where)
+		if start == "trigger" and not acts.any(func(a: Dictionary) -> bool: return a.get("type", "") == "wave_launch" and str(a.get("wave", "")) == str(w.id)):
+			warns.append("%s : lancée par un déclencheur, mais aucun ne la lance" % where)
+		if str(w.get("behavior", "")) == "attack_target" and doc.entity_by_id(int(w.get("target", -1))).is_empty():
+			errors.append("%s : choisis la cible à attaquer" % where)
+		if str(w.get("behavior", "")) == "attack_zone" and doc.entity_by_id(int(w.get("zone", -1))).is_empty():
+			errors.append("%s : choisis la zone à attaquer" % where)
+		for g: Dictionary in w.get("groups", []):
+			if str(g.get("spawn", "")) != "" and not spawns.has(str(g.spawn)):
+				warns.append("%s : un point d'apparition n'existe plus (toutes les apparitions seront utilisées)" % where)
+				break
+

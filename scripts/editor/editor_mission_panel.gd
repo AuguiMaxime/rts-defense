@@ -24,17 +24,13 @@ var _count: SpinBox
 var _need: SpinBox
 var _start: SpinBox
 var _gap: SpinBox
-var _waves_btn: Button
-var _waves_box: Control
-var _nb_waves: SpinBox
-var _diff: SpinBox
-var _interval: SpinBox
 var _hint: Label
 var _place: Button
 var _place_tool := ""
 var _brief: TextEdit
 var _loading := false
 var _tpl_label: Label
+var _waves_info: Label
 var _settings_sep: Control
 var _settings_title: Control
 
@@ -106,23 +102,11 @@ func _init(editor) -> void:
 
 	add_child(EditorUi.sep())
 	add_child(EditorUi.section("Vagues ennemies"))
-	_waves_btn = EditorUi.button("Vagues : oui", "Active ou coupe les vagues pour ce type de mission", true)
-	_waves_btn.pressed.connect(func() -> void: _set_mission("waves_enabled", _waves_btn.button_pressed))
-	add_child(_waves_btn)
-	var wg := EditorUi.grid(2, 6)
-	_nb_waves = EditorUi.spin(1, 60, 1, 10)
-	_diff = EditorUi.spin(0.5, 3.0, 0.05, 1.0)
-	_interval = EditorUi.spin(8, 120, 1, 30)
-	for row in [["Nombre", _nb_waves, "waves"], ["Difficulté", _diff, "difficulty"], ["Intervalle (s)", _interval, "interval"]]:
-		var l := EditorUi.label(row[0])
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		wg.add_child(l)
-		var sp: SpinBox = row[1]
-		var key: String = row[2]
-		sp.value_changed.connect(func(v: float) -> void: _set_doc(key, v))
-		wg.add_child(sp)
-	_waves_box = wg
-	add_child(wg)
+	_waves_info = EditorUi.muted("")
+	add_child(_waves_info)
+	var go := EditorUi.button("Régler les vagues (onglet Vagues)")
+	go.pressed.connect(func() -> void: ed.set_tab("waves"))
+	add_child(go)
 
 	add_child(EditorUi.sep())
 	add_child(EditorUi.section("Objectifs bonus"))
@@ -171,14 +155,7 @@ func refresh() -> void:
 	(_rows.need[0] as Label).text = "À faire arriver" if ally else "À détruire"
 	_settings_sep.visible = t in ["survive", "convoy", "escort_defend"]
 	_settings_title.visible = _settings_sep.visible
-	var waves_on := Mission.new(m).waves_enabled()
-	_waves_btn.set_pressed_no_signal(waves_on)
-	_waves_btn.text = "Vagues : %s" % ("oui" if waves_on else "non")
-	_waves_btn.disabled = t == "waves"
-	_waves_box.visible = waves_on
-	_nb_waves.set_value_no_signal(ed.doc.waves)
-	_diff.set_value_no_signal(ed.doc.difficulty)
-	_interval.set_value_no_signal(ed.doc.interval)
+	_waves_info.text = EditorMissionPanel.waves_summary(ed.doc)
 	for typ in _obj_buttons:
 		(_obj_buttons[typ] as Button).set_pressed_no_signal(ed.doc.objectives.any(func(o: Dictionary) -> bool: return o.type == typ))
 	var mine: Array = ed.doc.scenario.get("objectives", []).filter(func(o: Dictionary) -> bool: return o.get("tpl", false))
@@ -245,6 +222,16 @@ func _toggle_objective(typ: String) -> void:
 			ed.doc.objectives.append({"type": typ, "wave": OBJECTIVE_DEFAULT_WAVE[typ]})
 	ed.history.record("Objectif bonus", change)
 	ed.after_change()
+
+
+## Résumé des vagues de la mission (onglets Mission et Vagues).
+static func waves_summary(doc: EditorDoc) -> String:
+	if not Mission.new(doc.mission).waves_enabled():
+		return "Pas de vagues automatiques (seulement lancées par des déclencheurs)." if doc.wave_plan.get("mode", "auto") == "custom" else "Pas de vagues."
+	if str(doc.wave_plan.get("mode", "auto")) == "custom":
+		var n: int = doc.wave_plan.get("list", []).size()
+		return "Vagues personnalisées : %d vague%s." % [n, "s" if n > 1 else ""]
+	return "Vagues automatiques : %d vagues, difficulté ×%.2f, toutes les %d s." % [doc.waves, doc.difficulty, int(doc.interval)]
 
 
 ## Avertissements propres au type de mission (ne bloquent pas le test).

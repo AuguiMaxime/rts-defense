@@ -1414,7 +1414,7 @@ func _test_custom_waves() -> void:
 				"cond": {"op": "and", "items": []}, "actions": [{"type": "var_set", "var": "fin", "value": 1}, {"type": "wave_launch", "wave": "amb"}], "else": []}],
 		"objectives": [{"id": "o", "name": "Vagues", "kind": "main", "type": "survive_waves", "waves": 0}]}
 	var w := _wave_world(plan, scn)
-	_check(w.waves.custom() and w.waves.total == 6, "plan personnalisé : 6 lancements prévus (dont 2 répétitions)")
+	_check(w.waves.custom() and w.waves.total == 2, "plan personnalisé : 2 vagues enchaînées (les autres partent sur événement)")
 	_run(w, 1.9)
 	_check(w.waves.wave == 0, "délai initial respecté")
 	_run(w, 0.3)
@@ -1441,7 +1441,7 @@ func _test_custom_waves() -> void:
 	_run(w, 0.1)
 	_check(w.waves.wave == 4, "vague répétée : 1er lancement")
 	_run(w, 6.5)
-	_check(w.waves.wave == 6, "répétée 2 fois toutes les 3 s")
+	_check(w.waves.wave == 6 and w.waves.total == 6, "répétée 2 fois toutes les 3 s (le total suit)")
 	_check(not w.waves.has_more_waves(), "plus rien à lancer")
 	# Accélérer, suspendre, arrêter
 	var w2 := _wave_world([_wave_def("a", "auto", 10.0, [{"type": "normal", "count": 4}]), _wave_def("b", "auto", 10.0, [{"type": "normal", "count": 4}])])

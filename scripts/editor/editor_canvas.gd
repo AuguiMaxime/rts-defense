@@ -42,10 +42,24 @@ func _draw() -> void:
 	var L: EditorLayers = ed.layers
 	# Repères de la carte
 	if L.visible("spawns"):
+		# Points d'apparition : nom, et surlignés s'ils servent à la vague affichée.
+		var used := {}
+		if ed.tab == "waves" and ed.waves_panel != null and ed.waves_panel.view == "list":
+			var wv: Dictionary = ed.waves_panel._find_wave(ed.waves_panel.selected)
+			for gr: Dictionary in wv.get("groups", []):
+				used[str(gr.get("spawn", ""))] = true
+		var names: Dictionary = doc.wave_plan.get("spawn_names", {})
+		var n := 0
 		for sp in g.spawn_points:
+			n += 1
 			var c := (Vector2(sp) + Vector2(0.5, 0.5)) * T
-			draw_circle(c, T * 0.42, Color(Ui.RED, 0.3))
-			draw_arc(c, T * 0.42, 0, TAU, 24, Ui.RED, 3.0)
+			var key := "%d,%d" % [sp.x, sp.y]
+			var hot: bool = used.has(key) or (used.has("") and not used.is_empty())
+			draw_circle(c, T * 0.42, Color(Ui.GOLD if hot else Ui.RED, 0.3))
+			draw_arc(c, T * 0.42, 0, TAU, 24, Ui.GOLD if hot else Ui.RED, 3.0)
+			if z > 0.25:
+				draw_string(ThemeDB.fallback_font, c + Vector2(-60, -T * 0.55), str(names.get(key, "Apparition %d" % n)),
+						HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color(1, 0.75, 0.7) if not hot else Ui.GOLD)
 	if L.visible("bases"):
 		if not g.base2_cells.is_empty():
 			var r2 := _cells_rect(g.base2_cells)
