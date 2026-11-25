@@ -488,56 +488,6 @@ var _obj_states: Array[String] = []
 
 
 ## Objectifs du scénario (onglet Objectifs de l'éditeur) et chronos.
-func _update_scenario(w: GameWorld) -> bool:
-	var sc := w.scenario
-	if sc == null or (sc.objectives.is_empty() and sc.shown_timers().is_empty()):
-		return false
-	_obj_panel.visible = not _folded
-	_wave_panel.visible = not _folded and (w.mission == null or w.mission.waves_enabled())
-	var key := ""
-	for o in sc.objectives:
-		key += "%s|%s|" % [o.state, o.text]
-	for t in sc.shown_timers():
-		key += "%s%d|" % [t[0], int(t[1])]
-	if key == _obj_key:
-		return true
-	_obj_key = key
-	for c in _obj_box.get_children():
-		c.queue_free()
-	var groups := [["main", "◆ OBJECTIFS", Ui.CYAN], ["secondary", "◇ SECONDAIRES", Ui.GOLD], ["optional", "○ FACULTATIFS", Ui.MUTED]]
-	for g in groups:
-		var list := sc.objectives.filter(func(o: Dictionary) -> bool: return o.def.get("kind", "main") == g[0] and o.state != "hidden")
-		if list.is_empty():
-			continue
-		_obj_box.add_child(Ui.label(g[1], 13, g[2], true))
-		for o in list:
-			var txt := str(o.def.name)
-			var col := Ui.TEXT
-			match str(o.state):
-				"done":
-					txt = "✔ " + txt
-					col = Ui.GREEN
-				"failed":
-					txt = "✖ " + txt
-					col = Ui.RED
-				_:
-					if str(o.text) != "":
-						txt += "  ·  " + str(o.text)
-			var l := Ui.label(txt, 14, col)
-			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			l.custom_minimum_size.x = 300
-			_obj_box.add_child(l)
-			if o.state == "active" and str(o.def.get("desc", "")) != "":
-				var dl := Ui.label(str(o.def.desc), 12, Ui.MUTED)
-				dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-				dl.custom_minimum_size.x = 300
-				_obj_box.add_child(dl)
-	for t in sc.shown_timers():
-		var left := int(ceilf(float(t[1])))
-		_obj_box.add_child(Ui.label("⏱ %s  %d:%02d" % [t[0], left / 60, left % 60], 15, Ui.GOLD, true))
-	return true
-
-
 ## Messages, alertes, objectifs annoncés, sons (actions des déclencheurs).
 func on_scenario_event(ev: Dictionary) -> void:
 	match str(ev.type):
@@ -619,43 +569,67 @@ func _boss_title_text(text: String) -> void:
 	_alert_time = 3.5
 
 
-## Objectifs bonus de la mission (sous le panneau des vagues).
+## Objectifs du scénario (◆ ◇ ○), chronos, puis objectifs bonus (train, convoi, bateau).
 func _update_objectives(w: GameWorld) -> void:
-	if _update_scenario(w):
-		return
-	var main_mission := w.mission != null and w.mission.type != "waves"
+	var sc := w.scenario
 	_wave_panel.visible = not _folded and (w.mission == null or w.mission.waves_enabled())
-	if w.objectives.is_empty() and not main_mission:
+	var bonus := w.objectives.filter(func(o: Dictionary) -> bool: return not o.get("main", false))
+	var has_scn: bool = sc != null and (sc.objectives.any(func(o: Dictionary) -> bool: return o.state != "hidden") or not sc.shown_timers().is_empty())
+	# Mission de défense classique sans rien d'autre : le panneau des vagues suffit.
+	var plain: bool = w.mission != null and w.mission.type == "waves" and sc != null and sc.objectives.size() == 1 \
+			and sc.objectives[0].def.get("tpl", false) and sc.shown_timers().is_empty()
+	if plain:
+		has_scn = false
+	if not has_scn and w.objectives.is_empty():
+		_obj_panel.visible = false
 		return
 	_obj_panel.visible = not _folded
-	var key := w.mission.objective_text(w) if main_mission else ""
+	var key := ""
+	if has_scn:
+		for o in sc.objectives:
+			key += "%s|%s|" % [o.state, o.text]
+		for t in sc.shown_timers():
+			key += "%s%d|" % [t[0], int(t[1])]
 	for o in w.objectives:
 		key += "%s%d|" % [o.state, o.destroyed]
 	if key == _obj_key:
 		return
-	# Annonce des changements d'état
-	for i in w.objectives.size():
-		var o: Dictionary = w.objectives[i]
-		var def: Dictionary = Balance.OBJECTIVES[o.type]
-		var prev: String = _obj_states[i] if i < _obj_states.size() else "pending"
-		if prev != o.state:
-			match o.state:
-				"active":
-					flash(("⚠ %s : la cible arrive !" if o.get("main", false) else "★ OBJECTIF BONUS : %s !") % def.name, Ui.GOLD)
-					Sfx.play("wave", -6.0)
-				"done":
-					flash("★ Cible détruite : +%d métal  +%d essence" % [def.metal, def.essence], Ui.GREEN)
-					Sfx.play("victory", -6.0)
-				"failed":
-					flash("La cible s'est échappée", Ui.RED)
-	_obj_states.assign(w.objectives.map(func(o: Dictionary) -> String: return o.state))
+	_announce_bonus(w)
 	_obj_key = key
 	for c in _obj_box.get_children():
 		c.queue_free()
-	if main_mission:
-		_obj_box.add_child(Ui.label("◆ MISSION : %s" % str(Mission.TYPE_NAMES[w.mission.type]).to_upper(), 13, Ui.CYAN, true))
-		_obj_box.add_child(Ui.label(w.mission.objective_text(w), 14, Ui.TEXT))
-	var bonus := w.objectives.filter(func(o: Dictionary) -> bool: return not o.get("main", false))
+	if has_scn:
+		var groups := [["main", "◆ OBJECTIFS", Ui.CYAN], ["secondary", "◇ SECONDAIRES", Ui.GOLD], ["optional", "○ FACULTATIFS", Ui.MUTED]]
+		for g in groups:
+			var list := sc.objectives.filter(func(o: Dictionary) -> bool: return o.def.get("kind", "main") == g[0] and o.state != "hidden")
+			if list.is_empty():
+				continue
+			_obj_box.add_child(Ui.label(g[1], 13, g[2], true))
+			for o in list:
+				var txt := str(o.def.name)
+				var col := Ui.TEXT
+				match str(o.state):
+					"done":
+						txt = "✔ " + txt
+						col = Ui.GREEN
+					"failed":
+						txt = "✖ " + txt
+						col = Ui.RED
+					_:
+						if str(o.text) != "":
+							txt += "  ·  " + str(o.text)
+				var l := Ui.label(txt, 14, col)
+				l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				l.custom_minimum_size.x = 300
+				_obj_box.add_child(l)
+				if o.state == "active" and str(o.def.get("desc", "")) != "":
+					var dl := Ui.label(str(o.def.desc), 12, Ui.MUTED)
+					dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+					dl.custom_minimum_size.x = 300
+					_obj_box.add_child(dl)
+		for t in sc.shown_timers():
+			var left := int(ceilf(float(t[1])))
+			_obj_box.add_child(Ui.label("⏱ %s  %d:%02d" % [t[0], left / 60, left % 60], 15, Ui.GOLD, true))
 	if not bonus.is_empty():
 		_obj_box.add_child(Ui.label("★ OBJECTIFS BONUS", 13, Ui.GOLD, true))
 	for o in bonus:
@@ -675,6 +649,25 @@ func _update_objectives(w: GameWorld) -> void:
 				txt = "✖ " + txt
 				col = Ui.RED
 		_obj_box.add_child(Ui.label(txt, 13, col))
+
+
+## Annonce des changements d'état des véhicules (bonus, et convois de la mission « Attaque de convois »).
+func _announce_bonus(w: GameWorld) -> void:
+	for i in w.objectives.size():
+		var o: Dictionary = w.objectives[i]
+		var def: Dictionary = Balance.OBJECTIVES[o.type]
+		var prev: String = _obj_states[i] if i < _obj_states.size() else "pending"
+		if prev != o.state:
+			match o.state:
+				"active":
+					flash(("⚠ %s : la cible arrive !" if o.get("main", false) else "★ OBJECTIF BONUS : %s !") % def.name, Ui.GOLD)
+					Sfx.play("wave", -6.0)
+				"done":
+					flash("★ Cible détruite : +%d métal  +%d essence" % [def.metal, def.essence], Ui.GREEN)
+					Sfx.play("victory", -6.0)
+				"failed":
+					flash("La cible s'est échappée", Ui.RED)
+	_obj_states.assign(w.objectives.map(func(o: Dictionary) -> String: return o.state))
 
 
 func _process(delta: float) -> void:

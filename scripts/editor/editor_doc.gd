@@ -24,6 +24,8 @@ var difficulty := 1.0
 var interval := 30.0
 var objectives: Array = []
 var scenario: Dictionary = {}
+## Vrai si l'ouverture a généré les objectifs du modèle (mission d'une ancienne version).
+var converted := false
 var path := ""
 var next_id := 1
 
@@ -102,6 +104,11 @@ func migrate() -> void:
 		if str(e.get("name", "")) == "":
 			e.name = unique_name(base_name(e), e.id)
 	renumber_waypoints()
+	# Missions d'avant les modèles : le type de mission génère ses objectifs et déclencheurs.
+	if not MissionTemplates.has_template(scenario) and scenario.get("objectives", []).is_empty() \
+			and str(scenario.get("rules", {}).get("victory", "objectives")) != "manual":
+		scenario = MissionTemplates.ensure(scenario, mission, entities)
+		converted = true
 
 
 # --- Grille -------------------------------------------------------------------------------

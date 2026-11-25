@@ -50,6 +50,7 @@ func _init() -> void:
 	_test_editor_core()
 	_test_object_sheet()
 	_test_scenario()
+	_test_templates()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -903,7 +904,7 @@ func _test_missions() -> void:
 	_check(u.hp < u.max_hp, "la tourelle ennemie tire sur l'unité à portée")
 	var guard := w.enemies.filter(func(e: Enemy) -> bool: return e.type == "normal")
 	_check(not guard.is_empty() and guard[0].pos.distance_to(Vector2(18.5, 8.5)) < 9.0, "le garde reste près de son poste")
-	_check(w.mission.result(w) == "", "mission en cours tant que la base ennemie tient")
+	_check(w.scenario.result() == "" and w.state == GameWorld.State.PLAYING, "mission en cours tant que la base ennemie tient")
 	for e in w.enemies:
 		if e.type == "e_hq":
 			e.hp = 0
@@ -1330,3 +1331,53 @@ func _test_scenario() -> void:
 	var copy := _scn_world(w3.scenario.data, [])
 	copy.scenario.apply_net_state(w3.scenario.net_state())
 	_check(copy.scenario.objectives[0].state == "done", "état des objectifs transmis au 2e joueur")
+
+
+func _test_templates() -> void:
+	print("Modèles de mission")
+	for t in Mission.TYPES:
+		var gen := MissionTemplates.build({"type": t}, [])
+		_check(not gen.objectives.is_empty() and gen.objectives.all(func(o: Dictionary) -> bool: return o.tpl and str(o.id) != ""), "modèle %s : objectifs générés" % t)
+		var w := _mission_world({"type": t}, [])
+		_check(not w.scenario.objectives.is_empty(), "modèle %s : la partie tourne sur le scénario" % t)
+	# Bâtiment à défendre : objectif ajouté au modèle
+	var gd := MissionTemplates.build({"type": "survive"}, [{"kind": "defend", "type": "barracks", "cell": [1, 1]}])
+	_check(gd.objectives.any(func(o: Dictionary) -> bool: return o.type == "protect"), "bâtiment à défendre = objectif Défendre")
+	# Objectifs perso sans « défendre » : il est ajouté quand même
+	var own := {"objectives": [{"id": "a", "name": "A", "kind": "main", "type": "survive_time", "time": 5.0}]}
+	var ens := MissionTemplates.ensure(own, {"type": "waves"}, [{"kind": "defend", "type": "barracks", "cell": [1, 1]}])
+	_check(ens.objectives.size() == 2 and own.objectives.size() == 1, "défendre ajouté aux objectifs perso, sans modifier l'original")
+	_check(MissionTemplates.ensure({"rules": {"victory": "manual"}}, {"type": "waves"}, []).get("objectives", []).is_empty(), "victoire manuelle : pas de modèle imposé")
+	# Régénération : garde les ajouts manuels
+	var sc := MissionTemplates.ensure({}, {"type": "survive", "time": 300}, [])
+	sc.objectives.append({"id": "mine", "name": "Perso", "type": "collect", "kind": "optional"})
+	MissionTemplates.regenerate(sc, {"type": "capture"}, [])
+	_check(sc.objectives.size() == 2 and sc.objectives[0].type == "capture" and sc.objectives[1].id == "mine", "changer de type remplace le modèle, garde le reste")
+	_check(not sc.triggers.any(func(t: Dictionary) -> bool: return t.name == "Dernière minute"), "et ses déclencheurs")
+	# Survie : la durée suit l'onglet Mission
+	var ws := _mission_world({"type": "survive", "time": 12, "waves_enabled": false}, [])
+	_run(ws, 6.0)
+	_check(ws.state == GameWorld.State.PLAYING and str(ws.scenario.objectives[0].text) in ["0:06", "0:07"], "survie : chrono lu dans l'onglet Mission")
+	_run(ws, 7.0)
+	_check(ws.state == GameWorld.State.WON, "survie : victoire")
+	# Défense : continuer en infini ne relance pas la victoire
+	var wv := _mission_world({"type": "waves"}, [])
+	wv.waves.wave = wv.waves.total
+	_run(wv, 0.1)
+	_check(wv.state == GameWorld.State.WON, "défense : vagues finies = victoire")
+	wv.continue_infinite()
+	_run(wv, 1.0)
+	_check(wv.state == GameWorld.State.PLAYING, "mode infini : la partie continue")
+	# Convois ennemis : trop de convois échappés = défaite
+	var wc := _mission_world({"type": "convoy", "convoy_count": 2, "convoy_need": 2}, [])
+	wc.objectives[0].state = "failed"
+	_run(wc, 0.1)
+	_check(wc.state == GameWorld.State.LOST, "convois : un convoi échappé sur 2 requis = défaite")
+	# Briefing
+	_check(_mission_world({"type": "destroy_base"}, []).scenario.brief_text().begins_with("◆ Détruire"), "briefing : objectifs du modèle")
+	# Campagne : toutes les cartes ont des objectifs
+	for i in range(1, 8):
+		var m := MapData.load_from("res://maps/map_%02d.gd" % i)
+		var wm := GameWorld.new(MapLoader.from_layout(m.LAYOUT), {"mission": m.mission, "entities": m.entities, "scenario": m.scenario})
+		_check(not wm.scenario.objectives.is_empty(), "campagne carte %d : objectifs du nouveau moteur" % i)
+

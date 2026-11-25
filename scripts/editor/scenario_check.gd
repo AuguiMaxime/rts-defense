@@ -4,8 +4,8 @@ extends RefCounted
 
 ## Paramètres obligatoires (vide = -1 ou []) par élément.
 const REQUIRED := {
-	"objective": {"hold": ["zone"], "prevent": ["zone"], "reach": ["zone"], "escort": ["obj", "zone"], "route": ["zones"],
-			"capture": ["zones"], "control": ["zones"], "interact": ["targets"], "compound": ["children"]},
+	"objective": {"hold": ["zone"], "prevent": ["zone"], "reach": ["zone"], "route": ["zones"],
+			"control": ["zones"], "interact": ["targets"], "compound": ["children"]},
 	"event": {"enter_zone": ["zone"], "leave_zone": ["zone"], "spotted": ["obj"]},
 	"action": {"activate": ["obj"], "remove": ["obj"], "move": ["obj", "zone"], "heal": ["obj"], "immobilize": ["obj"], "build": ["zone"],
 			"destroy": ["obj"], "behavior": ["obj"], "door_open": ["obj"], "door_close": ["obj"], "marker": ["obj"],
@@ -35,6 +35,13 @@ static func check(doc: EditorDoc) -> Array:
 				errors.append("%s : objectif lié introuvable" % where)
 		if o.get("type", "") == "destroy" and o.get("what", "targets") == "targets" and o.get("targets", []).is_empty():
 			errors.append("%s : choisis les objets à détruire" % where)
+		if o.get("type", "") == "escort":
+			if int(o.get("obj", -1)) < 0 and not _has(doc, "vip", ""):
+				errors.append("%s : aucune unité escortée (pose un VIP ou choisis une unité)" % where)
+			if int(o.get("zone", -1)) < 0 and not _has(doc, "zone", "goal"):
+				errors.append("%s : aucune destination (pose une zone d'arrivée ou choisis une zone)" % where)
+		if o.get("type", "") == "capture" and o.get("zones", []).is_empty() and not _has(doc, "zone", "capture"):
+			errors.append("%s : aucune zone de prise sur la carte" % where)
 		if o.get("type", "") == "condition":
 			_check_cond(ctx, where, o.get("cond", {}))
 		if str(o.get("start", "visible")) == "hidden":
@@ -92,6 +99,10 @@ static func check(doc: EditorDoc) -> Array:
 			and not bool(rules.get("defeat_main_failed", true)) and not actions_all.any(func(a: Dictionary) -> bool: return a.get("type", "") == "defeat"):
 		warns.append("Aucune condition de défaite : la mission ne peut pas être perdue")
 	return [errors, warns]
+
+
+static func _has(doc: EditorDoc, kind: String, role: String) -> bool:
+	return doc.entities.any(func(e: Dictionary) -> bool: return e.kind == kind and (role == "" or str(e.get("role", "")) == role))
 
 
 static func _uses(all: String, id: int) -> bool:

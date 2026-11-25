@@ -137,7 +137,7 @@ func _init(g: GameGrid, config := {}) -> void:
 			if not spots.is_empty():
 				_spawn_worker(spots[randi() % spots.size()])
 	mission.setup(self)
-	scenario = Scenario.new(config.get("scenario", {}))
+	scenario = Scenario.new(MissionTemplates.ensure(config.get("scenario", {}), config.get("mission", {}), config.get("entities", [])))
 	scenario.setup(self)
 
 
@@ -188,12 +188,7 @@ func tick(delta: float) -> void:
 		if scenario.defeat_on_base():
 			state = State.LOST
 			return
-	var res := scenario.result()
-	if res == "" and not scenario.drives_result():
-		res = mission.result(self)
-	elif mission.result(self) == "lost" and not mission.defend_ids.is_empty():
-		res = "lost" # un bâtiment à défendre détruit fait toujours perdre
-	match res:
+	match scenario.result():
 		"won":
 			state = State.WON
 		"lost":
@@ -204,6 +199,7 @@ func tick(delta: float) -> void:
 func continue_infinite() -> void:
 	waves.infinite = true
 	waves.timer = waves.interval
+	scenario.endless = true
 	state = State.PLAYING
 
 

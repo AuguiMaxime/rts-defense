@@ -208,6 +208,7 @@ func _duplicate() -> void:
 		return
 	var list := _items()
 	var c: Dictionary = list[i].duplicate(true)
+	c.erase("tpl")
 	if c.has("id"):
 		c.id = _new_id("o" if mode == "objectives" else "t", list)
 		c.name = str(c.name) + " (copie)"
@@ -297,12 +298,12 @@ func _row_text(it: Dictionary) -> String:
 	if mode == "objectives":
 		var mark: String = {"main": "◆", "secondary": "◇", "optional": "○"}.get(str(it.get("kind", "main")), "◆")
 		var hid := "  (caché)" if it.get("start", "visible") != "visible" else ""
-		return "%s %s%s" % [mark, it.get("name", ""), hid]
+		return "%s %s%s%s" % [mark, it.get("name", ""), hid, "  · modèle" if it.get("tpl", false) else ""]
 	if view == "variables":
 		return "%s  ·  %s = %s" % [it.name, _label_of(ScenarioDefs.VAR_TYPES, str(it.get("type", "int"))), str(it.get("value", ""))]
 	var ev: Dictionary = it.get("event", {})
 	var lbl: String = ScenarioDefs.EVENTS.get(str(ev.get("type", "")), {}).get("label", "?")
-	return "%s  ·  QUAND %s · %d action%s" % [it.get("name", ""), lbl.to_lower(), it.get("actions", []).size(), "s" if it.get("actions", []).size() > 1 else ""]
+	return "%s%s  ·  QUAND %s · %d action%s" % [it.get("name", ""), " (modèle)" if it.get("tpl", false) else "", lbl.to_lower(), it.get("actions", []).size(), "s" if it.get("actions", []).size() > 1 else ""]
 
 
 static func _label_of(items: Array, key: String) -> String:

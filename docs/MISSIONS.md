@@ -91,6 +91,12 @@ Clic droit sur un objet du catalogue : l'ajoute aux **★ Favoris** (ou l'en ret
 
 Pour chaque type, l'onglet Mission rappelle quoi poser et propose un bouton raccourci (POSER LA BASE ENNEMIE, TRACER LE TRAJET, POSER LE BÂTIMENT À DÉFENDRE…).
 
+**Chaque type est un modèle.** Choisir un type génère ses objectifs (et quelques déclencheurs), marqués « modèle » dans les onglets Objectifs et Événements. Tu peux les modifier, en ajouter, en supprimer :
+- les objectifs du modèle visent la carte de façon générique (« le VIP », « la zone d'arrivée », « les zones de prise », « la durée de l'onglet Mission ») : poser ou déplacer ces objets ne casse rien ;
+- changer de type remplace les objectifs du modèle et **garde tes ajouts** ; **Régénérer le modèle** remet ceux d'origine ;
+- poser un **bâtiment à défendre** ajoute l'objectif « Défendre les bâtiments » (détruit = défaite) ;
+- les missions d'une ancienne version et les 7 cartes de la campagne sont converties automatiquement à l'ouverture.
+
 - **VAGUES ENNEMIES : OUI/NON** active ou coupe les vagues. Leur nombre, leur difficulté et leur intervalle se règlent à droite.
 - Le **briefing** s'affiche au lancement de la mission.
 - Les **objectifs bonus** (train, convoi, bateau) se combinent avec n'importe quel type de mission.

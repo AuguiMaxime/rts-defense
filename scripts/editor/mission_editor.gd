@@ -194,6 +194,8 @@ func _load_doc(d: EditorDoc) -> void:
 	after_change()
 	_refresh_view()
 	fit_camera.call_deferred()
+	if doc.converted and doc.path != "":
+		_toast("Mission convertie : les objectifs du type « %s » ont été générés (onglet Objectifs)" % Mission.TYPE_NAMES.get(str(doc.mission.get("type", "waves")), ""))
 
 
 func after_change() -> void:

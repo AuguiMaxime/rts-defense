@@ -39,9 +39,8 @@ func has_content() -> bool:
 	return not data.get("objectives", []).is_empty() or not data.get("triggers", []).is_empty()
 
 
-## La mission se gagne / se perd par les objectifs et déclencheurs (sinon : règles du type de mission).
-func drives_result() -> bool:
-	return not data.get("objectives", []).is_empty() or str(_rules().get("victory", "objectives")) == "manual"
+## Après une victoire, la partie peut continuer en vagues infinies : plus de nouvelle victoire.
+var endless := false
 
 
 func _rules() -> Dictionary:
@@ -685,8 +684,14 @@ func _progress(o: Dictionary, delta: float) -> String:
 			for id in ids:
 				if obj(id) == null and not w.mission.absent.has(_eid(id)):
 					return "failed"
-			if ids.is_empty() and w.base_hp <= 0:
-				return "failed"
+			if ids.is_empty():
+				# La base et les bâtiments « à défendre » posés sur la carte.
+				if w.base_hp <= 0:
+					return "failed"
+				for sid in w.mission.defend_ids:
+					var s := w.site_by_id(sid)
+					if s == null or not s.alive:
+						return "failed"
 			var t := float(d.get("time", 0.0))
 			if t > 0.0:
 				var left := maxf(0.0, t - (w.time - float(o.t0)))
@@ -695,7 +700,10 @@ func _progress(o: Dictionary, delta: float) -> String:
 			o.text = ""
 			return ""
 		"survive_time":
-			var left := maxf(0.0, float(d.get("time", 300.0)) - (w.time - float(o.t0)))
+			var dur := float(d.get("time", 300.0))
+			if dur <= 0.0:
+				dur = float(w.mission.data.get("time", 300.0))
+			var left := maxf(0.0, dur - (w.time - float(o.t0)))
 			o.text = _clock(left)
 			return "done" if left <= 0.0 else ""
 		"survive_waves":
@@ -759,29 +767,47 @@ func _progress(o: Dictionary, delta: float) -> String:
 				return "failed"
 			return "done" if o.cur >= need else ""
 		"escort":
-			var u: Variant = obj(d.get("obj", -1))
-			if u == null:
-				return "" if w.mission.absent.has(_eid(d.get("obj", -1))) else "failed"
-			var z := zone(d.get("zone", -1))
+			var oid := _eid(d.get("obj", -1))
+			var u: Variant = obj(oid) if oid >= 0 else w.mission.vip
+			if u == null or (u is Unit and not (u as Unit).alive):
+				if oid < 0:
+					if w.mission.vip == null and not w.mission.absent.values().any(func(e: Dictionary) -> bool: return e.kind == "vip"):
+						return "" # pas de VIP sur la carte
+					if w.mission.vip == null:
+						return "" # VIP absent au départ
+				return "" if w.mission.absent.has(oid) else "failed"
+			var z := zone(d.get("zone", -1)) if _eid(d.get("zone", -1)) >= 0 else _goal_zone()
 			o.text = ""
 			return "done" if not z.is_empty() and GameWorld.obj_pos(u).distance_to(z.pos) <= z.radius else ""
 		"convoys":
 			var n := w.mission.convoys.filter(func(c: Dictionary) -> bool: return c.state == "arrived").size()
 			var lost := w.mission.convoys.filter(func(c: Dictionary) -> bool: return c.state == "dead").size()
 			var need := int(d.get("count", 1))
+			if need <= 0:
+				need = mini(int(w.mission.data.get("convoy_need", w.mission.convoy_total)), w.mission.convoy_total)
 			o.cur = n
 			o.need = need
 			o.text = "%d / %d arrivés" % [n, need]
+			var waiting := w.mission.convoys.filter(func(c: Dictionary) -> bool: return c.state == "wait")
+			if not waiting.is_empty() and not w.mission.convoys.any(func(c: Dictionary) -> bool: return c.state == "go"):
+				o.text += " · départ dans %d s" % int(ceilf(maxf(0.0, float(waiting[0].at) - w.time)))
 			if n >= need:
 				return "done"
 			return "failed" if w.mission.convoy_total - lost < need and w.mission.convoy_total > 0 else ""
 		"convoys_destroyed":
-			var n := w.objectives.filter(func(x: Dictionary) -> bool: return x.get("main", false) and x.state == "done").size()
+			var main := w.objectives.filter(func(x: Dictionary) -> bool: return x.get("main", false))
+			var n := main.filter(func(x: Dictionary) -> bool: return x.state == "done").size()
+			var failed := main.filter(func(x: Dictionary) -> bool: return x.state == "failed").size()
+			var total := w.mission.convoy_total
 			var need := int(d.get("count", 1))
+			if need <= 0:
+				need = int(w.mission.data.get("convoy_need", total))
 			o.cur = n
 			o.need = need
 			o.text = "%d / %d détruits" % [n, need]
-			return "done" if n >= need else ""
+			if n >= need and need > 0:
+				return "done"
+			return "failed" if total > 0 and total - failed < need else ""
 		"route":
 			var zs: Array = d.get("zones", [])
 			var step := int(o.step)
@@ -796,9 +822,19 @@ func _progress(o: Dictionary, delta: float) -> String:
 		"capture":
 			var zs: Array = d.get("zones", [])
 			var need := int(d.get("need", 0))
+			var t := float(d.get("time", 10.0))
+			if zs.is_empty() or t <= 0.0:
+				# Modèle « Prise de position » : les zones de prise de la carte, chacune avec sa propre durée.
+				var caps := w.mission.zones.filter(func(z: Dictionary) -> bool: return z.role == "capture" and (zs.is_empty() or zs.has(z.eid) or zs.has(float(z.eid))))
+				var got := caps.filter(func(z: Dictionary) -> bool: return z.captured).size()
+				if need <= 0 or need > caps.size():
+					need = caps.size()
+				o.cur = got
+				o.need = need
+				o.text = "%d / %d positions" % [got, need]
+				return "done" if need > 0 and got >= need else ""
 			if need <= 0 or need > zs.size():
 				need = zs.size()
-			var t := float(d.get("time", 10.0))
 			var who := _eid(d.get("obj", -1))
 			var done := 0
 			for zid in zs:
@@ -879,6 +915,13 @@ func _progress(o: Dictionary, delta: float) -> String:
 	return ""
 
 
+func _goal_zone() -> Dictionary:
+	for z in w.mission.zones:
+		if z.role == "goal":
+			return z
+	return {}
+
+
 func _is_inter(id: int) -> bool:
 	for list in [w.mission.terminals, w.mission.prisoners, w.mission.pickups, w.mission.doors]:
 		for x in list:
@@ -896,15 +939,32 @@ static func _clock(s: float) -> String:
 func result() -> String:
 	if forced != "":
 		return forced
-	if not drives_result():
-		return ""
 	var main := objectives.filter(func(o: Dictionary) -> bool: return o.def.get("kind", "main") == "main")
 	if bool(_rules().get("defeat_main_failed", true)) and main.any(func(o: Dictionary) -> bool: return o.state == "failed"):
 		return "lost"
-	if str(_rules().get("victory", "objectives")) == "objectives" and not main.is_empty() \
-			and main.all(func(o: Dictionary) -> bool: return o.state == "done"):
+	if endless:
+		return ""
+	if str(_rules().get("victory", "objectives")) == "objectives" and main.any(func(o: Dictionary) -> bool: return o.state == "done") \
+			and main.all(func(o: Dictionary) -> bool: return _satisfied(o)):
 		return "won"
 	return ""
+
+
+## Un objectif principal compte pour la victoire s'il est réussi, ou s'il s'agit de « défendre » ou
+## « empêcher » sans durée (il suffit de ne pas l'avoir échoué).
+func _satisfied(o: Dictionary) -> bool:
+	if o.state == "done":
+		return true
+	return o.state == "active" and str(o.def.type) in ["protect", "prevent"] and float(o.def.get("time", 0.0)) <= 0.0
+
+
+## Objectifs principaux visibles, pour le briefing.
+func brief_text() -> String:
+	var out: Array[String] = []
+	for o in objectives:
+		if o.state != "hidden" and o.def.get("kind", "main") == "main":
+			out.append("◆ " + str(o.def.name))
+	return "\n".join(out)
 
 
 # =============================================================================================

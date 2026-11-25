@@ -34,6 +34,7 @@ var _place: Button
 var _place_tool := ""
 var _brief: TextEdit
 var _loading := false
+var _tpl_label: Label
 var _settings_sep: Control
 var _settings_title: Control
 
@@ -57,6 +58,18 @@ func _init(editor) -> void:
 	_place = EditorUi.button("")
 	_place.pressed.connect(func() -> void: ed.start_place(_place_tool))
 	add_child(_place)
+	_tpl_label = EditorUi.muted("")
+	add_child(_tpl_label)
+	var th := EditorUi.hbox()
+	var see := EditorUi.button("Voir les objectifs", "Ouvre l'onglet Objectifs pour modifier ceux du modèle")
+	see.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	see.pressed.connect(func() -> void: ed.set_tab("objectives"))
+	th.add_child(see)
+	var regen := EditorUi.button("Régénérer le modèle", "Remplace les objectifs et déclencheurs du modèle par ceux d'origine. Tes ajouts sont conservés.")
+	regen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	regen.pressed.connect(_regenerate)
+	th.add_child(regen)
+	add_child(th)
 
 	_settings_sep = EditorUi.sep()
 	add_child(_settings_sep)
@@ -168,6 +181,12 @@ func refresh() -> void:
 	_interval.set_value_no_signal(ed.doc.interval)
 	for typ in _obj_buttons:
 		(_obj_buttons[typ] as Button).set_pressed_no_signal(ed.doc.objectives.any(func(o: Dictionary) -> bool: return o.type == typ))
+	var mine: Array = ed.doc.scenario.get("objectives", []).filter(func(o: Dictionary) -> bool: return o.get("tpl", false))
+	var lines: Array[String] = []
+	for o: Dictionary in mine:
+		lines.append(("◆ " if o.get("kind", "main") == "main" else "◇ ") + str(o.name))
+	_tpl_label.text = ("Objectifs du modèle :\n" + "\n".join(lines)) if not lines.is_empty() else \
+			"Objectifs personnalisés (aucun objectif du modèle). « Régénérer » les ajoute."
 	var h: Array = HINTS.get(t, ["", "", ""])
 	_hint.text = h[0]
 	_place.text = h[1]
@@ -185,8 +204,19 @@ func _set_mission(key: String, value: Variant) -> void:
 		ed.doc.mission[key] = value
 		if key == "type" and value == "waves":
 			ed.doc.mission.waves_enabled = true
-	ed.history.record("Mission : réglage", change)
+		if key == "type":
+			MissionTemplates.regenerate(ed.doc.scenario, ed.doc.mission, ed.doc.entities)
+	ed.history.record("Mission : type" if key == "type" else "Mission : réglage", change)
 	ed.after_change()
+	if key == "type":
+		ed._toast("Objectifs du modèle « %s » générés" % Mission.TYPE_NAMES[value])
+
+
+func _regenerate() -> void:
+	ed.history.record("Régénérer le modèle", func() -> void:
+		MissionTemplates.regenerate(ed.doc.scenario, ed.doc.mission, ed.doc.entities))
+	ed.after_change()
+	ed._toast("Objectifs du modèle régénérés")
 
 
 func _set_doc(key: String, value: float) -> void:

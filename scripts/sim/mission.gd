@@ -1,6 +1,8 @@
 class_name Mission
 extends RefCounted
-## Mission d'une carte : type, paramètres, entités posées dans l'éditeur, et règles de victoire.
+## Mission d'une carte : type, paramètres et entités posées dans l'éditeur (convois, VIP, zones,
+## objets interactifs…). La victoire et la défaite sont décidées par le scénario (objectifs et
+## déclencheurs) : chaque type génère les siens via MissionTemplates.
 ##
 ## Types :
 ##   waves          défense : survivre à toutes les vagues (et garder en vie les bâtiments à défendre)
@@ -560,100 +562,3 @@ func focus_targets(w: GameWorld) -> Array:
 		if s != null and s.alive:
 			out.append(s)
 	return out
-
-
-func _defend_lost(w: GameWorld) -> bool:
-	for id in defend_ids:
-		var s := w.site_by_id(id)
-		if s == null or not s.alive:
-			return true
-	return false
-
-
-## "won", "lost" ou "" tant que la mission continue (la perte de la base est gérée par le monde).
-func result(w: GameWorld) -> String:
-	if _defend_lost(w):
-		return "lost"
-	match type:
-		"waves":
-			if w.waves.finished() and not w.enemies.any(func(x: Enemy) -> bool: return not x.neutral and x.mode == "march"):
-				return "won"
-		"survive":
-			if w.time >= float(data.get("time", 300.0)):
-				return "won"
-		"destroy_base":
-			if not w.enemies.any(func(x: Enemy) -> bool: return x.type == "e_hq" and x.hp > 0):
-				return "won"
-		"convoy":
-			var main := w.objectives.filter(func(o: Dictionary) -> bool: return o.get("main", false))
-			var done := main.filter(func(o: Dictionary) -> bool: return o.state == "done").size()
-			var failed := main.filter(func(o: Dictionary) -> bool: return o.state == "failed").size()
-			var need := int(data.get("convoy_need", convoy_total))
-			if done >= need:
-				return "won"
-			if failed > convoy_total - need:
-				return "lost"
-		"escort":
-			if vip == null:
-				return ""
-			if not vip.alive:
-				return "lost"
-			for z in zones:
-				if z.role == "goal" and vip.pos.distance_to(z.pos) <= z.radius:
-					return "won"
-		"escort_defend":
-			if convoys.is_empty():
-				return ""
-			var need := mini(int(data.get("convoy_need", convoy_total)), convoy_total)
-			var arrived := convoys.filter(func(c: Dictionary) -> bool: return c.state == "arrived").size()
-			var dead := convoys.filter(func(c: Dictionary) -> bool: return c.state == "dead").size()
-			if arrived >= need:
-				return "won"
-			if dead > convoy_total - need:
-				return "lost"
-		"capture":
-			var caps := zones.filter(func(z: Dictionary) -> bool: return z.role == "capture")
-			if not caps.is_empty() and caps.all(func(z: Dictionary) -> bool: return z.captured):
-				return "won"
-	return ""
-
-
-## Texte de l'objectif principal (HUD).
-func objective_text(w: GameWorld) -> String:
-	var extra := ""
-	if not defend_ids.is_empty():
-		var names: Array[String] = []
-		for id in defend_ids:
-			var s := w.site_by_id(id)
-			if s != null:
-				names.append(str(Content.building(s.kind).name))
-		extra = "\nDéfendre : %s (détruit = défaite)" % ", ".join(names)
-	match type:
-		"waves":
-			return "Survivre aux %d vagues" % w.waves.total + extra
-		"survive":
-			var left := maxf(0.0, float(data.get("time", 300.0)) - w.time)
-			return "Tenir encore %d:%02d — base détruite = défaite" % [int(left) / 60, int(left) % 60] + extra
-		"destroy_base":
-			var n := w.enemies.filter(func(x: Enemy) -> bool: return x.type == "e_hq" and x.hp > 0).size()
-			return "Détruire la base ennemie (%d restante%s)" % [n, "s" if n > 1 else ""] + extra
-		"convoy":
-			var main := w.objectives.filter(func(o: Dictionary) -> bool: return o.get("main", false))
-			var done := main.filter(func(o: Dictionary) -> bool: return o.state == "done").size()
-			return "Détruire les convois : %d/%d" % [done, int(data.get("convoy_need", convoy_total))] + extra
-		"escort":
-			return "Amener l'unité escortée dans la zone d'arrivée" + extra
-		"escort_defend":
-			var arrived := convoys.filter(func(c: Dictionary) -> bool: return c.state == "arrived").size()
-			var need := mini(int(data.get("convoy_need", convoy_total)), convoy_total)
-			var txt := "Protéger le convoi allié : %d/%d arrivé%s" % [arrived, need, "s" if need > 1 else ""]
-			var waiting := convoys.filter(func(c: Dictionary) -> bool: return c.state == "wait")
-			if not waiting.is_empty() and not convoys.any(func(c: Dictionary) -> bool: return c.state == "go"):
-				var t := maxf(0.0, float(waiting[0].at) - w.time)
-				txt += "\nProchain départ dans %d s" % int(ceilf(t))
-			return txt + extra
-		"capture":
-			var caps := zones.filter(func(z: Dictionary) -> bool: return z.role == "capture")
-			var done := caps.filter(func(z: Dictionary) -> bool: return z.captured).size()
-			return "Prendre les positions : %d/%d" % [done, caps.size()] + extra
-	return extra.strip_edges()

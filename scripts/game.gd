@@ -90,7 +90,7 @@ func _ready() -> void:
 		$HUD.add_child(tb)
 	if world.mission.type != "waves" or str(world.mission.data.get("briefing", "")) != "":
 		if not coop:
-			hud.show_briefing(map_script.NAME, Mission.TYPE_NAMES[world.mission.type], str(world.mission.data.get("briefing", "")), world.mission.objective_text(world))
+			hud.show_briefing(map_script.NAME, Mission.TYPE_NAMES[world.mission.type], str(world.mission.data.get("briefing", "")), world.scenario.brief_text())
 	if level.id == 1 and not survival and not coop and not Save.data.get("tutorial_done", false):
 		tutorial = Tutorial.new()
 		tutorial.theme = Ui.theme
