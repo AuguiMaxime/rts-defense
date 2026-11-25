@@ -117,6 +117,7 @@ func _build_config() -> Dictionary:
 		"mission": {} if survival else map_script.mission,
 		"entities": [] if survival else map_script.entities,
 		"scenario": {} if survival else map_script.scenario,
+		"wave_plan": {} if survival else map_script.wave_plan,
 	}
 	var used: Array[String] = []
 	if Net.is_client():

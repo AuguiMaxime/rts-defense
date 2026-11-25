@@ -294,14 +294,19 @@ func _detect() -> void:
 	cur.control = control
 	# Vagues
 	var wave := w.waves.wave
-	if p.has("wave") and wave > int(p.wave):
-		_queue.append({"type": "wave_started", "n": wave})
+	if p.has("wave"):
+		for n in range(int(p.wave) + 1, wave + 1):
+			_queue.append({"type": "wave_started", "n": n, "id": w.waves.id_of(n)})
 	cur.wave = wave
 	var marching := w.enemies.any(func(e: Enemy) -> bool: return e.hp > 0 and not e.neutral and e.mode == "march")
 	var wave_live := wave > 0 and (marching or not w.waves.queue_empty())
-	if p.get("wave_live", false) and not wave_live:
-		_queue.append({"type": "wave_ended", "n": wave})
 	cur.wave_live = wave_live
+	# Une vague est éliminée quand plus aucun de ses ennemis n'est en jeu ni à venir.
+	var tags := w.waves.live_tags(w)
+	for t in p.get("tags", {}):
+		if not tags.has(t):
+			_queue.append({"type": "wave_ended", "n": t, "id": w.waves.id_of(t)})
+	cur.tags = tags
 	# Convois, VIP
 	var arrived := 0
 	var lost := 0
@@ -375,6 +380,8 @@ func _matches(ev: Dictionary, got: Dictionary) -> bool:
 		"building_built":
 			return ev.get("kind", "any") == "any" or ev.kind == got.kind
 		"wave_started", "wave_ended":
+			if str(ev.get("wave", "")) != "":
+				return str(ev.wave) == str(got.get("id", ""))
 			return int(ev.get("n", 0)) == 0 or int(ev.n) == int(got.n)
 		"objective_started", "objective_done", "objective_failed":
 			return str(ev.get("objective", "")) == "" or str(ev.objective) == str(got.objective)
@@ -563,6 +570,8 @@ func _leaf(c: Dictionary) -> bool:
 			return ScenarioDefs.compare(have, str(c.get("cmp", ">=")), value(c.get("value", 0)))
 		"wave":
 			return ScenarioDefs.compare(w.waves.wave, str(c.get("cmp", ">=")), value(c.get("value", 0)))
+		"enemies_left":
+			return ScenarioDefs.compare(w.waves.left, str(c.get("cmp", "<=")), value(c.get("value", 0)))
 		"players":
 			return ScenarioDefs.compare(2 if w.hq_site != null else 1, str(c.get("cmp", "==")), value(c.get("value", 1)))
 		"random":
@@ -1056,8 +1065,12 @@ func execute(a: Dictionary, ev := {}) -> void:
 				if e.mode == "attack_zone":
 					e.goal_pos = place_of(a.get("target", -1))
 		"wave_launch":
-			w.waves.timer = 0.0
 			w.waves.paused = false
+			w.waves.launch_id(str(a.get("wave", "")))
+		"wave_stop":
+			w.waves.stop(str(a.get("wave", "")))
+		"wave_speed":
+			w.waves.speed = clampf(float(value(a.get("factor", 2.0))), 0.1, 10.0)
 		"wave_pause":
 			w.waves.paused = true
 		"wave_resume":

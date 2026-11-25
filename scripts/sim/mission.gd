@@ -104,6 +104,7 @@ static func _cell_of(ent: Dictionary) -> Vector2i:
 func setup(w: GameWorld) -> void:
 	if not waves_enabled():
 		w.waves.timer = INF
+		w.waves.auto_on = false
 	elif type == "survive":
 		w.waves.infinite = true # les vagues continuent jusqu'à la fin du chrono
 	var waypoints: Array = []

@@ -55,7 +55,7 @@ func _init(g: Node) -> void:
 	var wave := EditorUi.button("Vague suivante", "Lance la vague suivante maintenant")
 	wave.pressed.connect(func() -> void:
 		game.world.waves.paused = false
-		game.world.waves.timer = 0.0)
+		game.world.waves.start_next())
 	row.add_child(wave)
 	var spawn := EditorUi.button("Faire apparaître 5", "5 ennemis au premier point d'apparition")
 	spawn.pressed.connect(_spawn_test)

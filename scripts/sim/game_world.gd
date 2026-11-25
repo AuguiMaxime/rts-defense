@@ -105,6 +105,7 @@ func _init(g: GameGrid, config := {}) -> void:
 	waves.total = config.get("waves", Balance.WAVE_COUNT)
 	waves.difficulty = config.get("difficulty", 1.0)
 	waves.interval = config.get("wave_interval", Balance.WAVE_INTERVAL)
+	waves.setup_plan(config.get("wave_plan", {}))
 	Research.levels = upgrades
 	Research.version += 1
 	for c in g.metal_deposits:
@@ -221,13 +222,14 @@ func take_events() -> Array[Dictionary]:
 	return e
 
 
-func spawn_enemy(type_name: String, cell: Vector2i, hp_scale: float) -> void:
+func spawn_enemy(type_name: String, cell: Vector2i, hp_scale: float) -> Enemy:
 	var at := Vector2(cell) + Vector2(0.5, 0.5) + Vector2(_rng.randf_range(-0.3, 0.3), _rng.randf_range(-0.3, 0.3))
 	var e := Enemy.create(type_name, at, hp_scale)
 	e.id = _next_enemy_id
 	_next_enemy_id += 1
 	e.visual_offset = Vector2(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.2, 0.2))
 	enemies.append(e)
+	return e
 
 
 # --- Objectifs bonus ------------------------------------------------------------

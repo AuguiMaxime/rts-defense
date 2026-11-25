@@ -51,6 +51,7 @@ func _init() -> void:
 	_test_object_sheet()
 	_test_scenario()
 	_test_templates()
+	_test_custom_waves()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -403,7 +404,7 @@ func _test_boss() -> void:
 	wm.difficulty = 0.5
 	wm.wave = 4
 	wm.start_next()
-	_check(wm._queue.back() == "boss", "le boss arrive en dernier et n'est pas retiré par la difficulté")
+	_check(wm._queue.back().t == "boss", "le boss arrive en dernier et n'est pas retiré par la difficulté")
 	var world := GameWorld.new(MapLoader.from_layout(TEST_MAP))
 	world.spawn_enemy("boss", Vector2i(0, 0), 1.0)
 	_check(world.boss() != null, "boss repéré pour la barre de vie")
@@ -1380,4 +1381,101 @@ func _test_templates() -> void:
 		var m := MapData.load_from("res://maps/map_%02d.gd" % i)
 		var wm := GameWorld.new(MapLoader.from_layout(m.LAYOUT), {"mission": m.mission, "entities": m.entities, "scenario": m.scenario})
 		_check(not wm.scenario.objectives.is_empty(), "campagne carte %d : objectifs du nouveau moteur" % i)
+
+
+func _wave_world(plan: Array, scn := {}, mission := {"type": "waves"}) -> GameWorld:
+	var rows := MISSION_MAP.strip_edges().split("\n")
+	rows[9] = rows[9].substr(0, 25) + "S"
+	var g := MapLoader.from_layout("\n".join(rows))
+	return GameWorld.new(g, {"mission": mission, "scenario": scn, "wave_plan": {"mode": "custom", "list": plan}})
+
+
+func _wave_def(id: String, start: String, delay: float, groups: Array, extra := {}) -> Dictionary:
+	var d := WaveManager.new_wave(id, id)
+	d.start = start
+	d.delay = delay
+	d.groups = groups
+	d.merge(extra, true)
+	return d
+
+
+func _test_custom_waves() -> void:
+	print("Vagues personnalisées")
+	var plan := [
+		_wave_def("w1", "auto", 2.0, [{"type": "normal", "count": 3, "spawn": "25,9"}]),
+		_wave_def("w2", "clear", 1.0, [{"type": "fast", "count": 2, "spawn": ""}, {"type": "boss", "count": 1, "spawn": "0,0", "escort": 2, "escort_type": "armored"}],
+				{"order": "simultaneous", "hp": 2.0}),
+		_wave_def("amb", "trigger", 0.0, [{"type": "normal", "count": 2, "spawn": "0,0"}], {"behavior": "aggressive"}),
+		_wave_def("rep", "trigger", 0.0, [{"type": "normal", "count": 1, "spawn": "0,0"}], {"repeat": 2, "every": 3.0}),
+	]
+	var scn := {"variables": [{"name": "fin", "type": "int", "value": 0}],
+		"triggers": [
+			{"id": "t1", "name": "Embuscade", "enabled": true, "once": true, "event": {"type": "wave_ended", "wave": "w1"},
+				"cond": {"op": "and", "items": []}, "actions": [{"type": "var_set", "var": "fin", "value": 1}, {"type": "wave_launch", "wave": "amb"}], "else": []}],
+		"objectives": [{"id": "o", "name": "Vagues", "kind": "main", "type": "survive_waves", "waves": 0}]}
+	var w := _wave_world(plan, scn)
+	_check(w.waves.custom() and w.waves.total == 6, "plan personnalisé : 6 lancements prévus (dont 2 répétitions)")
+	_run(w, 1.9)
+	_check(w.waves.wave == 0, "délai initial respecté")
+	_run(w, 0.3)
+	_check(w.waves.wave == 1 and w.waves.last_id == "w1", "vague 1 lancée après son délai")
+	_run(w, 3.0)
+	var e1 := w.enemies.filter(func(e: Enemy) -> bool: return e.wave_no == 1)
+	_check(e1.size() == 3 and e1.all(func(e: Enemy) -> bool: return e.pos.distance_to(Vector2(25.5, 9.5)) < 6.0), "3 ennemis au point d'apparition choisi")
+	_check(w.waves.left == 3, "compteur d'ennemis restants")
+	_run(w, 3.0)
+	_check(w.waves.wave == 1, "vague « éliminée » : attend que la précédente soit détruite")
+	for e in e1:
+		e.hp = 0
+	_run(w, 0.2)
+	_check(w.scenario.vars.get("fin") == 1 and w.waves.wave == 2 and w.waves.last_id == "amb", "vague éliminée → déclencheur → embuscade lancée")
+	_check(w.enemies.filter(func(e: Enemy) -> bool: return e.wave_no == 2).all(func(e: Enemy) -> bool: return e.mode == "aggressive"), "comportement de la vague appliqué")
+	_run(w, 1.1)
+	var e3 := w.enemies.filter(func(e: Enemy) -> bool: return e.wave_no == 3)
+	_check(w.waves.wave == 3 and e3.size() == 5, "vague 2 : groupes + escorte du boss (2 rapides, 1 boss, 2 blindés)")
+	_check(e3.filter(func(e: Enemy) -> bool: return e.type == "armored").size() == 2, "l'escorte suit son type")
+	var fast := e3.filter(func(e: Enemy) -> bool: return e.type == "fast")
+	_check(not fast.is_empty() and fast[0].max_hp == roundi(Balance.ENEMIES.fast.hp * 2.0), "PV × 2 appliqués")
+	# Répétition
+	w.scenario.execute({"type": "wave_launch", "wave": "rep"})
+	_run(w, 0.1)
+	_check(w.waves.wave == 4, "vague répétée : 1er lancement")
+	_run(w, 6.5)
+	_check(w.waves.wave == 6, "répétée 2 fois toutes les 3 s")
+	_check(not w.waves.has_more_waves(), "plus rien à lancer")
+	# Accélérer, suspendre, arrêter
+	var w2 := _wave_world([_wave_def("a", "auto", 10.0, [{"type": "normal", "count": 4}]), _wave_def("b", "auto", 10.0, [{"type": "normal", "count": 4}])])
+	w2.scenario.execute({"type": "wave_speed", "factor": 2.0})
+	_run(w2, 5.2)
+	_check(w2.waves.wave == 1, "accéléré x2 : 10 s de délai en 5 s")
+	w2.scenario.execute({"type": "wave_pause"})
+	var before := w2.enemies.size()
+	_run(w2, 3.0)
+	_check(w2.enemies.size() == before and w2.waves.wave == 1, "suspendu : plus d'apparitions ni de compte à rebours")
+	w2.scenario.execute({"type": "wave_resume"})
+	w2.scenario.execute({"type": "wave_stop", "wave": ""})
+	_run(w2, 20.0)
+	_check(w2.waves.wave == 1 and w2.waves.queue_empty() and not w2.waves.has_more_waves(), "arrêter toutes les vagues")
+	# Lancement par objectif
+	var w3 := _wave_world([_wave_def("x", "objective", 1.0, [{"type": "normal", "count": 1}], {"objective": "o2"})],
+			{"objectives": [{"id": "o2", "name": "T", "kind": "secondary", "type": "survive_time", "time": 2.0}]})
+	_run(w3, 2.5)
+	_check(w3.waves.wave == 0, "attend l'objectif + son délai")
+	_run(w3, 1.0)
+	_check(w3.waves.wave == 1, "vague lancée par un objectif réussi")
+	# Conversion du mode automatique
+	var conv := WaveManager.from_auto(10, 1.0, 30.0)
+	_check(conv.size() == 10 and conv[4].groups.any(func(g: Dictionary) -> bool: return g.type == "boss"), "conversion : 10 vagues, boss à la 5")
+	var n5 := 0
+	for g in conv[4].groups:
+		n5 += int(g.count)
+	_check(n5 == WaveManager.composition(5).size(), "conversion : même composition")
+	# Sauvegarde
+	var m := MapData.new()
+	m.wave_plan = {"mode": "custom", "list": plan, "spawn_names": {"25,9": "Est"}}
+	var p := "user://test_waves.json"
+	m.save_to(p)
+	var back := MapData.load_from(p)
+	_check(back.wave_plan.list.size() == 4 and back.wave_plan.spawn_names["25,9"] == "Est", "vagues et noms des apparitions sauvegardés")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
 

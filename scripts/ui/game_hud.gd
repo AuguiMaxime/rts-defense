@@ -683,16 +683,16 @@ func _process(delta: float) -> void:
 
 	var wv := w.waves
 	_wave_title.text = "VAGUE %d/%s" % [wv.wave, "∞" if wv.infinite else str(wv.total)]
-	_next_btn.visible = wv.has_more_waves()
-	if wv.has_more_waves():
-		var span := Balance.FIRST_WAVE_DELAY if wv.wave == 0 else wv.interval
-		_wave_bar.max_value = span
-		_wave_bar.value = span - wv.timer
-		_wave_detail.text = "Prochaine dans %d s  ·  %d ennemis" % [ceili(wv.timer), w.enemies.size()]
+	_next_btn.visible = wv.can_skip()
+	var counting := wv.can_skip() and wv.timer != INF and wv.auto_on
+	if counting:
+		_wave_bar.max_value = maxf(wv.span, 0.1)
+		_wave_bar.value = wv.span - wv.timer
+		_wave_detail.text = "%s dans %d s  ·  %d restants" % ["En pause" if wv.paused else "Prochaine", ceili(wv.timer), wv.left]
 	else:
 		_wave_bar.max_value = 1
 		_wave_bar.value = 1
-		_wave_detail.text = "Dernière vague  ·  %d ennemis" % w.enemies.size()
+		_wave_detail.text = ("Dernière vague  ·  %d restants" if not wv.has_more_waves() else "Vagues sur événement  ·  %d restants") % wv.left
 
 	_base_bar.max_value = w.max_base_hp
 	_base_bar.value = w.base_hp

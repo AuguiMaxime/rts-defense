@@ -39,7 +39,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 				s.hp, s.max_hp, s.level, s.aim_angle, s.beam_target.id if s.beam_target != null else -1, _prod(s.producer)])
 	return {
 		"r": [w.metal, w.essence, w.base_hp, w.max_base_hp, w.pop_cap, 0, w.kills, w.state, w.orbital_cooldown],
-		"v": [w.waves.wave, w.waves.total, w.waves.infinite, w.waves.timer, w.waves.interval],
+		"v": [w.waves.wave, w.waves.total, w.waves.infinite, w.waves.timer, w.waves.interval, w.waves.span, w.waves.left, w.waves.can_skip()],
 		"w": workers,
 		"u": units,
 		"dl": w.deposit_left,
@@ -72,6 +72,10 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 	w.waves.infinite = v[2]
 	w.waves.timer = v[3]
 	w.waves.interval = v[4]
+	if v.size() > 7:
+		w.waves.span = v[5]
+		w.waves.left = v[6]
+		w.waves.net_skip = 1 if v[7] else 0
 
 	# Ouvriers
 	var by_id := {}
