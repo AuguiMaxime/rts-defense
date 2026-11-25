@@ -23,6 +23,7 @@ var waves := 10
 var difficulty := 1.0
 var interval := 30.0
 var objectives: Array = []
+var scenario: Dictionary = {}
 var path := ""
 var next_id := 1
 
@@ -48,6 +49,7 @@ static func from_map(m: MapData) -> EditorDoc:
 	d.difficulty = m.difficulty
 	d.interval = m.interval
 	d.objectives = m.objectives.duplicate(true)
+	d.scenario = m.scenario.duplicate(true)
 	d.path = m.path
 	d.migrate()
 	return d
@@ -64,6 +66,7 @@ func to_map() -> MapData:
 	m.difficulty = difficulty
 	m.interval = interval
 	m.objectives = objectives.duplicate(true)
+	m.scenario = scenario.duplicate(true)
 	m.path = path
 	return m
 
@@ -280,7 +283,7 @@ func next_waypoint_order() -> int:
 func snapshot() -> Dictionary:
 	return {"rows": rows.duplicate(), "entities": entities.duplicate(true), "mission": mission.duplicate(true),
 			"waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives.duplicate(true),
-			"name": name, "ground": ground, "next_id": next_id}
+			"name": name, "ground": ground, "next_id": next_id, "scenario": scenario.duplicate(true)}
 
 
 func restore(s: Dictionary) -> void:
@@ -294,3 +297,4 @@ func restore(s: Dictionary) -> void:
 	name = s.name
 	ground = s.ground
 	next_id = s.next_id
+	scenario = s.get("scenario", {}).duplicate(true)

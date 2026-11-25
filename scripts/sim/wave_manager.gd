@@ -8,6 +8,7 @@ var infinite := false
 var interval := Balance.WAVE_INTERVAL # secondes entre deux vagues
 var difficulty := 1.0 # multiplie le nombre d'ennemis de chaque vague
 var timer := Balance.FIRST_WAVE_DELAY
+var paused := false # suspendu par un déclencheur
 
 var _queue: Array[String] = []
 var _spawn_timer := 0.0
@@ -64,7 +65,7 @@ func tick(delta: float, world: GameWorld) -> void:
 			world.spawn_enemy(_queue.pop_front(), spawns[_spawn_index % spawns.size()], hp_scale())
 			_spawn_index += 1
 			_spawn_timer = Balance.SPAWN_INTERVAL
-	if has_more_waves():
+	if has_more_waves() and not paused:
 		timer -= delta
 		if timer <= 0.0:
 			start_next()
@@ -98,6 +99,10 @@ func has_more_waves() -> bool:
 
 func hp_scale() -> float:
 	return 1.0 + Balance.WAVE_HP_GROWTH * (wave - 1)
+
+
+func queue_empty() -> bool:
+	return _queue.is_empty()
 
 
 ## Toutes les waves de la map ont été envoyées.

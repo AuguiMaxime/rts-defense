@@ -25,6 +25,8 @@ var objectives: Array = []
 ## Mission (voir Mission) et entités posées dans l'éditeur.
 var mission: Dictionary = {}
 var entities: Array = []
+## Scénario : objectifs, déclencheurs, variables, règles (voir Scenario).
+var scenario: Dictionary = {}
 var path := "" # fichier d'origine
 
 
@@ -47,6 +49,8 @@ static func load_from(p: String) -> MapData:
 			m.mission = script.MISSION.duplicate(true)
 		if consts.has("ENTITIES"):
 			m.entities = script.ENTITIES.duplicate(true)
+		if consts.has("SCENARIO"):
+			m.scenario = script.SCENARIO.duplicate(true)
 		return m
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
 	if not parsed is Dictionary:
@@ -62,6 +66,7 @@ static func load_from(p: String) -> MapData:
 	m.objectives = parsed.get("objectives", [])
 	m.mission = parsed.get("mission", {})
 	m.entities = parsed.get("entities", [])
+	m.scenario = parsed.get("scenario", {})
 	return m
 
 
@@ -82,7 +87,7 @@ func to_dict() -> Dictionary:
 		if line.strip_edges() != "":
 			rows.append(line.strip_edges())
 	return {"version": EditorDoc.VERSION, "name": NAME, "ground": GROUND, "waves": waves, "difficulty": difficulty, "interval": interval, "objectives": objectives,
-			"mission": mission, "entities": entities, "layout": rows}
+			"mission": mission, "entities": entities, "scenario": scenario, "layout": rows}
 
 
 func save_to(p: String) -> Error:

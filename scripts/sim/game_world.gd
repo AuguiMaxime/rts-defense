@@ -34,6 +34,11 @@ var deposit_left := {}
 var hq_site: BuildSite = null
 ## Mission (type, règles de victoire, entités posées dans l'éditeur).
 var mission: Mission
+## Objectifs, déclencheurs, variables (onglets Objectifs et Événements de l'éditeur).
+var scenario: Scenario
+## Outils de test (lancement depuis l'éditeur).
+var cheat_invincible := false
+var cheat_resources := false
 var time := 0.0 # secondes de jeu écoulées
 ## Recherches terminées : id -> niveau (partagé avec Research.levels).
 var upgrades := {}
@@ -132,6 +137,8 @@ func _init(g: GameGrid, config := {}) -> void:
 			if not spots.is_empty():
 				_spawn_worker(spots[randi() % spots.size()])
 	mission.setup(self)
+	scenario = Scenario.new(config.get("scenario", {}))
+	scenario.setup(self)
 
 
 # --- Avancement du temps -------------------------------------------------
@@ -143,6 +150,12 @@ func tick(delta: float) -> void:
 	waves.tick(delta, self)
 	_tick_objectives(delta)
 	mission.tick(self, delta)
+	scenario.tick(delta)
+	if cheat_resources:
+		metal = maxi(metal, 99999)
+		essence = maxi(essence, 99999)
+	if cheat_invincible:
+		base_hp = maxi(base_hp, 1)
 	if orbital_cooldown > 0.0:
 		orbital_cooldown = maxf(0.0, orbital_cooldown - delta)
 	var focus_dirty := _flow_dirty
@@ -172,13 +185,19 @@ func tick(delta: float) -> void:
 	_remove_dead()
 	if base_hp <= 0:
 		base_hp = 0
-		state = State.LOST
-	else:
-		match mission.result(self):
-			"won":
-				state = State.WON
-			"lost":
-				state = State.LOST
+		if scenario.defeat_on_base():
+			state = State.LOST
+			return
+	var res := scenario.result()
+	if res == "" and not scenario.drives_result():
+		res = mission.result(self)
+	elif mission.result(self) == "lost" and not mission.defend_ids.is_empty():
+		res = "lost" # un bâtiment à défendre détruit fait toujours perdre
+	match res:
+		"won":
+			state = State.WON
+		"lost":
+			state = State.LOST
 
 
 ## Reprend la partie après une victoire, en waves infinies.
@@ -1102,6 +1121,8 @@ func _tick_placed_enemy(e: Enemy, delta: float) -> void:
 		else:
 			_enemy_walk(e, e.home, delta)
 			return
+	if e.mode == "wait":
+		return # attend un déclencheur
 	# Comportement : point d'ancrage, distance de repérage, laisse.
 	var anchor := e.guard_pos
 	var aggro := e.attack_range + 4.0

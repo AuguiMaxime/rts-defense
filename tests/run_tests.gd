@@ -49,6 +49,7 @@ func _init() -> void:
 	_test_missions()
 	_test_editor_core()
 	_test_object_sheet()
+	_test_scenario()
 	print("RESULTAT : %s" % ("OK" if _failures == 0 else "%d echec(s)" % _failures))
 	quit(_failures)
 
@@ -1196,3 +1197,136 @@ func _test_object_sheet() -> void:
 	var copy := GameWorld.new(MapLoader.from_layout(MISSION_MAP), {"mission": {"type": "destroy_base"}, "entities": w3.mission.entities})
 	copy.mission.apply_inter_state(st)
 	_check(copy.mission.doors[1].open and copy.mission.prisoners[0].freed, "état des objets transmis au 2e joueur")
+
+
+func _scn_world(scn: Dictionary, ents: Array, mission := {"type": "destroy_base"}) -> GameWorld:
+	return GameWorld.new(MapLoader.from_layout(MISSION_MAP), {"mission": mission, "entities": ents, "scenario": scn})
+
+
+func _scn_events(w: GameWorld, t: String) -> Array:
+	return w.take_events().filter(func(e: Dictionary) -> bool: return e.type == t)
+
+
+func _test_scenario() -> void:
+	print("Scénario : objectifs, déclencheurs, variables")
+	var Z := {"kind": "zone", "role": "trigger", "cell": [15, 5], "radius": 2.0, "id": 50, "name": "Pont"}
+	# Déclencheurs : début, message, variable, entrée en zone, SINON, attente
+	var scn := {
+		"variables": [{"name": "vies", "type": "int", "value": 3}],
+		"triggers": [
+			{"id": "t1", "name": "Intro", "once": true, "event": {"type": "start"}, "cond": {}, "actions": [
+				{"type": "message", "speaker": "QG", "text": "Il reste {vies} vies", "seconds": 4.0},
+				{"type": "wait", "seconds": 1.0},
+				{"type": "var_add", "var": "vies", "value": 2}]},
+			{"id": "t2", "name": "Embuscade", "once": true, "event": {"type": "enter_zone", "zone": 50, "who": "player"},
+				"cond": {"op": "and", "items": [{"type": "var", "var": "vies", "cmp": ">=", "value": 5}]},
+				"actions": [{"type": "spawn", "team": "enemy", "enemy_type": "normal", "count": 4, "zone": 50, "behavior": "aggressive"}],
+				"else": [{"type": "notify", "text": "raté"}]},
+			{"id": "t3", "name": "Boucle", "once": false, "event": {"type": "var_changed", "var": "boucle"}, "cond": {},
+				"actions": [{"type": "var_add", "var": "boucle", "value": 1}]},
+			{"id": "t4", "name": "Relance", "once": true, "event": {"type": "time", "seconds": 0.5}, "cond": {},
+				"actions": [{"type": "var_set", "var": "boucle", "value": 1}]},
+		]}
+	var w := _scn_world(scn, [Z, {"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9}])
+	w.tick(0.1)
+	var msgs := _scn_events(w, "scn_message")
+	_check(msgs.size() == 1 and msgs[0].text == "Il reste 3 vies", "QUAND début → message avec variable")
+	_check(int(w.scenario.vars.vies) == 3, "l'action après « Attendre 1 s » n'est pas encore jouée")
+	_run(w, 1.2)
+	_check(int(w.scenario.vars.vies) == 5, "puis elle s'exécute")
+	var foes := w.enemies.size()
+	var u := _add_unit(w, "soldier", Vector2(15.5, 5.5))
+	u.order = Unit.Order.HOLD
+	_run(w, 0.3)
+	_check(w.enemies.size() == foes + 4, "QUAND une unité entre dans la zone, SI vies ≥ 5 → 4 ennemis créés")
+	_run(w, 3.0)
+	_check(int(w.scenario.vars.get("boucle", 0)) > 1 and w.state == GameWorld.State.PLAYING, "un déclencheur qui se relance lui-même ne bloque pas le jeu")
+	# SINON
+	var w2 := _scn_world({"triggers": [{"id": "a", "name": "A", "event": {"type": "start"}, "cond": {"op": "and", "items": [{"type": "time", "cmp": ">", "value": 100}]},
+		"actions": [{"type": "notify", "text": "oui"}], "else": [{"type": "notify", "text": "non"}]}]}, [{"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9}])
+	w2.tick(0.1)
+	var nt := _scn_events(w2, "scn_notify")
+	_check(nt.size() == 1 and nt[0].text == "non", "condition fausse → SINON")
+	# Objectifs : détruire, enchaînement, récompense, victoire
+	var o_scn := {"objectives": [
+		{"id": "o1", "name": "Détruire les tourelles", "kind": "main", "start": "visible", "type": "destroy", "what": "targets", "targets": [11, 12], "count": 0, "reward": {"metal": 300}},
+		{"id": "o2", "name": "Raser la base", "kind": "main", "start": "after", "after": ["o1"], "type": "destroy", "what": "bases"},
+		{"id": "o3", "name": "Bonus", "kind": "secondary", "start": "visible", "type": "survive_time", "time": 2.0, "deadline": 0.0},
+	]}
+	var w3 := _scn_world(o_scn, [
+		{"kind": "structure", "type": "e_tower_gun", "cell": [15, 1], "id": 11},
+		{"kind": "structure", "type": "e_tower_gun", "cell": [18, 1], "id": 12},
+		{"kind": "structure", "type": "e_hq", "cell": [22, 6], "id": 9}])
+	w3.tick(0.1)
+	_check(w3.scenario.objectives[1].state == "hidden" and w3.scenario.objectives[0].text == "0 / 2", "objectif suivant caché, progression 0 / 2")
+	var m0 := w3.metal
+	w3.find_by_eid(11).hp = 0
+	w3.find_by_eid(12).hp = 0
+	_run(w3, 0.3)
+	_check(w3.scenario.objectives[0].state == "done" and w3.scenario.objectives[1].state == "active", "objectif réussi → le suivant se révèle")
+	_check(w3.metal >= m0 + 300, "récompense versée")
+	_check(w3.state == GameWorld.State.PLAYING, "pas de victoire tant qu'un objectif principal reste")
+	w3.find_by_eid(9).hp = 0
+	_run(w3, 0.3)
+	_check(w3.state == GameWorld.State.WON, "tous les objectifs principaux réussis → victoire")
+	# Échecs : délai, objet à protéger, secondaire sans défaite
+	var w4 := _scn_world({"objectives": [
+		{"id": "p", "name": "Protéger", "kind": "main", "type": "protect", "targets": [5], "time": 0.0},
+		{"id": "s", "name": "Vite", "kind": "secondary", "type": "survive_time", "time": 99.0, "deadline": 1.0}]},
+		[{"kind": "ally_tower", "type": "gun", "cell": [12, 4], "id": 5}, {"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9}])
+	_run(w4, 1.5)
+	_check(w4.scenario.objectives[1].state == "failed" and w4.state == GameWorld.State.PLAYING, "objectif secondaire hors délai : échoué, mission continue")
+	w4.find_by_eid(5).hp = 0
+	_run(w4, 0.3)
+	_check(w4.state == GameWorld.State.LOST, "objet à protéger détruit → défaite")
+	# Capture X sur Y, atteindre + extraction, combinaison, collecte
+	var w5 := _scn_world({"objectives": [
+		{"id": "c", "name": "Capturer", "kind": "main", "type": "capture", "zones": [60, 61, 62], "need": 2, "time": 1.0},
+		{"id": "x", "name": "Extraire", "kind": "secondary", "type": "reach", "zone": 63, "who": "player", "count": 1, "extract": true},
+		{"id": "k", "name": "Au moins un", "kind": "secondary", "type": "compound", "children": ["x", "c"], "mode": "atleast", "n": 1}]},
+		[{"kind": "zone", "role": "capture", "cell": [10, 1], "radius": 1.5, "id": 60},
+		{"kind": "zone", "role": "capture", "cell": [14, 1], "radius": 1.5, "id": 61},
+		{"kind": "zone", "role": "capture", "cell": [18, 1], "radius": 1.5, "id": 62},
+		{"kind": "zone", "role": "extraction", "cell": [10, 8], "radius": 1.5, "id": 63},
+		{"kind": "structure", "type": "e_hq", "cell": [22, 6], "id": 9}])
+	for cx in [10, 14]:
+		var s := _add_unit(w5, "soldier", Vector2(cx + 0.5, 1.5))
+		s.order = Unit.Order.HOLD
+	var ex := _add_unit(w5, "soldier", Vector2(10.5, 8.5))
+	ex.order = Unit.Order.HOLD
+	_run(w5, 0.5)
+	_check(not ex.alive and w5.scenario.objectives[1].state == "done", "extraction : l'unité quitte la carte, objectif réussi")
+	_check(w5.scenario.objectives[2].state == "done", "combinaison « au moins 1 » réussie")
+	_run(w5, 1.0)
+	_check(w5.state == GameWorld.State.WON, "2 zones sur 3 capturées → victoire")
+	# Règles : base détruite sans défaite, victoire par action
+	var w6 := _scn_world({"rules": {"defeat_base": false, "victory": "manual"}, "triggers": [
+		{"id": "v", "name": "Fin", "event": {"type": "base_destroyed"}, "actions": [{"type": "wait", "seconds": 0.5}, {"type": "victory", "text": "Bravo"}]}]},
+		[{"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9}])
+	w6.base_hp = 0
+	_run(w6, 0.2)
+	_check(w6.state == GameWorld.State.PLAYING, "règle : base détruite sans défaite")
+	_run(w6, 0.6)
+	_check(w6.state == GameWorld.State.WON and w6.scenario.end_text == "Bravo", "action Victoire")
+	# Objet absent puis activé, ennemi en attente réveillé
+	var w7 := _scn_world({"triggers": [{"id": "r", "name": "Renforts", "event": {"type": "time", "seconds": 1.0}, "actions": [
+		{"type": "activate", "obj": 30}, {"type": "activate", "obj": 31}]}]},
+		[{"kind": "enemy", "type": "normal", "cell": [12, 2], "id": 30, "absent": true},
+		{"kind": "enemy", "type": "normal", "cell": [14, 2], "id": 31, "behavior": "wait"},
+		{"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9}])
+	_check(w7.find_by_eid(30) == null and w7.find_by_eid(31).mode == "wait", "objet absent au départ, ennemi en attente")
+	_run(w7, 1.3)
+	_check(w7.find_by_eid(30) != null and w7.find_by_eid(31).mode == "guard", "le déclencheur le fait apparaître et réveille l'autre")
+	# Chrono, vague, coop
+	var w8 := _scn_world({"triggers": [
+		{"id": "c1", "name": "Chrono", "event": {"type": "start"}, "actions": [{"type": "timer_start", "timer": "r", "seconds": 1.0, "label": "Renforts", "show": true}]},
+		{"id": "c2", "name": "Fin chrono", "event": {"type": "timer_end", "timer": "r"}, "actions": [{"type": "give", "res": "essence", "amount": 77}]}]},
+		[{"kind": "structure", "type": "e_hq", "cell": [22, 0], "id": 9}])
+	w8.tick(0.1)
+	_check(w8.scenario.shown_timers().size() == 1, "chrono affiché")
+	var e0 := w8.essence
+	_run(w8, 1.2)
+	_check(w8.essence == e0 + 77, "QUAND le chrono se termine → ressources")
+	var copy := _scn_world(w3.scenario.data, [])
+	copy.scenario.apply_net_state(w3.scenario.net_state())
+	_check(copy.scenario.objectives[0].state == "done", "état des objectifs transmis au 2e joueur")

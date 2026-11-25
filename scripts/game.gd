@@ -105,6 +105,7 @@ func _build_config() -> Dictionary:
 		"coop": Net.online,
 		"mission": {} if survival else map_script.mission,
 		"entities": [] if survival else map_script.entities,
+		"scenario": {} if survival else map_script.scenario,
 	}
 	var used: Array[String] = []
 	if Net.is_client():
