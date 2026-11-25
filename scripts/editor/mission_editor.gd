@@ -27,10 +27,12 @@ const TOOL_INFO := {
 	"place": ["Poser", "P", "Clic / glisser : poser · retoucher un objet : lui appliquer les réglages · R : pivoter"],
 	"erase": ["Gomme", "E", "Clic / glisser : retirer les objets"],
 }
-const TAB_TOOLS := {"map": ["select", "paint", "fill", "pipette"], "objects": ["select", "place", "erase", "pipette"], "mission": []}
+const TAB_TOOLS := {"map": ["select", "paint", "fill", "pipette"], "objects": ["select", "place", "erase", "pipette"], "objectives": [], "events": [], "mission": []}
+const TABS := [["map", "Carte"], ["objects", "Objets"], ["objectives", "Objectifs"], ["events", "Événements"], ["mission", "Mission"]]
+const WIDE_TABS := ["objectives", "events"]
 const ENEMY_BEHAVIORS := [["guard", "Garde son poste"], ["static", "Immobile"], ["patrol", "Patrouille"], ["defend", "Défend une structure"],
 		["aggressive", "Attaque à vue"], ["attack_target", "Attaque une cible"], ["attack_zone", "Attaque une zone"], ["follow", "Suit une unité"],
-		["march", "Marche sur la base"]]
+		["march", "Marche sur la base"], ["wait", "Attend un événement"]]
 const ALLY_BEHAVIORS := [["guard", "Garde son poste"], ["hold", "Tient la position"], ["patrol", "Patrouille"], ["follow", "Suit une unité"]]
 const AUTOSAVE_DIR := "user://editor/"
 const AUTOSAVE_PATH := "user://editor/autosave.json"
@@ -108,6 +110,8 @@ var _brush_buttons := {}
 var _ground_buttons := {}
 var catalog: EditorCatalog
 var mission_panel: EditorMissionPanel
+var objectives_panel: EditorScenarioPanel
+var events_panel: EditorScenarioPanel
 var _context: VBoxContainer
 var _layer_rows := {}
 var _grid_btn: Button
@@ -141,6 +145,7 @@ func _ready() -> void:
 	layer.add_child(_ui)
 	_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_ui()
+	Ui.testing = false
 	_open_initial()
 
 
@@ -200,9 +205,46 @@ func after_change() -> void:
 		_name_edit.text = doc.name
 	if mission_panel != null:
 		mission_panel.refresh()
+	if objectives_panel != null and tab in WIDE_TABS:
+		(_left_boxes[tab] as EditorScenarioPanel).refresh()
 	_refresh_ground_buttons()
 	_refresh_context()
 	_refresh_undo()
+
+
+## Changement de valeur sans reconstruire les formulaires.
+func mark_dirty() -> void:
+	_view_dirty = true
+	_check_dirty = true
+	_refresh_undo()
+
+
+## Objets référencés par l'objectif / le déclencheur affiché (surlignés sur la carte).
+func scenario_highlight() -> Array:
+	if tab not in WIDE_TABS:
+		return []
+	var panel: EditorScenarioPanel = _left_boxes[tab]
+	var i := panel._sel_index()
+	if i < 0 or (tab == "events" and panel.view != "triggers"):
+		return []
+	var out := []
+	_collect_refs(panel._items()[i], out)
+	return out
+
+
+func _collect_refs(v: Variant, out: Array) -> void:
+	if v is Dictionary:
+		for k in v:
+			if k in ["obj", "zone", "target"] and (v[k] is int or v[k] is float) and int(v[k]) >= 0:
+				out.append(int(v[k]))
+			elif k in ["targets", "zones", "fail_dead"] and v[k] is Array:
+				for x in v[k]:
+					out.append(int(x))
+			else:
+				_collect_refs(v[k], out)
+	elif v is Array:
+		for x in v:
+			_collect_refs(x, out)
 
 
 func _refresh_view() -> void:
@@ -218,6 +260,9 @@ func _check() -> void:
 	_check_dirty = false
 	issues = MapData.validate(grid, doc.mission)
 	warns = EditorMissionPanel.warnings(doc, grid)
+	var sc := ScenarioCheck.check(doc)
+	issues.append_array(sc[0])
+	warns.append_array(sc[1])
 	if issues.is_empty() and warns.is_empty():
 		_status_check.text = "✔ Mission valide"
 		_status_check.add_theme_color_override("font_color", Ui.GREEN)
@@ -445,6 +490,10 @@ func _on_key(k: InputEventKey) -> void:
 			KEY_2:
 				set_tab("objects")
 			KEY_3:
+				set_tab("objectives")
+			KEY_4:
+				set_tab("events")
+			KEY_5:
 				set_tab("mission")
 			KEY_V:
 				set_tool("select")
@@ -919,11 +968,14 @@ func set_tab(t: String) -> void:
 		(_tab_buttons[k] as Button).set_pressed_no_signal(k == t)
 	for k in _left_boxes:
 		(_left_boxes[k] as Control).visible = k == t
-	_tool_row.visible = t != "mission"
-	_tool_sep.visible = t != "mission"
+	_tool_row.visible = not TAB_TOOLS[t].is_empty()
+	_tool_sep.visible = _tool_row.visible
+	_left.custom_minimum_size.x = 452.0 if t in WIDE_TABS else PANEL_W
+	if t in WIDE_TABS:
+		(_left_boxes[t] as EditorScenarioPanel).refresh()
 	for id in _tool_buttons:
 		(_tool_buttons[id] as Button).visible = TAB_TOOLS[t].has(id)
-	if t != "mission" and not TAB_TOOLS[t].has(tool):
+	if not TAB_TOOLS[t].is_empty() and not TAB_TOOLS[t].has(tool):
 		set_tool("paint" if t == "map" else "place")
 	else:
 		_refresh_context()
@@ -933,7 +985,11 @@ func set_tool(t: String) -> void:
 	tool = t
 	for id in _tool_buttons:
 		(_tool_buttons[id] as Button).set_pressed_no_signal(id == t)
-	_status_hint.text = TOOL_INFO.get(t, ["", "", ""])[2] if tab != "mission" else "Réglages de la mission à gauche · F5 pour tester"
+	_status_hint.text = TOOL_INFO.get(t, ["", "", ""])[2] if not TAB_TOOLS[tab].is_empty() else {
+		"mission": "Réglages de la mission à gauche · F5 pour tester",
+		"objectives": "Objectifs de la mission · ◎ pour choisir un objet ou une zone sur la carte · F5 pour tester",
+		"events": "Déclencheurs QUAND / SI / ALORS · ◎ pour choisir sur la carte · F2 en test pour forcer un déclencheur",
+	}.get(tab, "")
 	_refresh_context()
 
 
@@ -1118,6 +1174,7 @@ func test() -> void:
 	var m := doc.to_map()
 	Ui.editor_map = m
 	_store_session(m)
+	Ui.testing = true
 	Ui.play_custom(doc.to_map())
 
 
@@ -1271,8 +1328,9 @@ func _build_top() -> Control:
 	_name_edit.focus_exited.connect(_sync_name)
 	h.add_child(_name_edit)
 	h.add_child(VSeparator.new())
-	for pair in [["map", "Carte", "1"], ["objects", "Objets", "2"], ["mission", "Mission", "3"]]:
-		var b := EditorUi.button(pair[1], "Onglet %s (%s)" % [pair[1], pair[2]], true, 78)
+	for i in TABS.size():
+		var pair: Array = TABS[i]
+		var b := EditorUi.button(pair[1], "Onglet %s (%d)" % [pair[1], i + 1], true, 74)
 		var t: String = pair[0]
 		b.pressed.connect(func() -> void: set_tab(t))
 		_tab_buttons[t] = b
@@ -1372,6 +1430,14 @@ func _build_left() -> Control:
 	v.add_child(catalog)
 	_left_boxes["objects"] = catalog
 	catalog.select(obj_tool)
+
+	# Onglets OBJECTIFS et ÉVÉNEMENTS
+	objectives_panel = EditorScenarioPanel.new(self, "objectives")
+	v.add_child(objectives_panel)
+	_left_boxes["objectives"] = objectives_panel
+	events_panel = EditorScenarioPanel.new(self, "events")
+	v.add_child(events_panel)
+	_left_boxes["events"] = events_panel
 
 	# Onglet MISSION
 	var scroll := ScrollContainer.new()
@@ -1590,12 +1656,29 @@ func start_pick(id: int, key: String, accept: Callable, hint: String) -> void:
 	_toast("Clique sur : " + hint.to_lower() if key != "patrol" else hint)
 
 
+## Choix d'un objet sur la carte pour un formulaire (objectifs, déclencheurs) : cb(objet).
+func start_pick_cb(accept: Callable, hint: String, cb: Callable, multi := false) -> void:
+	pick = {"id": -1, "key": "cb", "accept": accept, "hint": hint, "cb": cb, "multi": multi}
+	_status_hint.text = "Clique sur : " + hint.to_lower() + "  ·  Échap / clic droit : terminer"
+	_toast("Clique sur : " + hint.to_lower())
+
+
 func end_pick() -> void:
 	pick = {}
 	set_tool(tool)
 
 
 func _pick_press(c: Vector2i) -> void:
+	if pick.key == "cb":
+		var acc: Callable = pick.accept
+		var hit := doc.entity_at(c, func(x: Dictionary) -> bool: return layers.entity_visible(x) and acc.call(x))
+		if hit.is_empty():
+			_toast("Clique sur : " + str(pick.hint).to_lower(), Ui.GOLD)
+			return
+		(pick.cb as Callable).call(hit)
+		if not pick.get("multi", false):
+			end_pick()
+		return
 	var id := int(pick.id)
 	var e := doc.entity_by_id(id)
 	if e.is_empty():
@@ -1831,6 +1914,11 @@ func _fiche(e: Dictionary) -> void:
 			_fiche_row(g3, "Libellé", le)
 	if g3.get_child_count() > 0:
 		_context.add_child(g3)
+	if kind in Mission.LATE_KINDS:
+		var g4 := EditorUi.grid(2, 6)
+		_fiche_row(g4, "Au départ", _fiche_toggle(id, "absent", e.get("absent", false), "Absent", "Présent"),
+				"Absent : apparaît avec l'action « Faire apparaître / réveiller » d'un déclencheur")
+		_context.add_child(g4)
 	if kind in ["ally_unit", "enemy", "structure", "ally_tower", "defend", "vip", "door", "shield", "terminal", "prisoners", "pickup"]:
 		_context.add_child(EditorUi.muted("Clic droit sur un objet : sa fiche · double clic : renommer"))
 	_context.add_child(EditorUi.sep())
@@ -2101,7 +2189,7 @@ func _show_help() -> void:
 	for row in [
 		["Molette", "Zoom sur le curseur"], ["Clic milieu / clic droit / Espace + glisser", "Déplacer la vue"],
 		["Flèches", "Déplacer la vue"], ["Ctrl+0", "Cadrer la carte"],
-		["1  2  3", "Onglets Carte, Objets, Mission"],
+		["1 à 5", "Onglets Carte, Objets, Objectifs, Événements, Mission"],
 		["V  B  F  I", "Sélection, pinceau, remplissage, pipette"], ["P  E", "Poser, gomme (objets) · E = gomme de terrain dans Carte"],
 		["[  ]", "Taille du pinceau"], ["Maj+clic", "Pinceau : ligne droite · Sélection : ajouter"], ["Alt+clic", "Pipette"],
 		["Ctrl+Z / Ctrl+Y", "Annuler / rétablir (100 actions)"], ["Ctrl+C  Ctrl+X  Ctrl+V", "Copier, couper, coller"],

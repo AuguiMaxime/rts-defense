@@ -340,6 +340,12 @@ func show_end(won: bool) -> void:
 	var sub := Ui.label(sub_text, 22, Ui.MUTED)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(sub)
+	var end_text: String = game.world.scenario.end_text if game.world.scenario != null else ""
+	if end_text != "":
+		var et := Ui.label(end_text, 22, Ui.TEXT)
+		et.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		et.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(et)
 
 	var stars := Ui.hbox(18)
 	stars.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -481,8 +487,142 @@ var _obj_key := ""
 var _obj_states: Array[String] = []
 
 
+## Objectifs du scénario (onglet Objectifs de l'éditeur) et chronos.
+func _update_scenario(w: GameWorld) -> bool:
+	var sc := w.scenario
+	if sc == null or (sc.objectives.is_empty() and sc.shown_timers().is_empty()):
+		return false
+	_obj_panel.visible = not _folded
+	_wave_panel.visible = not _folded and (w.mission == null or w.mission.waves_enabled())
+	var key := ""
+	for o in sc.objectives:
+		key += "%s|%s|" % [o.state, o.text]
+	for t in sc.shown_timers():
+		key += "%s%d|" % [t[0], int(t[1])]
+	if key == _obj_key:
+		return true
+	_obj_key = key
+	for c in _obj_box.get_children():
+		c.queue_free()
+	var groups := [["main", "◆ OBJECTIFS", Ui.CYAN], ["secondary", "◇ SECONDAIRES", Ui.GOLD], ["optional", "○ FACULTATIFS", Ui.MUTED]]
+	for g in groups:
+		var list := sc.objectives.filter(func(o: Dictionary) -> bool: return o.def.get("kind", "main") == g[0] and o.state != "hidden")
+		if list.is_empty():
+			continue
+		_obj_box.add_child(Ui.label(g[1], 13, g[2], true))
+		for o in list:
+			var txt := str(o.def.name)
+			var col := Ui.TEXT
+			match str(o.state):
+				"done":
+					txt = "✔ " + txt
+					col = Ui.GREEN
+				"failed":
+					txt = "✖ " + txt
+					col = Ui.RED
+				_:
+					if str(o.text) != "":
+						txt += "  ·  " + str(o.text)
+			var l := Ui.label(txt, 14, col)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.custom_minimum_size.x = 300
+			_obj_box.add_child(l)
+			if o.state == "active" and str(o.def.get("desc", "")) != "":
+				var dl := Ui.label(str(o.def.desc), 12, Ui.MUTED)
+				dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				dl.custom_minimum_size.x = 300
+				_obj_box.add_child(dl)
+	for t in sc.shown_timers():
+		var left := int(ceilf(float(t[1])))
+		_obj_box.add_child(Ui.label("⏱ %s  %d:%02d" % [t[0], left / 60, left % 60], 15, Ui.GOLD, true))
+	return true
+
+
+## Messages, alertes, objectifs annoncés, sons (actions des déclencheurs).
+func on_scenario_event(ev: Dictionary) -> void:
+	match str(ev.type):
+		"scn_message":
+			_show_message(str(ev.get("speaker", "")), str(ev.get("text", "")), float(ev.get("seconds", 6.0)))
+		"scn_alert":
+			_boss_title_text(str(ev.get("text", "")))
+			Sfx.play("wave", -2.0)
+		"scn_notify":
+			flash(str(ev.get("text", "")), Ui.CYAN)
+		"scn_sound":
+			Sfx.play(str(ev.get("name", "click")))
+		"scn_objective":
+			match str(ev.get("state", "")):
+				"new":
+					flash("◆ Nouvel objectif : %s" % ev.text, Ui.CYAN)
+					Sfx.play("wave", -8.0)
+				"done":
+					flash("✔ Objectif réussi : %s" % ev.text, Ui.GREEN)
+					Sfx.play("victory", -6.0)
+				"failed":
+					flash("✖ Objectif échoué : %s" % ev.text, Ui.RED)
+					Sfx.play("error", -4.0)
+				"step":
+					flash(str(ev.text), Ui.CYAN)
+		"door_open":
+			flash("Une porte s'ouvre", Ui.CYAN)
+		"terminal_done":
+			flash("Terminal activé", Ui.GREEN)
+		"prisoners_freed":
+			flash("Prisonniers libérés !", Ui.GREEN)
+		"pickup":
+			flash("Objet récupéré", Ui.GOLD)
+
+
+var _msg_panel: PanelContainer
+var _msg_speaker: Label
+var _msg_text: Label
+var _msg_time := 0.0
+var _alert: Label
+var _alert_time := 0.0
+
+
+func _show_message(speaker: String, text: String, seconds: float) -> void:
+	if _msg_panel == null:
+		_msg_panel = Ui.panel()
+		_msg_panel.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.94), Color(Ui.CYAN, 0.6), 2, 10, 0.2))
+		_msg_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var v := Ui.vbox(4)
+		_msg_speaker = Ui.label("", 16, Ui.CYAN, true)
+		_msg_text = Ui.label("", 20, Ui.TEXT)
+		_msg_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_msg_text.custom_minimum_size.x = 620
+		v.add_child(_msg_speaker)
+		v.add_child(_msg_text)
+		_msg_panel.add_child(v)
+		add_child(_msg_panel)
+	_msg_speaker.text = speaker.to_upper()
+	_msg_speaker.visible = speaker != ""
+	_msg_text.text = text
+	_msg_panel.reset_size()
+	_msg_panel.position = Vector2((size.x - _msg_panel.size.x) * 0.5, size.y - _msg_panel.size.y - 150)
+	_msg_panel.visible = true
+	_msg_time = seconds
+	Sfx.play("click", -4.0)
+
+
+func _boss_title_text(text: String) -> void:
+	if _alert == null:
+		_alert = Ui.label("", 34, Ui.RED, true)
+		_alert.add_theme_constant_override("outline_size", 10)
+		_alert.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_alert.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_alert)
+	_alert.text = text.to_upper()
+	_alert.reset_size()
+	_alert.position = Vector2((size.x - _alert.size.x) * 0.5, size.y * 0.3)
+	_alert.visible = true
+	_alert_time = 3.5
+
+
 ## Objectifs bonus de la mission (sous le panneau des vagues).
 func _update_objectives(w: GameWorld) -> void:
+	if _update_scenario(w):
+		return
 	var main_mission := w.mission != null and w.mission.type != "waves"
 	_wave_panel.visible = not _folded and (w.mission == null or w.mission.waves_enabled())
 	if w.objectives.is_empty() and not main_mission:
@@ -591,3 +731,12 @@ func _process(delta: float) -> void:
 		(_damage_vignette.material as ShaderMaterial).set_shader_parameter("strength", _damage_alpha)
 	if _fps.visible:
 		_fps.text = "%d FPS" % Engine.get_frames_per_second()
+	if _msg_panel != null and _msg_panel.visible:
+		_msg_time -= delta
+		_msg_panel.modulate.a = clampf(_msg_time / 0.4, 0.0, 1.0)
+		_msg_panel.visible = _msg_time > 0.0
+	if _alert != null and _alert.visible:
+		_alert_time -= delta
+		_alert.modulate.a = clampf(_alert_time / 0.5, 0.0, 1.0)
+		_alert.scale = Vector2.ONE * (1.0 + maxf(0.0, _alert_time - 3.0) * 0.3)
+		_alert.visible = _alert_time > 0.0

@@ -22,6 +22,8 @@ var sel_sites: Array[BuildSite] = []
 var show_ranges := false
 signal shake(strength: float)
 signal base_hit
+## Événements du scénario (messages, alertes, objectifs…) pour l'interface.
+signal scenario_event(ev: Dictionary)
 
 var tutorial_marker := Vector2.INF # en cases ; INF = aucun repère
 var selected: Array[Worker] = []
@@ -278,6 +280,16 @@ func _draw_mission_layer() -> void:
 			_deco_cache[d.sprite] = deco_texture(d.sprite)
 		draw_deco(self, _deco_cache[d.sprite], d.cell, d.base, d.rot, float(TILE), Color.WHITE, d.get("flip", false))
 	_draw_interactive(m)
+	# Marqueurs posés par les déclencheurs
+	if world.scenario != null:
+		for mk in world.scenario.markers:
+			var c: Vector2 = mk.pos * TILE
+			var k := fmod(_anim, 1.2) / 1.2
+			draw_arc(c, 30 + 40 * k, 0, TAU, 32, Color(1.0, 0.85, 0.2, 1.0 - k), 4.0)
+			draw_arc(c, 26, 0, TAU, 32, Color(1.0, 0.85, 0.2), 3.0)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-12, -60), c + Vector2(12, -60), c + Vector2(0, -36)]), Color(1.0, 0.85, 0.2))
+			if str(mk.text) != "":
+				draw_string(ThemeDB.fallback_font, c + Vector2(-90, -68), str(mk.text), HORIZONTAL_ALIGNMENT_CENTER, 180, 18, Color(1.0, 0.9, 0.4))
 	for z in m.zones:
 		var c: Vector2 = z.pos * TILE
 		var rad: float = z.radius * TILE
@@ -744,6 +756,8 @@ func _draw_bar(r: Rect2, ratio: float, color := COLOR_BAR, height := 7.0) -> voi
 
 
 func _sound(ev: Dictionary) -> void:
+	if str(ev.type).begins_with("scn_") or ev.type in ["door_open", "terminal_done", "prisoners_freed", "pickup"]:
+		scenario_event.emit(ev)
 	match ev.type:
 		"shot":
 			match ev.get("kind", "gun"):

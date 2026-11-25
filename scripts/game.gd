@@ -15,6 +15,7 @@ var _last_tap_key := ""
 var sel_base := false # base sélectionnée
 var build_kind := "" # "" = pas en mode construction ; "orbital" = ciblage du pouvoir
 var speed := 1
+var test_panel: TestPanel
 var paused := false
 var survival := false
 var new_record := false
@@ -77,6 +78,16 @@ func _ready() -> void:
 	hud.setup(self)
 	units_view.shake.connect(camera.add_shake)
 	units_view.base_hit.connect(hud.flash_damage)
+	units_view.scenario_event.connect(hud.on_scenario_event)
+	if Ui.testing and level.id == 0:
+		test_panel = TestPanel.new(self)
+		$HUD.add_child(test_panel)
+		test_panel.position = Vector2(14, 150)
+		var tb := EditorUi.button("TEST  F2", "Outils de test de la mission")
+		tb.theme = EditorUi.theme()
+		tb.position = Vector2(14, 112)
+		tb.pressed.connect(func() -> void: test_panel.visible = not test_panel.visible)
+		$HUD.add_child(tb)
 	if world.mission.type != "waves" or str(world.mission.data.get("briefing", "")) != "":
 		if not coop:
 			hud.show_briefing(map_script.NAME, Mission.TYPE_NAMES[world.mission.type], str(world.mission.data.get("briefing", "")), world.mission.objective_text(world))
@@ -346,6 +357,10 @@ func deselect() -> void:
 
 ## Échap (PC) ou retour Android : annule le placement / désélectionne.
 func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F2 and test_panel != null:
+		test_panel.visible = not test_panel.visible
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		if build_kind != "" or selection_kind() != "none":
 			set_build_kind("")

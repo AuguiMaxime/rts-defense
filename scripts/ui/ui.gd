@@ -43,6 +43,8 @@ var custom_map: MapData = null
 var editor_map: MapData = null
 ## Session de l'éditeur gardée pendant un test (historique, outils, caméra).
 var editor_session: Variant = null
+## Partie lancée depuis l'éditeur (outils de test disponibles).
+var testing := false
 
 var _fade: ColorRect
 var _toast_layer: CanvasLayer

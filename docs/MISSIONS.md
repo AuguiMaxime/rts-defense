@@ -97,8 +97,38 @@ Pour chaque type, l'onglet Mission rappelle quoi poser et propose un bouton racc
 
 La validation, en bas à droite, signale ce qui manque : base, chemins, VIP, zone, etc.
 
+## 3b. Onglet OBJECTIFS (touche 3)
+
+- **+ Ajouter ▾** propose 40 modèles prêts (détruire, capturer, survivre, escorter, récolter, construire…). 17 types au total.
+- **Importance** : ◆ principal, ◇ secondaire, ○ bonus. **Départ** : visible, caché (révélé par un déclencheur) ou « après » d'autres objectifs (objectifs successifs).
+- **Combinaisons** : un objectif peut regrouper d'autres objectifs en ET, OU, « X sur Y », ou NON.
+- **Récompense** (métal, essence) et **délai** optionnel (échec si le temps est écoulé).
+- Les champs « objet » proposent une liste ou le bouton **◎** pour cliquer l'objet sur la carte. Les objets concernés sont surlignés en or.
+- **Règles de la mission** (en haut) : victoire = tous les objectifs principaux réussis, ou manuelle (action « Victoire ») ; défaite si la base est détruite et/ou si un objectif principal échoue.
+- En jeu, la liste s'affiche à droite : ◆ / ◇ / ○ avec la progression et les chronos ⏱.
+
+## 3c. Onglet ÉVÉNEMENTS (touche 4)
+
+**Déclencheurs** : QUAND (un événement : début, temps écoulé, unité dans une zone, objet détruit, objectif réussi, variable changée…) → SI (conditions en ET/OU, chacune inversable avec NON) → ALORS (actions) / SINON (actions si les conditions sont fausses).
+- Réglages : actif ou non au départ, une seule fois ou répété, priorité, délai avant les actions. L'action **Attendre** crée des séquences.
+- Actions : messages, alertes, sons, ping sur la carte, faire apparaître des unités ou des objets « absents au départ », réveiller un ennemi « en attente », ouvrir/fermer des portes, révéler/réussir/échouer un objectif, modifier une variable, activer/forcer un autre déclencheur, chronos, victoire, défaite…
+- Modèles rapides : message d'introduction, renforts quand le joueur entre dans une zone, compte à rebours puis vague.
+- Anti-boucle : 300 actions par image et 20 déclenchements par seconde au maximum.
+
+**Variables** : nombre, booléen, texte ou référence à un objet (`$nom`). Renommer une variable met à jour tous les déclencheurs.
+
+**Dépendances** : vue en lecture seule qui relie déclencheurs, variables et objectifs (QUAND, SI, ALORS, après, fait partie de).
+
+**Fiche d'un objet** : « Au départ : Absent » le fait apparaître plus tard via un déclencheur ; le comportement ennemi « En attente » le garde immobile jusqu'à ce qu'on le réveille.
+
+La validation signale en plus : paramètres manquants, références cassées, aucune condition de victoire, objectif caché jamais révélé, déclencheur désactivé jamais réactivé, variable ou zone inutilisée, objet absent jamais activé.
+
 ## 4. Tester puis m'envoyer la mission
 
 1. **▶ TESTER** lance la mission tout de suite. Le menu de fin ramène dans l'éditeur.
 2. **ENREGISTRER** écrit le fichier `maps/custom/<nom>.json` quand le jeu est lancé depuis Godot.
 3. Envoie-moi ce fichier `.json`, ou pousse-le sur git. Je l'ajoute à la campagne : ordre, déblocage, récompenses.
+
+### Outils de test (F2 ou bouton TEST)
+
+Pendant un test lancé depuis l'éditeur : pause, x1, x2, x4, invincible, ressources illimitées, vague suivante, faire apparaître 5 ennemis, avancer de 30 s, redémarrer. Le panneau liste aussi les objectifs (✔ / ✖ pour les forcer), les déclencheurs (▶ pour les forcer), les variables et le journal des événements.

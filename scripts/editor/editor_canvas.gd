@@ -84,6 +84,14 @@ func _draw() -> void:
 				var er := EditorDoc.entity_rect(e)
 				draw_rect(Rect2(Vector2(er.position) * T, Vector2(er.size) * T).grow(3), Color.WHITE, false, 2.5 * px)
 	_draw_relations(px)
+	for id in ed.scenario_highlight():
+		var he := doc.entity_by_id(int(id))
+		if not he.is_empty():
+			var hr := EditorDoc.entity_rect(he)
+			var rr := Rect2(Vector2(hr.position) * T, Vector2(hr.size) * T).grow(5)
+			draw_rect(rr, Color(Ui.GOLD, 0.18))
+			draw_rect(rr, Ui.GOLD, false, 2.5 * px)
+			draw_string(ThemeDB.fallback_font, rr.position + Vector2(0, -6), str(he.name), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Ui.GOLD)
 	if ed.band_active:
 		var br: Rect2i = ed.band_rect()
 		var r := Rect2(Vector2(br.position) * T, Vector2(br.size) * T)

@@ -1324,7 +1324,7 @@ func _enemy_attack(e: Enemy) -> void:
 	var to := base_center()
 	match e.target_kind:
 		Enemy.Target.BASE:
-			base_hp -= e.damage
+			base_hp -= 0 if cheat_invincible else e.damage
 			_emit({"type": "base_hit"})
 		Enemy.Target.WORKER:
 			var w: Worker = e.target_ref
@@ -1332,12 +1332,12 @@ func _enemy_attack(e: Enemy) -> void:
 			to = w.pos
 		Enemy.Target.UNIT:
 			var u: Unit = e.target_ref
-			if not u.invulnerable:
+			if not u.invulnerable and not cheat_invincible:
 				u.hp -= maxi(1, e.damage - int(u.eff().armor))
 			to = u.pos
 		Enemy.Target.SITE:
 			var s: BuildSite = e.target_ref
-			if not s.invulnerable:
+			if not s.invulnerable and not cheat_invincible:
 				s.hp -= e.damage
 			to = s.center()
 	_emit({"type": "hit", "from": e.pos, "to": to, "ranged": e.attack_range > 1.5})

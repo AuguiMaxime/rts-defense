@@ -45,6 +45,7 @@ static func snapshot(w: GameWorld) -> Dictionary:
 		"dl": w.deposit_left,
 		"up": w.upgrades,
 		"ms": [w.mission.zones.map(func(z: Dictionary) -> Array: return [z.progress, z.captured]), w.mission.convoys.map(func(c: Dictionary) -> Array: return [c.uid, c.i, c.state, c.at]), w.time, w.mission.inter_state()],
+		"sc": w.scenario.net_state() if w.scenario != null else [],
 		"ob": w.objectives.map(func(o: Dictionary) -> Array: return [o.state, o.destroyed]),
 		"dp": w.depleted,
 		"bp": _prod(w.base_producer),
@@ -98,6 +99,8 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 			old.alive = false
 	w.workers = workers
 
+	if snap.has("sc") and not snap.sc.is_empty() and w.scenario != null:
+		w.scenario.apply_net_state(snap.sc)
 	if snap.has("ms"):
 		var zs: Array = snap.ms[0]
 		for i in mini(zs.size(), w.mission.zones.size()):
