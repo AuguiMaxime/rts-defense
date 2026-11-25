@@ -49,6 +49,7 @@ var grid: GameGrid
 var issues: Array = [] # erreurs bloquantes (voir MissionValidator)
 var warns: Array = [] # avertissements
 var _drop_zone: Control
+var _fit_zoom := -1.0 # zoom du dernier « cadrer la carte »
 var _state_saved := {}
 var _state_timer := 0.0
 var _rebinding := "" # action dont on attend la nouvelle touche (fenêtre des raccourcis)
@@ -406,16 +407,22 @@ func _toast(text: String, color := Ui.CYAN) -> void:
 
 ## Centre la vue sur une case (bouton ◎ des points d'apparition).
 func look_at_cell(c: Vector2i) -> void:
-	camera.position = (Vector2(c) + Vector2(0.5, 0.5)) * T + Vector2((452.0 - RIGHT_W) * -0.5, 0) / camera.zoom.x
+	camera.position = (Vector2(c) + Vector2(0.5, 0.5)) * T + Vector2((_left_w() - RIGHT_W) * -0.5, 0) / camera.zoom.x
 	_view_dirty = true
+
+
+## Largeur actuelle du panneau de gauche (plus large dans les onglets sans carte).
+func _left_w() -> float:
+	return 452.0 if tab in WIDE_TABS else PANEL_W
 
 
 func fit_camera() -> void:
 	var world := Vector2(doc.width(), doc.height()) * T
-	var vp := get_viewport_rect().size - Vector2(PANEL_W + RIGHT_W + 60, 120)
+	var vp := get_viewport_rect().size - Vector2(_left_w() + RIGHT_W + 60, 120)
 	var z := clampf(minf(vp.x / world.x, vp.y / world.y), 0.06, 1.5)
 	camera.zoom = Vector2(z, z)
-	camera.position = world * 0.5 + Vector2((PANEL_W - RIGHT_W) * -0.5, -8) / z
+	_fit_zoom = z
+	camera.position = world * 0.5 + Vector2((_left_w() - RIGHT_W) * -0.5, -8) / z
 
 
 func _zoom_at(factor: float, screen: Vector2) -> void:
@@ -1118,7 +1125,15 @@ func _refresh_undo() -> void:
 # --- Changement d'outil / onglet --------------------------------------------------------------
 
 func set_tab(t: String) -> void:
+	# Le panneau de gauche s'élargit ou rétrécit : la vue glisse d'autant, la carte reste au même endroit à l'écran.
+	var old_w := _left_w()
 	tab = t
+	if camera != null and old_w != _left_w():
+		# Vue cadrée sur toute la carte : on recadre ; sinon on garde le zoom et on décale.
+		if is_equal_approx(camera.zoom.x, _fit_zoom):
+			fit_camera()
+		else:
+			camera.position.x -= (_left_w() - old_w) * 0.5 / camera.zoom.x
 	for k in _tab_buttons:
 		(_tab_buttons[k] as Button).set_pressed_no_signal(k == t)
 	for k in _left_boxes:
@@ -1133,7 +1148,7 @@ func set_tab(t: String) -> void:
 	if not TAB_TOOLS[t].is_empty() and not TAB_TOOLS[t].has(tool):
 		set_tool("paint" if t == "map" else "place")
 	else:
-		_refresh_context()
+		set_tool(tool) # met aussi à jour l'aide de la barre du bas
 
 
 func set_tool(t: String) -> void:
@@ -1144,6 +1159,7 @@ func set_tool(t: String) -> void:
 		"mission": "Réglages de la mission à gauche · F5 pour tester",
 		"objectives": "Objectifs de la mission · ◎ pour choisir un objet ou une zone sur la carte · F5 pour tester",
 		"events": "Déclencheurs QUAND / SI / ALORS · ◎ pour choisir sur la carte · F2 en test pour forcer un déclencheur",
+		"waves": "Vagues automatiques ou personnalisées · Points d'apparition : les nommer · F5 pour tester",
 	}.get(tab, "")
 	_refresh_context()
 
@@ -1474,7 +1490,7 @@ func _build_top() -> Control:
 	pm.add_item("Raccourcis clavier…  (F1)", 5)
 	pm.id_pressed.connect(_file_menu)
 	h.add_child(file)
-	_name_edit = EditorUi.line_edit("Nom de la carte", 170)
+	_name_edit = EditorUi.line_edit("Nom de la mission", 150)
 	_name_edit.text_submitted.connect(func(_t: String) -> void:
 		_sync_name()
 		_name_edit.release_focus())
@@ -1483,7 +1499,7 @@ func _build_top() -> Control:
 	h.add_child(VSeparator.new())
 	for i in TABS.size():
 		var pair: Array = TABS[i]
-		var b := EditorUi.button(pair[1], "Onglet %s (%d)" % [pair[1], i + 1], true, 74)
+		var b := EditorUi.button(pair[1], "Onglet %s (%d)" % [pair[1], i + 1], true, 64)
 		var t: String = pair[0]
 		b.pressed.connect(func() -> void: set_tab(t))
 		_tab_buttons[t] = b
@@ -1495,10 +1511,25 @@ func _build_top() -> Control:
 	_redo_btn = EditorUi.button("↷", "Rétablir (Ctrl+Y)", false, 34)
 	_redo_btn.pressed.connect(do_redo)
 	h.add_child(_redo_btn)
-	for a in [["Copier", "Ctrl+C", do_copy], ["Coller", "Ctrl+V", do_paste], ["Dupliquer", "Ctrl+D", do_duplicate], ["Supprimer", "Suppr", do_delete]]:
-		var b := EditorUi.button(a[0], "%s (%s)" % [a[0], a[1]])
-		b.pressed.connect(a[2])
-		h.add_child(b)
+	# Édition : menu compact (les mêmes actions sont au clic droit et dans la fiche).
+	var edit := MenuButton.new()
+	edit.text = "Édition ▾"
+	edit.flat = false
+	edit.focus_mode = Control.FOCUS_NONE
+	edit.tooltip_text = "Copier, couper, coller, dupliquer, supprimer"
+	edit.custom_minimum_size = Vector2(0, EditorUi.BTN_H)
+	edit.add_theme_font_size_override("font_size", EditorUi.FONT)
+	var em := edit.get_popup()
+	em.add_theme_font_size_override("font_size", 14)
+	var edit_items := [["copy", "Copier"], ["cut", "Couper"], ["paste", "Coller"], ["duplicate", "Dupliquer"], ["delete", "Supprimer"], ["select_all", "Tout sélectionner"]]
+	edit.about_to_popup.connect(func() -> void:
+		em.clear()
+		var keys := EditorShortcuts.keys()
+		for i in edit_items.size():
+			var k: String = keys.get(edit_items[i][0], "")
+			em.add_item("%s%s" % [edit_items[i][1], ("    " + EditorShortcuts.pretty(k)) if k != "" else ""], i))
+	em.id_pressed.connect(func(i: int) -> void: run_action(edit_items[i][0]))
+	h.add_child(edit)
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE

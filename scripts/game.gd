@@ -83,6 +83,9 @@ func _ready() -> void:
 		test_panel = TestPanel.new(self)
 		$HUD.add_child(test_panel)
 		test_panel.position = Vector2(14, 150)
+		# Fermé au départ pour ne pas cacher le briefing ; F2 ou le bouton l'ouvre (état gardé entre deux tests).
+		test_panel.visible = bool(EditorPrefs.get_v("test_panel_open", false))
+		test_panel.visibility_changed.connect(func() -> void: EditorPrefs.set_v("test_panel_open", test_panel.visible))
 		var tb := EditorUi.button("TEST  F2", "Outils de test de la mission")
 		tb.theme = EditorUi.theme()
 		tb.position = Vector2(14, 112)

@@ -129,7 +129,7 @@ func _draw() -> void:
 	if selection_rect.has_area():
 		draw_rect(selection_rect, COLOR_SELECT_FILL)
 		draw_rect(selection_rect, COLOR_SELECTED, false, 2.0)
-	if not Ui.debug_view.is_empty():
+	if Ui.testing and not Ui.debug_view.is_empty():
 		_draw_debug()
 
 

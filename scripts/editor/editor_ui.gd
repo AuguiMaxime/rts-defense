@@ -4,7 +4,7 @@ extends RefCounted
 
 const FONT := 14
 const BTN_H := 28
-const PANEL_BG := Color(0.035, 0.06, 0.105, 0.96)
+const PANEL_BG := Color(0.035, 0.06, 0.105, 1.0)
 const PANEL_EDGE := Color(0.13, 0.83, 0.93, 0.28)
 const SECTION := Color("7dd3fc")
 const ACTIVE := Color(0.13, 0.83, 0.93)

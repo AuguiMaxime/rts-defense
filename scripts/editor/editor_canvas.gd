@@ -277,7 +277,7 @@ func draw_entity(e: Dictionary, alpha := 1.0, tint := Color.WHITE) -> void:
 	var m := Color(tint, tint.a * alpha)
 	if e.has("faction") and str(e.faction) != ("enemy" if str(e.kind) in ["enemy", "structure"] else "p1"):
 		# Faction particulière : anneau à sa couleur sous l'objet.
-		var fc := Factions.new(ed.doc.factions).color_of(str(e.faction))
+		var fc := _factions().color_of(str(e.faction))
 		var rr := T * (0.55 if str(e.kind) != "structure" else float(Balance.ENEMY_STRUCTURES.get(e.type, {}).get("size", 1)) * 0.75)
 		var fcen := center if str(e.kind) != "structure" else (c + Vector2.ONE * float(Balance.ENEMY_STRUCTURES.get(e.type, {}).get("size", 1)) * 0.5) * T
 		draw_circle(fcen, rr, Color(fc, 0.18 * alpha))
@@ -412,3 +412,17 @@ func _draw_waypoints(wps: Array, alpha: float) -> void:
 		if float(e.get("pause", 0.0)) > 0.0:
 			draw_string(font, p + Vector2(-30, -20), "⏸ %d s" % int(e.pause), HORIZONTAL_ALIGNMENT_CENTER, 60, 15, Color(Ui.GOLD, alpha))
 		prev = p
+
+
+var _fac_cache: Factions
+var _fac_key := 0
+
+
+## Factions de la mission (recalculées seulement quand elles changent).
+func _factions() -> Factions:
+	var k: int = ed.doc.factions.hash()
+	if _fac_cache == null or k != _fac_key:
+		_fac_cache = Factions.new(ed.doc.factions)
+		_fac_key = k
+	return _fac_cache
+
