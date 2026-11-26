@@ -114,6 +114,12 @@ func _test_harvest() -> void:
 	_run(world, 30.0)
 	_check(world.metal >= start + Balance.CARRY_CAPACITY * 2, "au moins 2 voyages en 30 s (+%d métal)" % (world.metal - start))
 	_check(world.workers[0].job == Worker.Job.HARVEST, "l'ouvrier continue de récolter en boucle")
+	_check(world.harvesters(GameGrid.Cell.METAL) == 1 and world.harvesters(GameGrid.Cell.ESSENCE) == 0, "compteur : 1 ouvrier sur le métal")
+	world.command_harvest([world.workers[1], world.workers[2]], Vector2i(1, 5))
+	_check(world.harvesters(GameGrid.Cell.METAL) == 3, "compteur : 3 ouvriers sur le métal dès l'ordre donné")
+	var c := GameWorld.new(MapLoader.from_layout(TEST_MAP))
+	NetSync.apply(c, NetSync.snapshot(world))
+	_check(c.harvesters(GameGrid.Cell.METAL) == 3, "coop : compteur identique chez le 2e joueur")
 
 
 func _time_to_build(n_workers: int) -> float:

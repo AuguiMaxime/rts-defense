@@ -105,6 +105,32 @@ func _chip(kind: String) -> Label:
 	return l
 
 
+var _metal_workers: Label
+var _essence_workers: Label
+
+
+## Petit badge « icône d'ouvrier + nombre » ajouté à la puce d'une ressource.
+func _worker_badge(chip: HBoxContainer) -> Label:
+	var pill := PanelContainer.new()
+	pill.add_theme_stylebox_override("panel", Ui.box(Color(1, 1, 1, 0.07), Color(1, 1, 1, 0.12), 1, 10, 0.0))
+	pill.tooltip_text = "Ouvriers qui récoltent cette ressource"
+	pill.mouse_filter = Control.MOUSE_FILTER_PASS
+	pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var b := Ui.hbox(1)
+	var ic := TextureRect.new()
+	ic.texture = Sprites.WORKER
+	ic.custom_minimum_size = Vector2(22, 22)
+	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.add_child(ic)
+	var l := Ui.label("0", 17, Ui.MUTED, true)
+	b.add_child(l)
+	pill.add_child(b)
+	chip.add_child(pill)
+	return l
+
+
 func _build_top_bar() -> void:
 	var row := Ui.hbox(12)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -113,10 +139,13 @@ func _build_top_bar() -> void:
 	# Ressources
 	var res := Ui.panel()
 	res.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PANEL, 0.88), Color(Ui.CYAN, 0.35), 2, 8, 0.12))
-	var rh := Ui.hbox(14)
+	var rh := Ui.hbox(22)
 	_metal = _chip("metal")
 	_essence = _chip("essence")
 	_pop = _chip("pop")
+	# Nombre d'ouvriers qui récoltent chaque ressource, à côté de son stock.
+	_metal_workers = _worker_badge(_metal.get_parent())
+	_essence_workers = _worker_badge(_essence.get_parent())
 	rh.add_child(_metal.get_parent())
 	rh.add_child(_essence.get_parent())
 	rh.add_child(_pop.get_parent())
@@ -677,6 +706,12 @@ func _process(delta: float) -> void:
 	_update_objectives(w)
 	_metal.text = str(w.metal)
 	_essence.text = str(w.essence)
+	var hm := w.harvesters(GameGrid.Cell.METAL)
+	var he := w.harvesters(GameGrid.Cell.ESSENCE)
+	_metal_workers.text = str(hm)
+	_essence_workers.text = str(he)
+	_metal_workers.add_theme_color_override("font_color", Ui.TEXT if hm > 0 else Ui.MUTED)
+	_essence_workers.add_theme_color_override("font_color", Ui.TEXT if he > 0 else Ui.MUTED)
 	var used := w.pop_used()
 	_pop.text = "%d/%d" % [used, w.pop_cap]
 	_pop.add_theme_color_override("font_color", Ui.RED if used >= w.pop_cap else Ui.TEXT)

@@ -22,7 +22,7 @@ static func _apply_prod(p: Producer, a: Array) -> void:
 static func snapshot(w: GameWorld) -> Dictionary:
 	var workers := []
 	for x in w.workers:
-		workers.append([x.id, x.pos.x, x.pos.y, x.facing.x, x.facing.y, x.state, x.job, x.carry_type, x.carry_amount, x.hp, x.auto_repair])
+		workers.append([x.id, x.pos.x, x.pos.y, x.facing.x, x.facing.y, x.state, x.job, x.carry_type, x.carry_amount, x.hp, x.auto_repair, x.deposit_type])
 	var units := []
 	for u in w.units:
 		if u.alive:
@@ -94,6 +94,8 @@ static func apply(w: GameWorld, snap: Dictionary) -> void:
 		x.state = a[5]
 		x.job = a[6]
 		x.carry_type = a[7]
+		if a.size() > 11:
+			x.deposit_type = a[11]
 		x.carry_amount = a[8]
 		x.hp = a[9]
 		x.auto_repair = a[10]

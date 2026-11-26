@@ -437,6 +437,16 @@ func producer_options(id: int) -> Array:
 	return Content.PRODUCTION[s.kind].produces if s != null and s.is_producer() else []
 
 
+## Ouvriers affectés à la récolte d'une ressource (GameGrid.Cell.METAL ou ESSENCE) :
+## en route vers le gisement, en train de récolter ou en train de rapporter.
+func harvesters(cell_type: int) -> int:
+	var n := 0
+	for w in workers:
+		if w.alive and w.job == Worker.Job.HARVEST and (w.deposit_type if w.deposit_type >= 0 else w.carry_type) == cell_type:
+			n += 1
+	return n
+
+
 func pop_used() -> int:
 	var n := workers.size()
 	for u in units:
